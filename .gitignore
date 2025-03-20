@@ -33,6 +33,8 @@ ds003020/
 model_output/
 stimuli_16k/
 features/
+Huth/
+trash/
 
 # IDE files
 .vscode/
