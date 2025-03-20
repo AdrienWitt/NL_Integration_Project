@@ -83,10 +83,7 @@ if __name__ == "__main__":
         test_size=args.test_size, 
         random_state=args.random_state
     )
-    
-    train_stories = train_stories[0:1]
-    val_stories = val_stories[0:1]
-    
+        
     print(f"Training stories: {len(train_stories)}")
     print(f"Validation stories: {len(val_stories)}")
     
