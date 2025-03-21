@@ -54,8 +54,9 @@ if __name__ == "__main__":
                       help="Early stopping patience")
     parser.add_argument("--save_total_limit", type=int, default=3, 
                       help="Number of best checkpoints to keep")
-    parser.add_argument("--wandb", action="store_true", 
-                      help="Disable wandb logging")
+    parser.add_argument("--resume_from_checkpoint", type=str, default=None, 
+                      help="Path to a checkpoint directory to resume training from")
+    
     
     args = parser.parse_args()
     
@@ -83,7 +84,9 @@ if __name__ == "__main__":
         test_size=args.test_size, 
         random_state=args.random_state
     )
-        
+    train_stories = train_stories[0:1]
+    val_stories = val_stories[0:1]
+    
     print(f"Training stories: {len(train_stories)}")
     print(f"Validation stories: {len(val_stories)}")
     
@@ -106,6 +109,8 @@ if __name__ == "__main__":
     print(f"Training set size (words): {len(train_dataset)}")
     print(f"Validation set size (words): {len(val_dataset)}")
     
+    
+    # Update the train_model call to include the resume_from_checkpoint argument
     train_model(
         train_dataset=train_dataset,
         val_dataset=val_dataset,
@@ -116,4 +121,5 @@ if __name__ == "__main__":
         num_epochs=args.num_epochs,
         patience=args.patience,
         save_total_limit=args.save_total_limit,
+        resume_from_checkpoint=args.resume_from_checkpoint
     )

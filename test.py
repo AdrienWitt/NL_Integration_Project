@@ -7,7 +7,7 @@ from encoding.config import DATA_DIR
 
 
 audio_dir = os.path.join(DATA_DIR, "stimuli_16k")
-prosody_dir = os.path.join(DATA_DIR, "features/prosody/opensmile")
+prosody_dir = os.path.join(DATA_DIR, "features/prosody/test_opensmile")
 processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")
 story_names = [f.replace(".wav", "") for f in os.listdir(audio_dir)]
 
@@ -19,10 +19,11 @@ import soundfile as sf
 # Number of samples to visualize
 num_samples = 10000  
 
+dataset.feature_names
 # Print samples
 for i in range(num_samples):
     sample = dataset[i]
-    print(sample["window_time"])
+    print(sample["labels"])
     
     
 for file in os.listdir(audio_dir):
