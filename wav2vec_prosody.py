@@ -156,7 +156,7 @@ class ProsodyDataset(Dataset):
         return self.preprocessed_data[idx]
 
 class Wav2Vec2ForProsody(Wav2Vec2PreTrainedModel):
-    def __init__(self, config: Wav2Vec2Config, num_features: int, freeze_layers: Union[int, List[int]] = 4):
+    def __init__(self, config: Wav2Vec2Config, num_features: int, freeze_layers: Union[int, List[int]] = 6):
         """
         Args:
             config: Wav2Vec2Config configuration
