@@ -87,6 +87,10 @@ class ProsodyDataset(Dataset):
         for file in self.prosody_files:
             story_name = file.replace('_opensmile_windows.json', '')
             
+            # Filter based on story_names
+            if self.story_names and story_name not in self.story_names:
+                continue
+            
             prosody_path = os.path.join(self.prosody_dir, file)
             with open(prosody_path, "r") as f:
                 windows = json.load(f)

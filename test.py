@@ -11,7 +11,6 @@ prosody_dir = os.path.join(DATA_DIR, "features/prosody/test_opensmile")
 processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")
 story_names = [f.replace(".wav", "") for f in os.listdir(audio_dir)]
 
-story_names = story_names[:5]
 
 dataset = ProsodyDataset(audio_dir, prosody_dir, processor, story_names)
 
