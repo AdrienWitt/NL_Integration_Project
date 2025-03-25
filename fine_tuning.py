@@ -5,12 +5,6 @@ from transformers import Wav2Vec2Processor
 from encoding.config import DATA_DIR
 
 
-audio_dir = os.path.join(DATA_DIR, "stimuli_16k")
-prosody_dir = os.path.join(DATA_DIR,"features/prosody/opensmile")
-processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")
-story_names = [f.replace(".wav", "") for f in os.listdir(audio_dir)]
-output_dir = os.path.join(DATA_DIR, "model_output")
-
 # from argparse import Namespace
 
 # args = Namespace(**{
