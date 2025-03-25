@@ -68,8 +68,20 @@ for story in stories:
         features_list.append(features)
         
         
+#######################
+import os
+import nibabel as nib
 
+
+nii_file = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\NL_Project\ds003020\sub-UTS01\ses-2\func\sub-UTS01_ses-2_task-alternateithicatom_bold.nii.gz"
+        
+        
+fmri = nib.load(nii_file)
+
+nii_file = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\NL_Project\ds003020\sub-UTS04\ses-2\func\sub-UTS04_ses-2_task-souls_bold.nii.gz"
     
+fmri = nib.load(nii_file)
+
 
     
      

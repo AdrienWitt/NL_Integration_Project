@@ -19,25 +19,34 @@ from transformers import (
 from torch import nn
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.decomposition import PCA
 
 # Constants
 SAMPLING_RATE = 16000
 
 class ProsodyDataset(Dataset):
-    def __init__(self, audio_dir, prosody_dir, processor, story_names: List[str] = None):
+    def __init__(self, audio_dir, prosody_dir, processor, story_names: List[str] = None, use_pca: bool = False, pca_threshold: float = 0.90, pca=None, scalers=None):
         """
         Args:
             audio_dir: Path to directory containing .wav files
             prosody_dir: Path to directory containing OpenSMILE JSON feature files
             processor: Wav2Vec2Processor for audio processing
             story_names: List of story names to filter dataset
+            use_pca: Whether to apply PCA to features
+            pca_threshold: Explained variance threshold for PCA (default: 0.90)
+            pca: Pre-fitted PCA object (optional)
+            scalers: Pre-fitted feature scalers (optional)
         """
         self.audio_dir = audio_dir
         self.prosody_dir = prosody_dir
         self.processor = processor
         self.story_names = story_names
+        self.use_pca = use_pca
+        self.pca_threshold = pca_threshold
+        self.pca = pca
+        self.scalers = scalers
         
-        # Get sorted list of audio and prosody files
+        # Get sorted list of all audio and prosody files
         self.audio_files = sorted([f for f in os.listdir(audio_dir) if f.endswith(".wav")])
         self.prosody_files = sorted([f for f in os.listdir(prosody_dir) if f.endswith("_opensmile_windows.json")])
         
@@ -53,6 +62,13 @@ class ProsodyDataset(Dataset):
         # Pre-process audio and features
         self.preprocessed_data = self._preprocess_data()
 
+        # Filter preprocessed data based on story_names if provided
+        if story_names is not None:
+            self.preprocessed_data = [
+                item for item in self.preprocessed_data 
+                if item["story_name"] in story_names
+            ]
+
         # Initialize feature names
         if self.preprocessed_data:
             self.feature_names = self.preprocessed_data[0]["feature_names"]
@@ -64,10 +80,8 @@ class ProsodyDataset(Dataset):
         preprocessed_data = []
         all_features = {}
 
-        # Collect all feature values across all stories for normalization
+        # First pass: collect all feature values across all stories for normalization
         for file in self.prosody_files:
-            story_name = file.replace('_opensmile_windows.json', '')
-            
             prosody_path = os.path.join(self.prosody_dir, file)
             with open(prosody_path, "r") as f:
                 windows = json.load(f)
@@ -77,20 +91,16 @@ class ProsodyDataset(Dataset):
                             all_features[feat_name] = []
                         all_features[feat_name].append(feat_value)
 
-        # Create scalers for each feature using data from all stories
-        self.scalers = {
-            feat: StandardScaler().fit(np.array(values).reshape(-1, 1))
-            for feat, values in all_features.items()
-        }
+        # Create scalers for each feature using data from all stories if not provided
+        if self.scalers is None:
+            self.scalers = {
+                feat: StandardScaler().fit(np.array(values).reshape(-1, 1))
+                for feat, values in all_features.items()
+            }
 
-        # Normalize features and process data
+        # Second pass: process audio and features
         for file in self.prosody_files:
             story_name = file.replace('_opensmile_windows.json', '')
-            
-            # Filter based on story_names
-            if self.story_names and story_name not in self.story_names:
-                continue
-            
             prosody_path = os.path.join(self.prosody_dir, file)
             with open(prosody_path, "r") as f:
                 windows = json.load(f)
@@ -138,7 +148,7 @@ class ProsodyDataset(Dataset):
                         )
                     
                     # Get all normalized features in a fixed order
-                    feature_names = sorted(normalized_features.keys())  # Sort for consistent order
+                    feature_names = sorted(normalized_features.keys())
                     normalized_features_list = [normalized_features[feat] for feat in feature_names]
                     
                     preprocessed_data.append({
@@ -148,6 +158,27 @@ class ProsodyDataset(Dataset):
                         "window_time": f"{start_time:.2f}-{end_time:.2f}",
                         "feature_names": feature_names
                     })
+
+        # Apply PCA if requested
+        if self.use_pca:
+            X = np.array([item["labels"].numpy() for item in preprocessed_data])
+            if self.pca is None:
+                self.pca = PCA(n_components=self.pca_threshold)
+                X_pca = self.pca.fit_transform(X)
+                print(f"PCA components: {self.pca.n_components_}, variance explained: {sum(self.pca.explained_variance_ratio_):.3f}")
+            else:
+                X_pca = self.pca.transform(X)
+            
+            for i, item in enumerate(preprocessed_data):
+                item["labels"] = torch.tensor(X_pca[i], dtype=torch.float32)
+                item["feature_names"] = [f"PC_{j+1}" for j in range(X_pca.shape[1])]
+            
+            # Store PCA information
+            self.pca_info = {
+                "n_components": self.pca.n_components_,
+                "explained_variance_ratio": self.pca.explained_variance_ratio_.tolist(),
+                "cumulative_explained_variance": np.cumsum(self.pca.explained_variance_ratio_).tolist()
+            }
         
         return preprocessed_data
 
@@ -293,7 +324,7 @@ def compute_metrics(eval_pred):
     metrics['eval_loss'] = mse
     
     # Get feature names from the dataset
-    feature_names = train_dataset.feature_names  # We'll need to pass this somehow
+    feature_names = train_dataset.feature_names
     
     # Compute metrics for each feature
     for i, feature in enumerate(feature_names):
@@ -349,8 +380,14 @@ def train_model(
 ):
     """Train the wav2vec model for prosody prediction, with support for resuming from checkpoint."""
     
-    # Create a subdirectory for the number of layers frozen
+    # Create a subdirectory for the number of layers frozen and PCA information
     layers_frozen_dir = f"layers_frozen_{num_layers_to_freeze}" if num_layers_to_freeze is not None else "no_layers_frozen"
+    
+    # Add PCA information to directory name if PCA is used
+    if hasattr(train_dataset, 'use_pca') and train_dataset.use_pca:
+        pca_info = f"PCA_{train_dataset.pca_threshold:.2f}_ncomp_{train_dataset.pca.n_components_}"
+        layers_frozen_dir = f"{layers_frozen_dir}_{pca_info}"
+    
     output_dir = os.path.join(output_dir, layers_frozen_dir)
     
     # Create metrics directory
@@ -359,6 +396,7 @@ def train_model(
     
     # Number of features to predict
     num_features = len(train_dataset.feature_names)
+    print(f"Number of features (model output size): {num_features}")
     
     # Load model
     if resume_from_checkpoint and os.path.isdir(resume_from_checkpoint):
@@ -498,6 +536,11 @@ def train_model(
     # Save final metrics separately
     with open(os.path.join(metrics_dir, "final_metrics.json"), "w") as f:
         json.dump(final_metrics, f, indent=2)
+    
+    # Save PCA information if available
+    if hasattr(train_dataset, 'pca_info'):
+        with open(os.path.join(final_output_dir, "pca_info.json"), "w") as f:
+            json.dump(train_dataset.pca_info, f, indent=2)
     
     return training_info
    

@@ -56,8 +56,12 @@ if __name__ == "__main__":
                       help="Number of best checkpoints to keep")
     parser.add_argument("--resume_from_checkpoint", type=str, default=None, 
                       help="Path to a checkpoint directory to resume training from")
+    parser.add_argument("--use_pca", action="store_true",
+                             help="Use PCA for embeddings (default: False)")
+    parser.add_argument("--pca_threshold", type=float, default=0.90,
+                             help="PCA threshold for dataset (default: 0.50)")
     
-    
+
     args = parser.parse_args()
     
     # Process freeze_layers argument
@@ -101,9 +105,24 @@ if __name__ == "__main__":
     processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-large-960h")
     
     # Create datasets with story filtering
-    train_dataset = ProsodyDataset(args.audio_dir, args.prosody_dir, processor, story_names=train_stories)
-    val_dataset = ProsodyDataset(args.audio_dir, args.prosody_dir, processor, story_names=val_stories)
-        
+    train_dataset = ProsodyDataset(
+        audio_dir=args.audio_dir, 
+        prosody_dir=args.prosody_dir, 
+        processor=processor,
+        story_names=train_stories,
+        use_pca=args.use_pca,
+        pca_threshold=args.pca_threshold
+    )
+
+    val_dataset = ProsodyDataset(
+        audio_dir=args.audio_dir, 
+        prosody_dir=args.prosody_dir, 
+        processor=processor,
+        story_names=val_stories,
+        use_pca=args.use_pca,
+        pca_threshold=args.pca_threshold
+    )
+    
     print(f"Training set size (words): {len(train_dataset)}")
     print(f"Validation set size (words): {len(val_dataset)}")
     
