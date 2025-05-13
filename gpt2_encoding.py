@@ -55,21 +55,24 @@ def get_gpt2_vectors(stories, data_dir):
     Returns:
         Dictionary of {story: <float32>[num_story_words, vector_size]}
     """
+    bad_words = ["sentence_start", "sentence_end", "br", "lg", "ls", "ns", "sp", "sl"]
     wordseqs = get_story_wordseqs(stories, data_dir)
     vectors = {}
+    
     for story in stories:
         # Get words and their timings
         words = wordseqs[story].data
         # Get embeddings for each word
         story_vectors = []
         for word in words:
-            if word.strip() == "":
+            if word.strip() == "" or word.lower() in bad_words:
                 embedding = np.zeros(768)  # GPT-2 embedding size
+                print(f"Replaced '{word}' with empty embedding")
             else:
                 embedding = get_gpt2_embeddings(word)
             story_vectors.append(embedding)
         vectors[story] = np.vstack(story_vectors)
-        print(f"Done {story}")
+        print(f"Done processing embeddings for story: {story}")
 
     return vectors
 
@@ -99,7 +102,8 @@ def main():
     # Get stories
     textgrid_dir = join(DATA_DIR, "ds003020/derivative/TextGrids")
     stories = [f[:-9] for f in os.listdir(textgrid_dir) if f.endswith(".TextGrid")]
-
+    stories = stories[:3]
+    
     # Get word sequences and GPT-2 embeddings
     wordseqs = get_story_wordseqs(stories, DATA_DIR)
     vectors = get_gpt2_vectors(stories, DATA_DIR)

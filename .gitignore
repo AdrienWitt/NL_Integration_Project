@@ -36,6 +36,7 @@ stimuli_test/
 features/
 Huth/
 trash/
+finetuning_results/
 
 # IDE files
 .vscode/

@@ -1,0 +1,12 @@
+-autorecon1
+-i
+/work/fmriprep_25_0_wf/sub_UTS04_wf/anat_fit_wf/anat_validate/sub-UTS04_ses-1_T1w_noise_corrected_ras_valid.nii.gz
+-noskullstrip
+-noT2pial
+-noFLAIRpial
+-openmp
+8
+-subjid
+sub-UTS04
+-sd
+/out/sourcedata/freesurfer

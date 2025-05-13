@@ -9,12 +9,12 @@ from os.path import join, dirname
 import logging
 
 
-os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\NL_Project\encoding")
+os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\NL_Project")
 
-from encoding_utils import *
-from feature_spaces import _FEATURE_CONFIG, get_feature_space
-from ridge_utils.ridge import bootstrap_ridge
-from config import  REPO_DIR, EM_DATA_DIR
+from encoding.encoding_utils import *
+from encoding.feature_spaces import _FEATURE_CONFIG, get_feature_space
+from encoding.ridge_utils.ridge import bootstrap_ridge
+from encoding.config import  REPO_DIR, EM_DATA_DIR
 
 args = {
  "subject": "default_subject",  # Change this as needed

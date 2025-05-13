@@ -1,0 +1,92 @@
+[environment]
+cpu_count = 32
+exec_env = "posix"
+free_mem = 13.9
+overcommit_policy = "heuristic"
+overcommit_limit = "50%"
+nipype_version = "1.10.0"
+templateflow_version = "24.2.2"
+version = "25.0.0"
+
+[execution]
+bids_dir = "/mnt/c/Users/adywi/OneDrive - unige.ch/Documents/Sarcasm_experiment/NL_Project/ds003020"
+bids_database_dir = "/mnt/c/Users/adywi/OneDrive - unige.ch/Documents/Sarcasm_experiment/NL_Project/work/20250402-143356_b370ddb1-960e-4da5-9594-60797b8dc67e/bids_db"
+bids_description_hash = "9e574cb133e84e5ad54bd49bea575c4313d5486fef6a6e68fe04ba63b2f0e803"
+boilerplate_only = false
+sloppy = false
+debug = []
+fmriprep_dir = "/mnt/c/Users/adywi/OneDrive - unige.ch/Documents/Sarcasm_experiment/NL_Project/derivative/preprocessed"
+fs_license_file = "/mnt/c/Users/adywi/OneDrive - unige.ch/Documents/Sarcasm_experiment/NL_Project/license.txt"
+fs_subjects_dir = "/mnt/c/Users/adywi/OneDrive - unige.ch/Documents/Sarcasm_experiment/NL_Project/derivative/preprocessed/sourcedata/freesurfer"
+layout = "BIDS Layout: ...experiment/NL_Project/ds003020 | Subjects: 8 | Sessions: 78 | Runs: 56"
+log_dir = "/mnt/c/Users/adywi/OneDrive - unige.ch/Documents/Sarcasm_experiment/NL_Project/derivative/preprocessed/logs"
+log_level = 25
+low_mem = false
+md_only_boilerplate = false
+notrack = false
+track_carbon = false
+country_code = "CAN"
+output_dir = "/mnt/c/Users/adywi/OneDrive - unige.ch/Documents/Sarcasm_experiment/NL_Project/derivative/preprocessed"
+me_output_echos = false
+aggr_ses_reports = 4
+output_layout = "bids"
+output_spaces = "MNI152NLin2009cAsym:res-native"
+reports_only = false
+run_uuid = "20250402-143356_b370ddb1-960e-4da5-9594-60797b8dc67e"
+participant_label = [ "UTS01", "UTS02", "UTS03", "UTS04", "UTS05", "UTS06", "UTS07", "UTS08",]
+templateflow_home = "/root/.cache/templateflow"
+work_dir = "/mnt/c/Users/adywi/OneDrive - unige.ch/Documents/Sarcasm_experiment/NL_Project/work"
+write_graph = false
+
+[workflow]
+anat_only = false
+bold2anat_dof = 6
+bold2anat_init = "t1w"
+cifti_output = false
+fmap_bspline = false
+force_syn = false
+hires = true
+fs_no_resume = false
+ignore = []
+force = []
+level = "full"
+longitudinal = false
+run_msmsulc = true
+medial_surface_nan = false
+project_goodvoxels = false
+regressors_all_comps = false
+regressors_dvars_th = 1.5
+regressors_fd_th = 0.5
+run_reconall = true
+skull_strip_fixed_seed = false
+skull_strip_template = "OASIS30ANTs"
+skull_strip_t1w = "force"
+slice_time_ref = 0.5
+spaces = "MNI152NLin2009cAsym:res-native"
+use_syn_sdc = false
+me_t2s_fit_method = "curvefit"
+
+[nipype]
+crashfile_format = "txt"
+get_linked_libs = false
+nprocs = 32
+omp_nthreads = 8
+plugin = "MultiProc"
+remove_unnecessary_outputs = true
+resource_monitor = false
+stop_on_first_crash = false
+
+[seeds]
+master = 63155
+ants = 12331
+numpy = 36095
+
+[execution.derivatives]
+
+[execution.dataset_links]
+raw = "/mnt/c/Users/adywi/OneDrive - unige.ch/Documents/Sarcasm_experiment/NL_Project/ds003020"
+templateflow = "/root/.cache/templateflow"
+
+[nipype.plugin_args]
+maxtasksperchild = 1
+raise_insufficient = false

@@ -73,14 +73,113 @@ import os
 import nibabel as nib
 
 
-nii_file = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\NL_Project\ds003020\sub-UTS01\ses-2\func\sub-UTS01_ses-2_task-alternateithicatom_bold.nii.gz"
-        
-        
+nii_file = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\NL_Project\ds003020\sub-UTS01\ses-7\func\sub-UTS01_ses-7_task-treasureisland_bold.nii.gz"
+
 fmri = nib.load(nii_file)
 
 nii_file = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\NL_Project\ds003020\sub-UTS04\ses-2\func\sub-UTS04_ses-2_task-souls_bold.nii.gz"
-    
+
 fmri = nib.load(nii_file)
+
+
+from encoding.ridge_utils.stimulus_utils import load_simulated_trfiles
+
+dic = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\NL_Project\ds003020\derivative\respdict.json"
+
+with open(dic) as f:
+    spdict = json.load(f)
+
+yo = load_simulated_trfiles(spdict)
+
+####################################################
+
+import nibabel as nib
+import h5py
+import os
+
+story = nib.load(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\NL_Project\ds003020\sub-UTS01\ses-2\func\sub-UTS01_ses-2_task-alternateithicatom_bold.nii.gz")
+
+mask = nib.load(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\NL_Project\ds003020\derivative\pycortex-db\UTS01\transforms\UTS01_auto\mask_thick.nii.gz")
+
+# sub1
+with h5py.File(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\NL_Project\ds003020\derivative\preprocessed_data\UTS01\alternateithicatom.hf5", "r") as hf:
+    # List all datasets in the file
+    print("Keys in the HDF5 file:", list(hf.keys()))
+
+    # Access a specific dataset
+    dataset_name = list(hf.keys())[0]  # Get the first dataset name
+    data = hf[dataset_name][:]  # Load the dataset as a NumPy array
+
+    print("Dataset shape:", data.shape)
+    
+
+
+
+
+    
+import nibabel as nib
+lh_flat = nib.load('ds003020/derivative/pycortex-db/UTS01/surfaces/flat_lh.gii')
+rh_flat = nib.load('ds003020/derivative/pycortex-db/UTS01/surfaces/flat_rh.gii')
+lh_vertices = lh_flat.darrays[0].data  # Vertex coordinates
+rh_vertices = rh_flat.darrays[0].data
+print(f"Left hemisphere vertices: {lh_vertices.shape[0]}")
+print(f"Right hemisphere vertices: {rh_vertices.shape[0]}")
+total_vertices = lh_vertices.shape[0] + rh_vertices.shape[0]
+print(f"Total cortical vertices: {total_vertices}")
+
+import numpy as np
+flatverts = np.load('ds003020/derivative/pycortex-db/UTS01/cache/flatverts_1024.npz')
+for key in flatverts.keys():
+    print(key, flatverts[key].shape)
+
+mask = nib.load('ds003020/derivative/pycortex-db/UTS01/transforms/UTS01_auto/mask_thick.nii.gz')
+print(f"3D cortical mask shape: {mask.shape}")
+cortical_voxels = np.sum(mask.get_fdata() == 1)
+print(f"Number of cortical voxels: {cortical_voxels}")
+
+
+import numpy as np
+flatmask = np.load('ds003020/derivative/pycortex-db/UTS01/cache/flatmask_1024.npz')
+for key in flatmask.keys():
+    print(f"{key}: {flatmask[key].shape}")
+    if flatmask[key].size == 81126 or np.sum(flatmask[key]) == 81126:
+        print(f"Possible match: {key}")
+
+flatverts = np.load('ds003020/derivative/pycortex-db/UTS01/cache/flatverts_1024.npz')
+for key in flatverts.keys():
+    print(f"{key}: {flatverts[key].shape}")
+
+from scipy.sparse import csr_matrix
+matrix = csr_matrix((flatverts['data'], flatverts['indices'], flatverts['indptr']))
+print("Matrix shape:", matrix.shape)
+print("Non-zero elements:", matrix.nnz)
+
+
+folder_path = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\NL_Project\ds003020\derivative\pycortex-db\UTS01"  # Replace with your actual path
+
+for root, dirs, files in os.walk(folder_path):
+    for file in files:
+        print(os.path.join(root, file)) 
+
+import numpy as np
+import nibabel as nib
+import h5py
+ 
+subjects = ["UTS01", "UTS02", "UTS03", "UTS04", "UTS05", "UTS06", "UTS07", "UTS08"]  # Your subject list
+max_voxels = 0
+voxel_counts = {}
+
+for subject in subjects:
+    mask_path = f"ds003020/derivative/pycortex-db/{subject}/transforms/{subject}_auto/mask_thick.nii.gz"
+    mask = nib.load(mask_path)
+    cortical_voxels = np.sum(mask.get_fdata() == 1)
+    voxel_counts[subject] = cortical_voxels
+    max_voxels = max(max_voxels, cortical_voxels)
+
+print("Voxel counts:", voxel_counts)
+print("Maximum voxel count:", max_voxels)
+
+
 
 
     
