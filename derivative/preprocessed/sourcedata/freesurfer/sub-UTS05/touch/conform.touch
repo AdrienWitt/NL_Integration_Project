@@ -1,1 +1,0 @@
-mri_convert /out/sourcedata/freesurfer/sub-UTS05/mri/rawavg.mgz /out/sourcedata/freesurfer/sub-UTS05/mri/orig.mgz --conform

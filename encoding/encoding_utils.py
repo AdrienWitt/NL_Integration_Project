@@ -12,8 +12,7 @@ from encoding.ridge_utils.utils import make_delayed
 from encoding.config import DATA_DIR
 from sklearn.decomposition import PCA
 
-
-
+ 
 def apply_zscore_and_hrf(stories, downsampled_feat, trim, ndelays):
 	"""Get (z-scored and delayed) stimulus for train and test stories.
 	The stimulus matrix is delayed (typically by 2,4,6,8 secs) to estimate the
@@ -174,90 +173,68 @@ def preprocess_features(train_stories, test_stories, text_feat, audio_feat, moda
 # 		hf.close()
 # 	return np.array(resp)
 
-
 def get_response(stories, subject):
-	"""Get the subject"s fMRI response for stories."""
-	main_path = pathlib.Path(__file__).parent.parent.resolve()
-	subject_dir = join("H:/derivative/data/preprocessed_data/%s" % subject)
-	base = os.path.join(main_path, subject_dir)
-	resp = []
-	for story in stories:
-		resp_path = os.path.join(base, "%s.hf5" % story)
-		hf = h5py.File(resp_path, "r")
-		resp.extend(hf["data"][:])
-		hf.close()
-	return np.array(resp)
+    """Get the subject"s fMRI response for stories."""
+    #subject_dir = join(DATA_DIR, "ds003020/derivative/data_normalized/preprocessed_data/%s" % subject)
+    #base_path = "E:/NL/ds003020/derivative/data_normalized"
+    subject_dir = os.path.join(DATA_DIR, "preprocessed_data", subject)
+    resp = []
+    for story in stories:
+        resp_path = os.path.join(subject_dir, "%s.hf5" % story)
+        hf = h5py.File(resp_path, "r")
+        resp.extend(hf["data"][:])
+        hf.close()
+    return np.array(resp)
 
-def get_response_mask(stories, subject, threshold=0.85, mask=True, data_dir="H:/derivative/data"):
-    """Get the subject's fMRI response and combined thresholded mask for stories.
-
-    Parameters:
-    - stories (list): List of story names (e.g., ["story_1", "story_2"]).
-    - subject (str): Subject ID (e.g., "sub-UTS02").
-    - threshold (float): Threshold for combining masks (default: 0.85).
-    - data_dir (str): Root directory containing preprocessed_data and masks (default: "H:/derivative/data").
-    - mask (bool): If True, mask the fMRI data; if False, return unmasked data (default: True).
-
-    Returns:
-    - resp (np.ndarray): Masked fMRI responses (time_points × masked_voxels) if mask=True,
-                        or unmasked responses (time_points × flattened_voxels) if mask=False.
-    - thresholded_mask (nib.Nifti1Image): Combined, thresholded 3D mask.
+def get_response_mask(stories, subject, threshold=0.85, apply_mask=True):
     """
-    # Define directories
-    fmri_dir = os.path.join(data_dir, "preprocessed_data", subject)
-    mask_dir = os.path.join(data_dir, "masks", subject)
+    Get the subject's fMRI response and combined thresholded mask for stories.
+    Assumes fMRI data is in shape (time, voxels).
+    """
+    fmri_dir = os.path.join(DATA_DIR, "preprocessed_data", subject)
+    mask_dir = os.path.join(DATA_DIR, "masks", subject)
 
     resp = []
-    masks = []
-    
-    # Load fMRI data and masks for each story
+    mask_data = []
+    mask_img_ref = None
+
     for story in stories:
-        # Load HDF5 file
+        # Load fMRI data (assumes already time × voxels)
         hdf5_path = os.path.join(fmri_dir, f"{story}.hf5")
         if not os.path.exists(hdf5_path):
             raise FileNotFoundError(f"HDF5 file not found: {hdf5_path}")
         with h5py.File(hdf5_path, "r") as hf:
-            resp.append(hf["data"][:])
+            data = hf["data"][:]  # shape: (time, voxels)
+            resp.extend(data)  # extend list row-by-row
         print(f"Loaded fMRI data: {hdf5_path}")
-        
+
         # Load mask
         mask_path = os.path.join(mask_dir, f"{story}.nii")
         if not os.path.exists(mask_path):
             raise FileNotFoundError(f"Mask file not found: {mask_path}")
-        mask = nib.load(mask_path)
-        masks.append(mask)
+        mask_img = nib.load(mask_path)
+        if mask_img_ref is None:
+            mask_img_ref = mask_img
+        mask_data.append(mask_img.get_fdata().flatten())
         print(f"Loaded mask: {mask_path}")
-    
-    # Concatenate fMRI responses
-    resp = np.concatenate(resp, axis=0)  # Shape: (total_time_points, flattened_voxels)
-    
-    # Combine masks
-    if not masks:
-        raise ValueError("No valid masks loaded.")
-    
-    # Flatten masks and sum
-    mask_shape = masks[0].shape
-    num_voxels = np.prod(mask_shape)
-    if resp.shape[1] != num_voxels:
-        raise ValueError(f"fMRI data voxel count ({resp.shape[1]}) does not match mask voxels ({num_voxels}).")
-    
-    mask_sum = np.zeros(num_voxels, dtype=np.float32)
-    for mask in masks:
-        mask_sum += mask.get_fdata().flatten()
-    
-    # Apply threshold
-    num_masks = len(masks)
-    thresholded_mask_flat = (mask_sum >= threshold * num_masks).astype(np.int16)
-    
-    # Create 3D thresholded mask for output
+
+    # Convert list of rows to array (time × voxels)
+    resp = np.array(resp)
+
+    # Combine and threshold masks
+    mask_stack = np.stack(mask_data, axis=0)
+    mask_mean = mask_stack.mean(axis=0)
+    thresholded_mask_flat = (mask_mean >= threshold).astype(np.int16)
+
+    # Reconstruct 3D mask
+    mask_shape = mask_img_ref.shape
     thresholded_mask_3d = thresholded_mask_flat.reshape(mask_shape)
-    thresholded_mask = nib.Nifti1Image(thresholded_mask_3d, masks[0].affine, masks[0].header)
-    
-    # Apply mask if requested
-    if mask:
-        masked_voxel_indices = np.where(thresholded_mask_flat > 0)[0]
-        resp = resp[:, masked_voxel_indices]  # Shape: (time_points, masked_voxels)
-    
+    thresholded_mask = nib.Nifti1Image(thresholded_mask_3d, mask_img_ref.affine, mask_img_ref.header)
+
+    if apply_mask:
+        voxel_indices = np.where(thresholded_mask_flat > 0)[0]
+        resp = resp[:, voxel_indices]
+
     return resp, thresholded_mask
 
 def load_embeddings(folder_path):

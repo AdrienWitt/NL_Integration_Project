@@ -7,11 +7,11 @@ from os.path import join
 from encoding.encoding_utils import load_embeddings, preprocess_features, get_response_mask, get_response
 from encoding.ridge_utils.ridge import bootstrap_ridge
 from encoding.config import REPO_DIR
+import time
 
 # Default arguments for GUI debugging
 DEFAULT_ARGS = {
     "subject": "UTS01",
-    "sessions": [1, 2, 3, 4, 5],
     "trim": 5,
     "ndelays": 4,
     "nboots": 50,
@@ -34,7 +34,6 @@ def parse_arguments():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Encoding model script")
     parser.add_argument("--subject", type=str, required=True)
-    parser.add_argument("--sessions", nargs='+', type=int, default=[1, 2, 3, 4, 5])
     parser.add_argument("--trim", type=int, default=5)
     parser.add_argument("--ndelays", type=int, default=4)
     parser.add_argument("--nboots", type=int, default=50)
@@ -43,25 +42,25 @@ def parse_arguments():
     parser.add_argument("--modality", type=str, default="text_audio")
     parser.add_argument("--singcutoff", type=float, default=1e-10)
     parser.add_argument("--explained_variance", type=float, default=0.95)
-    parser.add_argument("-use_corr", action="store_true")
-    parser.add_argument("-single_alpha", action="store_true")
-    parser.add_argument("-use_pca", action="store_true")
+    parser.add_argument("--use_corr", action="store_true")
+    parser.add_argument("--single_alpha", action="store_true")
+    parser.add_argument("--use_pca", action="store_true")
     return parser.parse_args()
 
-def load_session_data(subject):
-    """Load and split training and test stories."""
-    with open("derivative/train_test_split.json", "r") as f:
-        sess_to_story = json.load(f)
-
-    train_stories, test_stories = [], []
-    sessions = sess_to_story[f"sub-{subject}"]
+def load_session_data(subject, json_path="derivative/stories_split.json"):
+    # Load the JSON file
+    with open(json_path, "r") as f:
+        data = json.load(f)
     
-    for sess in sessions:
-        stories, tstory = sessions[sess][0], sessions[sess][1]
-        train_stories.extend(stories)
-        test_stories.extend(tstory)
+    # Get subject key (e.g., 'sub-subject1')
+    subject_key = f"sub-{subject}"
+  
+    # Extract train and test stories for the subject
+    train_stories = data["participants"][subject_key]["train_stories"]
+    test_stories = data["participants"][subject_key]["test_stories"]
     
     assert not set(train_stories) & set(test_stories), "Train-test overlap detected"
+    
     return train_stories, test_stories
 
 def save_results(save_location, results):
@@ -73,6 +72,7 @@ def save_results(save_location, results):
 def main():
     """Run the encoding model."""
     args = parse_arguments()
+    start_time = time.time()
     setup_logging()
     logging.info(f"Arguments: {vars(args)}")
 
@@ -82,12 +82,6 @@ def main():
 
     # Load and split data
     train_stories, test_stories = load_session_data(args.subject)
-    
-    train_stories = train_stories[0:3]
-    
-    # path = 
-    # hf = h5py.File(resp_path, "r")
-    # sp.extend(hf["data"][:])
 
     # Preprocess features
     delRstim, delPstim = preprocess_features(
@@ -99,8 +93,8 @@ def main():
     logging.info(f"delPstim shape: {delPstim.shape}")
 
     # Get response data
-    zRresp = get_response(train_stories, f"sub-{args.subject}")
-    zPresp = get_response_mask( ,  f"sub-{args.subject}")
+    zRresp, mask = get_response_mask(train_stories, f"sub-{args.subject}")
+    zPresp, _ = get_response_mask(test_stories, f"sub-{args.subject}")
     logging.info(f"zRresp shape: {zRresp.shape}")
     logging.info(f"zPresp shape: {zPresp.shape}")
 
@@ -132,6 +126,9 @@ def main():
     
     r2_score = sum(corrs * np.abs(corrs))
     logging.info(f"Total R2 score: {r2_score}")
+    
+    total_time = time.time() - start_time
+    logging.info(f"Total analysis completed in {total_time:.2f} seconds ({total_time / 60:.2f} minutes)")
 
 if __name__ == "__main__":
     main()

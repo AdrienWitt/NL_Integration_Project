@@ -9,7 +9,7 @@ from os.path import join, dirname
 import logging
 
 
-os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\NL_Project")
+#os.chdir(r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\NL_Project")
 
 from encoding.encoding_utils import *
 from encoding.feature_spaces import _FEATURE_CONFIG, get_feature_space
