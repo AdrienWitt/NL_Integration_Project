@@ -288,7 +288,7 @@ def ridge_corr(Rstim, Pstim, Rresp, Presp, alphas, normalpha=False, corrmin=0.2,
 
 
 def bootstrap_ridge(Rstim, Rresp, Pstim, Presp, alphas, nboots, chunklen, nchunks,
-                    corrmin=0.2, joined=None, singcutoff=1e-10, normalpha=False, single_alpha=False,
+                    corrmin=0.1, joined=None, singcutoff=1e-10, normalpha=False, single_alpha=False,
                     use_corr=True, return_wt=True, logger=ridge_logger):
     """Uses ridge regression with a bootstrapped held-out set to get optimal alpha values for each response.
     [nchunks] random chunks of length [chunklen] will be taken from [Rstim] and [Rresp] for each regression

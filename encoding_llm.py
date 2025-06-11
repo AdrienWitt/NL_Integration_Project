@@ -4,27 +4,26 @@ import argparse
 import json
 import logging
 from os.path import join
-from encoding.encoding_utils import load_embeddings, preprocess_features, get_response_mask, get_response
+from encoding.encoding_utils import load_embeddings, preprocess_features, get_response_mask, get_response, compute_thresholded_mask
 from encoding.ridge_utils.ridge import bootstrap_ridge
 from encoding.config import REPO_DIR
 import time
 
-# Default arguments for GUI debugging
-DEFAULT_ARGS = {
-    "subject": "UTS01",
-    "trim": 5,
-    "ndelays": 4,
-    "nboots": 50,
-    "chunklen": 40,
-    "nchunks": 125,
-    "modality": "text_audio",
-    "singcutoff": 1e-10,
-    "use_corr": False,
-    "single_alpha": False,
-    "use_pca": True,
-    "explained_variance": 0.90
-}
-args = argparse.Namespace(**DEFAULT_ARGS)
+# # Default arguments for GUI debugging
+# DEFAULT_ARGS = {
+#     "subject": "UTS01",
+#     "trim": 5,
+#     "ndelays": 4,
+#     "nboots": 20,
+#     "chunklen": 12,
+#     "modality": "text_audio",
+#     "singcutoff": 1e-10,
+#     "use_corr": True,
+#     "single_alpha": False,
+#     "use_pca": True,
+#     "explained_variance": 0.90
+# }
+# args = argparse.Namespace(**DEFAULT_ARGS)
 
 def setup_logging():
     """Configure basic logging."""
@@ -34,17 +33,20 @@ def parse_arguments():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Encoding model script")
     parser.add_argument("--subject", type=str, required=True)
+    parser.add_argument("--modality", type=str, default="text_audio")
     parser.add_argument("--trim", type=int, default=5)
     parser.add_argument("--ndelays", type=int, default=4)
-    parser.add_argument("--nboots", type=int, default=50)
-    parser.add_argument("--chunklen", type=int, default=40)
-    parser.add_argument("--nchunks", type=int, default=125)
-    parser.add_argument("--modality", type=str, default="text_audio")
-    parser.add_argument("--singcutoff", type=float, default=1e-10)
-    parser.add_argument("--explained_variance", type=float, default=0.95)
-    parser.add_argument("--use_corr", action="store_true")
-    parser.add_argument("--single_alpha", action="store_true")
     parser.add_argument("--use_pca", action="store_true")
+    parser.add_argument("--explained_variance", type=float, default=0.95)
+
+    parser.add_argument("--use_corr", action="store_true")
+    parser.add_argument("--return_wt", action="store_true")
+    parser.add_argument("--nboots", type=int, default=20)
+    parser.add_argument("--chunklen", type=int, default=12)
+    parser.add_argument("--singcutoff", type=float, default=1e-10)
+    parser.add_argument("--single_alpha", action="store_true")
+    parser.add_argument("--normaalpha", action="store_true")
+    
     return parser.parse_args()
 
 def load_session_data(subject, json_path="derivative/stories_split.json"):
@@ -82,6 +84,7 @@ def main():
 
     # Load and split data
     train_stories, test_stories = load_session_data(args.subject)
+    all_stories = train_stories + test_stories
 
     # Preprocess features
     delRstim, delPstim = preprocess_features(
@@ -89,12 +92,17 @@ def main():
         args.trim, args.ndelays, args.use_pca, args.explained_variance
     )
     
+    TR = delRstim.shape[0]
+    nchunks = int(0.2 * TR / args.chunklen)
+    logging.info(f"Adjusted nchunks: {nchunks} for TR={TR}")
+    
     logging.info(f"delRstim shape: {delRstim.shape}")
     logging.info(f"delPstim shape: {delPstim.shape}")
-
-    # Get response data
-    zRresp, mask = get_response_mask(train_stories, f"sub-{args.subject}")
-    zPresp, _ = get_response_mask(test_stories, f"sub-{args.subject}")
+    
+    mask, indices = compute_thresholded_mask(all_stories, f"sub-{args.subject}")
+    zRresp = get_response_mask(train_stories, f"sub-{args.subject}", indices)
+    zPresp = get_response_mask(test_stories, f"sub-{args.subject}", indices)
+    
     logging.info(f"zRresp shape: {zRresp.shape}")
     logging.info(f"zPresp shape: {zPresp.shape}")
 
@@ -103,20 +111,19 @@ def main():
     logging.info(f"Saving results to: {save_location}")
 
     # Run ridge regression
-    alphas = np.logspace(1, 3, 10)
+    alphas = np.logspace(2, 4, 10)
     logging.info(f"Ridge parameters: nboots={args.nboots}, chunklen={args.chunklen}, "
                  f"nchunks={args.nchunks}, single_alpha={args.single_alpha}, "
                  f"use_corr={args.use_corr}")
 
-    wt, corrs, valphas, bscorrs, valinds = bootstrap_ridge(
+    corrs, valphas, bscorrs, valinds = bootstrap_ridge(
         delRstim, zRresp, delPstim, zPresp, alphas, args.nboots, args.chunklen,
         args.nchunks, singcutoff=args.singcutoff, single_alpha=args.single_alpha,
-        use_corr=args.use_corr
+        use_corr=args.use_corr, return_wt = args.return_wt
     )
 
     # Save results
     results = {
-        "weights": wt,
         "corrs": corrs,
         "valphas": valphas,
         "bscorrs": bscorrs,
