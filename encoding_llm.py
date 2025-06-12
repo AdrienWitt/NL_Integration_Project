@@ -113,7 +113,7 @@ def main():
     # Run ridge regression
     alphas = np.logspace(2, 4, 10)
     logging.info(f"Ridge parameters: nboots={args.nboots}, chunklen={args.chunklen}, "
-                 f"nchunks={args.nchunks}, single_alpha={args.single_alpha}, "
+                 f"nchunks={nchunks}, single_alpha={args.single_alpha}, "
                  f"use_corr={args.use_corr}")
 
     corrs, valphas, bscorrs, valinds = bootstrap_ridge(
