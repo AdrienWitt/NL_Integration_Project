@@ -45,7 +45,7 @@ def parse_arguments():
     parser.add_argument("--chunklen", type=int, default=12)
     parser.add_argument("--singcutoff", type=float, default=1e-10)
     parser.add_argument("--single_alpha", action="store_true")
-    parser.add_argument("--normaalpha", action="store_true")
+    parser.add_argument("--normalpha", action="store_true")
     
     return parser.parse_args()
 
@@ -118,7 +118,7 @@ def main():
 
     corrs, valphas, bscorrs, valinds = bootstrap_ridge(
         delRstim, zRresp, delPstim, zPresp, alphas, args.nboots, args.chunklen,
-        args.nchunks, singcutoff=args.singcutoff, single_alpha=args.single_alpha,
+        nchunks, singcutoff=args.singcutoff, single_alpha=args.single_alpha,
         use_corr=args.use_corr, return_wt = args.return_wt
     )
 
