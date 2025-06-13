@@ -116,7 +116,7 @@ def main():
                  f"nchunks={nchunks}, single_alpha={args.single_alpha}, "
                  f"use_corr={args.use_corr}")
 
-    corrs, valphas, bscorrs, valinds = bootstrap_ridge(
+    _, corrs, valphas, bscorrs, valinds = bootstrap_ridge(
         delRstim, zRresp, delPstim, zPresp, alphas, args.nboots, args.chunklen,
         nchunks, singcutoff=args.singcutoff, single_alpha=args.single_alpha,
         use_corr=args.use_corr, return_wt = args.return_wt
