@@ -49,7 +49,8 @@ def setup_logging():
 def parse_arguments():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Encoding model script")
-    parser.add_argument("--subject", type=str, required=True, help="Subject ID (e.g., UTS01)")
+    parser.add_argument("--subjects", type=str, default="UTS01",
+                        help="Subject ID(s): single (e.g., UTS01), comma-separated list (e.g., UTS01,UTS02), or 'all' for all subjects in JSON")
     parser.add_argument("--modality", type=str, choices=["text", "audio", "text_audio"], default="text_audio", help="Feature modality")
     parser.add_argument("--trim", type=int, default=5, help="Number of samples to trim from start/end")
     parser.add_argument("--ndelays", type=int, default=4, help="Number of delays for HRF")
@@ -71,9 +72,9 @@ def parse_arguments():
     parser.add_argument("--num_jobs", type=int, default=1, help="Number of parallel jobs (-1 for all cores)")
     parser.add_argument("--with_replacement", action="store_true", help="Sample with replacement in bootstrap")
     parser.add_argument("--optimize_alpha", action="store_true", help="Optimize alpha using bootstrapping")
-    parser.add_argument("--json_path", type=str, 
-                       default="derivative/common_stories_25.json",
-                       help="Path to JSON file with story IDs")
+    parser.add_argument("--json_path", type=str,
+                        default="derivative/common_stories_25.json",
+                        help="Path to JSON file with story IDs")
     return parser.parse_args()
 
 def load_session_data(subject, json_path):
