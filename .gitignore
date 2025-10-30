@@ -18,7 +18,9 @@ features/
 Huth/
 trash/
 finetuning_results/
-derivative/
+derivative/preprocessed_data/
+derivative/masks/
+results/
 
 # IDE files
 .vscode/

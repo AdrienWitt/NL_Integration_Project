@@ -35,41 +35,38 @@ def apply_zscore_and_hrf(stories, downsampled_feat, trim, ndelays):
 	delstim = make_delayed(stim, delays)
 	return delstim
 
-
-def preprocess_features(train_stories, test_stories, text_feat, audio_feat, modality, trim, ndelays, use_pca=False, explained_variance=0.90):
-    """Preprocess features: trim, z-score, PCA, and HRF for train and test stories.
+def preprocess_features(stories, text_feat, audio_feat, modality, trim, ndelays, use_pca=False, explained_variance=0.90):
+    """Preprocess features: trim, z-score, PCA, and HRF for a single list of stories.
 
     Args:
-        train_stories (list): List of training story IDs.
-        test_stories (list): List of test story IDs.
+        stories (list): List of story IDs (e.g., 25 or 27 common stories).
         text_feat (dict): Dictionary mapping story IDs to text feature arrays.
         audio_feat (dict): Dictionary mapping story IDs to audio feature arrays.
         modality (str): One of 'text', 'audio', or 'text_audio'.
         trim (int): Number of samples to trim from start/end.
         ndelays (int): Number of delays for HRF.
         use_pca (bool): If True, apply PCA to reduce dimensionality.
-        explained_variance (float): Target explained variance for PCA (e.g., 0.70).
+        explained_variance (float): Target explained variance for PCA (e.g., 0.90).
 
     Returns:
-        tuple: (delRstim, delPstim) - Processed feature matrices for train and test.
+        tuple: (delRstim, story_ids)
+            - delRstim: Processed feature matrix, shape (T, N) or (T, N_text + N_audio) for text_audio.
+            - story_ids: Array of numerical story IDs (0-based indices) for each time point, shape (T,).
     """
     # Validate inputs
-    all_stories = train_stories + test_stories
-    for story in all_stories:
-        if story not in text_feat or story not in audio_feat:
-            print(f"Story {story} not found in feature dictionaries, removing.")
-            train_stories = [s for s in train_stories if s in text_feat and s in audio_feat]
-            test_stories = [s for s in test_stories if s in text_feat and s in audio_feat]
-            all_stories = train_stories + test_stories
-
-    if not train_stories or not test_stories:
-        raise ValueError("No valid train or test stories after filtering.")
+    valid_stories = [s for s in stories if s in text_feat and s in audio_feat]
+    if not valid_stories:
+        raise ValueError("No valid stories found in feature dictionaries.")
+    for story in stories:
+        if story not in valid_stories:
+            print(f"Story {story} not found in feature dictionaries, skipping.")
 
     # Initialize delays
-    delays = range(1, ndelays+1)
+    delays = range(1, ndelays + 1)
 
     # Process text features
-    text_stim = [text_feat[s][5+trim:-trim] for s in all_stories]
+    text_stim = [text_feat[s][5 + trim:-trim] for s in valid_stories]
+    text_sample_counts = [t.shape[0] for t in text_stim]  # Number of samples per story
     text_concat = np.vstack(text_stim)  # Shape: (total_samples, n_features)
     text_concat_z = zscore(text_concat)  # Z-score concatenated features
 
@@ -81,21 +78,9 @@ def preprocess_features(train_stories, test_stories, text_feat, audio_feat, moda
         print(f"Text features: {n_components_text} components selected for {explained_variance:.2f} explained variance")
         text_concat_z = pca_text.transform(text_concat_z)  # Shape: (total_samples, n_components)
 
-    # Reorganize text features into dictionaries
-    text_train_stim = {}
-    text_test_stim = {}
-    start_idx = 0
-    for s in all_stories:
-        n_samples = text_stim[all_stories.index(s)].shape[0]
-        features = text_concat_z[start_idx:start_idx+n_samples]
-        if s in train_stories:
-            text_train_stim[s] = features
-        if s in test_stories:
-            text_test_stim[s] = features
-        start_idx += n_samples
-
     # Process audio features
-    audio_stim = [audio_feat[s][5+trim:-trim] for s in all_stories]
+    audio_stim = [audio_feat[s][5 + trim:-trim] for s in valid_stories]
+    audio_sample_counts = [a.shape[0] for a in audio_stim]
     audio_concat = np.vstack(audio_stim)
     audio_concat_z = zscore(audio_concat)
 
@@ -107,57 +92,27 @@ def preprocess_features(train_stories, test_stories, text_feat, audio_feat, moda
         print(f"Audio features: {n_components_audio} components selected for {explained_variance:.2f} explained variance")
         audio_concat_z = pca_audio.transform(audio_concat_z)
 
-    # Reorganize audio features into dictionaries
-    audio_train_stim = {}
-    audio_test_stim = {}
-    start_idx = 0
-    for s in all_stories:
-        n_samples = audio_stim[all_stories.index(s)].shape[0]
-        features = audio_concat_z[start_idx:start_idx+n_samples]
-        if s in train_stories:
-            audio_train_stim[s] = features
-        if s in test_stories:
-            audio_test_stim[s] = features
-        start_idx += n_samples
+    # Generate numerical story_ids
+    story_ids = []
+    for i, _ in enumerate(valid_stories):
+        story_ids.extend([i] * text_sample_counts[i])  # Use numerical index
+    story_ids = np.array(story_ids, dtype=int)  # Shape: (total_samples,)
 
-    # Apply HRF for train and test stories
+    # Verify sample counts match between text and audio
+    if not np.all(np.array(text_sample_counts) == np.array(audio_sample_counts)):
+        raise ValueError("Text and audio features have mismatched sample counts after trimming.")
+
+    # Apply HRF based on modality
     if modality == "text":
-        # Train
-        stim = [text_train_stim[s] for s in train_stories]
-        stim = np.vstack(stim)
-        delRstim = make_delayed(stim, delays)
-        # Test
-        stim = [text_test_stim[s] for s in test_stories]
-        stim = np.vstack(stim)
-        delPstim = make_delayed(stim, delays)
+        delRstim = make_delayed(text_concat_z, delays)
     elif modality == "audio":
-        # Train
-        stim = [audio_train_stim[s] for s in train_stories]
-        stim = np.vstack(stim)
-        delRstim = make_delayed(stim, delays)
-        # Test
-        stim = [audio_test_stim[s] for s in test_stories]
-        stim = np.vstack(stim)
-        delPstim = make_delayed(stim, delays)
+        delRstim = make_delayed(audio_concat_z, delays)
     else:  # text_audio
-        # Train
-        stim_text = [text_train_stim[s] for s in train_stories]
-        stim_text = np.vstack(stim_text)
-        stim_audio = [audio_train_stim[s] for s in train_stories]
-        stim_audio = np.vstack(stim_audio)
-        delRstim_text = make_delayed(stim_text, delays)
-        delRstim_audio = make_delayed(stim_audio, delays)
+        delRstim_text = make_delayed(text_concat_z, delays)
+        delRstim_audio = make_delayed(audio_concat_z, delays)
         delRstim = np.concatenate([delRstim_text, delRstim_audio], axis=1)
-        # Test
-        stim_text = [text_test_stim[s] for s in test_stories]
-        stim_text = np.vstack(stim_text)
-        stim_audio = [audio_test_stim[s] for s in test_stories]
-        stim_audio = np.vstack(stim_audio)
-        delPstim_text = make_delayed(stim_text, delays)
-        delPstim_audio = make_delayed(stim_audio, delays)
-        delPstim = np.concatenate([delPstim_text, delPstim_audio], axis=1)
 
-    return delRstim, delPstim
+    return delRstim, story_ids
 
 
 # def get_response(stories, subject):
@@ -186,8 +141,13 @@ def get_response(stories, subject):
         hf.close()
     return np.array(resp)
 
+
+
+import logging
+
+
 def get_response_mask(stories, subject, voxel_indices):
-    fmri_dir = os.path.join(DATA_DIR, "preprocessed_data", subject)
+    fmri_dir = os.path.join(DATA_DIR, subject)
     resp = []
 
     for story in stories:
@@ -196,7 +156,8 @@ def get_response_mask(stories, subject, voxel_indices):
             raise FileNotFoundError(f"HDF5 file not found: {hdf5_path}")
         
         with h5py.File(hdf5_path, "r") as hf:
-            data = hf["data"][:]  # shape: (time, voxels)
+            data = hf["fmri_data"][:]  # shape: (time, voxels)
+            print(data.shape)
             data_masked = data[:, voxel_indices]
             resp.extend(data_masked)
         

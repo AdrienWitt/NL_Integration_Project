@@ -1,0 +1,1 @@
+python3 encoding_llm.py --subject UTS01 --modality text_audio --use_pca --explained_variance 0.90 --use_corr --nboots 5 --n_splits 5 --normalpha --num_jobs 5 --optimize_alpha 
