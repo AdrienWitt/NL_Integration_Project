@@ -141,10 +141,7 @@ def get_response(stories, subject):
         hf.close()
     return np.array(resp)
 
-
-
 import logging
-
 
 def get_response_mask(stories, subject, voxel_indices):
     fmri_dir = os.path.join(DATA_DIR, subject)

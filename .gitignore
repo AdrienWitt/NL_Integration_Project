@@ -20,6 +20,8 @@ trash/
 finetuning_results/
 derivative/preprocessed_data/
 derivative/masks/
+derivative/exemple_data/
+
 results/
 
 # IDE files
