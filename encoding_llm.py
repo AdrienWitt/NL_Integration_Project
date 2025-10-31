@@ -73,7 +73,7 @@ def parse_arguments():
     parser.add_argument("--with_replacement", action="store_true", help="Sample with replacement in bootstrap")
     parser.add_argument("--optimize_alpha", action="store_true", help="Optimize alpha using bootstrapping")
     parser.add_argument("--json_path", type=str,
-                        default="derivative/common_stories_25.json",
+                        default="derivative/common_stories_25_for_9_participants.json",
                         help="Path to JSON file with story IDs")
     return parser.parse_args()
 
