@@ -1,4 +1,9 @@
 {
+    "configuration": {
+        "num_participants": 7,
+        "num_stories": 27,
+        "total_participants_in_dataset": 9
+    },
     "selected_stories": [
         "adollshouse",
         "adventuresinsayingyes",
@@ -59,7 +64,8 @@
                 "tildeath",
                 "undertheinfluence",
                 "wheretheressmoke"
-            ]
+            ],
+            "total_stories_available": 83
         },
         "sub-UTS02": {
             "folder": "E:\\NL\\ds003020\\derivative\\data\\preprocessed_data\\sub-UTS02",
@@ -91,7 +97,8 @@
                 "tildeath",
                 "undertheinfluence",
                 "wheretheressmoke"
-            ]
+            ],
+            "total_stories_available": 84
         },
         "sub-UTS03": {
             "folder": "E:\\NL\\ds003020\\derivative\\data\\preprocessed_data\\sub-UTS03",
@@ -123,38 +130,8 @@
                 "tildeath",
                 "undertheinfluence",
                 "wheretheressmoke"
-            ]
-        },
-        "sub-UTS04": {
-            "folder": "E:\\NL\\ds003020\\derivative\\data\\preprocessed_data\\sub-UTS04",
-            "stories": [
-                "adollshouse",
-                "adventuresinsayingyes",
-                "alternateithicatom",
-                "avatar",
-                "buck",
-                "exorcism",
-                "eyespy",
-                "fromboyhoodtofatherhood",
-                "hangtime",
-                "haveyoumethimyet",
-                "howtodraw",
-                "inamoment",
-                "itsabox",
-                "legacy",
-                "myfirstdaywiththeyankees",
-                "naked",
-                "odetostepfather",
-                "sloth",
-                "souls",
-                "stagefright",
-                "swimmingwithastronauts",
-                "thatthingonmyarm",
-                "theclosetthatateeverything",
-                "tildeath",
-                "undertheinfluence",
-                "wheretheressmoke"
-            ]
+            ],
+            "total_stories_available": 84
         },
         "sub-UTS05": {
             "folder": "E:\\NL\\ds003020\\derivative\\data\\preprocessed_data\\sub-UTS05",
@@ -186,7 +163,8 @@
                 "tildeath",
                 "undertheinfluence",
                 "wheretheressmoke"
-            ]
+            ],
+            "total_stories_available": 27
         },
         "sub-UTS06": {
             "folder": "E:\\NL\\ds003020\\derivative\\data\\preprocessed_data\\sub-UTS06",
@@ -218,7 +196,8 @@
                 "tildeath",
                 "undertheinfluence",
                 "wheretheressmoke"
-            ]
+            ],
+            "total_stories_available": 27
         },
         "sub-UTS07": {
             "folder": "E:\\NL\\ds003020\\derivative\\data\\preprocessed_data\\sub-UTS07",
@@ -250,7 +229,8 @@
                 "tildeath",
                 "undertheinfluence",
                 "wheretheressmoke"
-            ]
+            ],
+            "total_stories_available": 27
         },
         "sub-UTS08": {
             "folder": "E:\\NL\\ds003020\\derivative\\data\\preprocessed_data\\sub-UTS08",
@@ -282,38 +262,8 @@
                 "tildeath",
                 "undertheinfluence",
                 "wheretheressmoke"
-            ]
-        },
-        "sub-UTS09": {
-            "folder": "E:\\NL\\ds003020\\derivative\\data\\preprocessed_data\\sub-UTS09",
-            "stories": [
-                "adollshouse",
-                "adventuresinsayingyes",
-                "alternateithicatom",
-                "avatar",
-                "buck",
-                "exorcism",
-                "eyespy",
-                "hangtime",
-                "haveyoumethimyet",
-                "howtodraw",
-                "inamoment",
-                "itsabox",
-                "legacy",
-                "life",
-                "myfirstdaywiththeyankees",
-                "naked",
-                "odetostepfather",
-                "sloth",
-                "souls",
-                "stagefright",
-                "swimmingwithastronauts",
-                "thatthingonmyarm",
-                "theclosetthatateeverything",
-                "tildeath",
-                "undertheinfluence",
-                "wheretheressmoke"
-            ]
+            ],
+            "total_stories_available": 27
         }
     }
 }

@@ -1,0 +1,106 @@
+{
+    "total_participants": 9,
+    "configurations": [
+        {
+            "participants": 9,
+            "stories": 25,
+            "participant_list": [
+                "sub-UTS01",
+                "sub-UTS02",
+                "sub-UTS03",
+                "sub-UTS04",
+                "sub-UTS05",
+                "sub-UTS06",
+                "sub-UTS07",
+                "sub-UTS08",
+                "sub-UTS09"
+            ],
+            "output_file": "C:\\Users\\wittmann\\OneDrive - unige.ch\\Documents\\Sarcasm_experiment\\NL_Project\\derivative\\common_stories_25_for_9_participants.json"
+        },
+        {
+            "participants": 8,
+            "stories": 26,
+            "participant_list": [
+                "sub-UTS01",
+                "sub-UTS02",
+                "sub-UTS03",
+                "sub-UTS04",
+                "sub-UTS05",
+                "sub-UTS06",
+                "sub-UTS07",
+                "sub-UTS08"
+            ],
+            "output_file": "C:\\Users\\wittmann\\OneDrive - unige.ch\\Documents\\Sarcasm_experiment\\NL_Project\\derivative\\common_stories_26_for_8_participants.json"
+        },
+        {
+            "participants": 7,
+            "stories": 27,
+            "participant_list": [
+                "sub-UTS01",
+                "sub-UTS02",
+                "sub-UTS03",
+                "sub-UTS05",
+                "sub-UTS06",
+                "sub-UTS07",
+                "sub-UTS08"
+            ],
+            "output_file": "C:\\Users\\wittmann\\OneDrive - unige.ch\\Documents\\Sarcasm_experiment\\NL_Project\\derivative\\common_stories_27_for_7_participants.json"
+        },
+        {
+            "participants": 6,
+            "stories": 27,
+            "participant_list": [
+                "sub-UTS01",
+                "sub-UTS02",
+                "sub-UTS03",
+                "sub-UTS05",
+                "sub-UTS06",
+                "sub-UTS07"
+            ],
+            "output_file": "C:\\Users\\wittmann\\OneDrive - unige.ch\\Documents\\Sarcasm_experiment\\NL_Project\\derivative\\common_stories_27_for_6_participants.json"
+        },
+        {
+            "participants": 5,
+            "stories": 27,
+            "participant_list": [
+                "sub-UTS01",
+                "sub-UTS02",
+                "sub-UTS03",
+                "sub-UTS05",
+                "sub-UTS06"
+            ],
+            "output_file": "C:\\Users\\wittmann\\OneDrive - unige.ch\\Documents\\Sarcasm_experiment\\NL_Project\\derivative\\common_stories_27_for_5_participants.json"
+        },
+        {
+            "participants": 4,
+            "stories": 53,
+            "participant_list": [
+                "sub-UTS01",
+                "sub-UTS02",
+                "sub-UTS03",
+                "sub-UTS09"
+            ],
+            "output_file": "C:\\Users\\wittmann\\OneDrive - unige.ch\\Documents\\Sarcasm_experiment\\NL_Project\\derivative\\common_stories_53_for_4_participants.json"
+        },
+        {
+            "participants": 3,
+            "stories": 83,
+            "participant_list": [
+                "sub-UTS01",
+                "sub-UTS02",
+                "sub-UTS03"
+            ],
+            "output_file": "C:\\Users\\wittmann\\OneDrive - unige.ch\\Documents\\Sarcasm_experiment\\NL_Project\\derivative\\common_stories_83_for_3_participants.json"
+        },
+        {
+            "participants": 2,
+            "stories": 84,
+            "participant_list": [
+                "sub-UTS02",
+                "sub-UTS03"
+            ],
+            "output_file": "C:\\Users\\wittmann\\OneDrive - unige.ch\\Documents\\Sarcasm_experiment\\NL_Project\\derivative\\common_stories_84_for_2_participants.json"
+        }
+    ],
+    "analysis_date": "2025-10-31"
+}
