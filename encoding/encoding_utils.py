@@ -35,9 +35,13 @@ def apply_zscore_and_hrf(stories, downsampled_feat, trim, ndelays):
 	delstim = make_delayed(stim, delays)
 	return delstim
 
+
 def preprocess_features(stories, text_feat, audio_feat, modality, trim, ndelays, use_pca=False, explained_variance=0.90):
     """Preprocess features: trim, z-score, PCA, and HRF for a single list of stories.
-
+    
+    IMPORTANT: Z-scoring and PCA are applied globally across all stories,
+    but delays are applied per-story to avoid cross-story contamination.
+    
     Args:
         stories (list): List of story IDs (e.g., 25 or 27 common stories).
         text_feat (dict): Dictionary mapping story IDs to text feature arrays.
@@ -47,7 +51,7 @@ def preprocess_features(stories, text_feat, audio_feat, modality, trim, ndelays,
         ndelays (int): Number of delays for HRF.
         use_pca (bool): If True, apply PCA to reduce dimensionality.
         explained_variance (float): Target explained variance for PCA (e.g., 0.90).
-
+    
     Returns:
         tuple: (delRstim, story_ids)
             - delRstim: Processed feature matrix, shape (T, N) or (T, N_text + N_audio) for text_audio.
@@ -60,73 +64,73 @@ def preprocess_features(stories, text_feat, audio_feat, modality, trim, ndelays,
     for story in stories:
         if story not in valid_stories:
             print(f"Story {story} not found in feature dictionaries, skipping.")
-
+    
     # Initialize delays
     delays = range(1, ndelays + 1)
-
-    # Process text features
+    
+    # ========== STEP 1: Extract and concatenate features for global z-scoring ==========
     text_stim = [text_feat[s][5 + trim:-trim] for s in valid_stories]
-    text_sample_counts = [t.shape[0] for t in text_stim]  # Number of samples per story
+    text_sample_counts = [t.shape[0] for t in text_stim]
     text_concat = np.vstack(text_stim)  # Shape: (total_samples, n_features)
-    text_concat_z = zscore(text_concat)  # Z-score concatenated features
-
+    
+    audio_stim = [audio_feat[s][5 + trim:-trim] for s in valid_stories]
+    audio_sample_counts = [a.shape[0] for a in audio_stim]
+    audio_concat = np.vstack(audio_stim)
+    
+    # Verify sample counts match
+    if not np.all(np.array(text_sample_counts) == np.array(audio_sample_counts)):
+        raise ValueError("Text and audio features have mismatched sample counts after trimming.")
+    
+    # Create story_ids array (will be used for splitting and returned)
+    story_ids = np.concatenate([np.full(count, i, dtype=int) 
+                                 for i, count in enumerate(text_sample_counts)])
+    
+    # ========== STEP 2: Global z-scoring ==========
+    text_concat_z = zscore(text_concat)
+    audio_concat_z = zscore(audio_concat)
+    
+    # ========== STEP 3: Global PCA (if requested) ==========
     if use_pca:
         print(f"Applying PCA to text features with explained variance threshold: {explained_variance}")
         pca_text = PCA(n_components=explained_variance)
         pca_text.fit(text_concat_z)
         n_components_text = pca_text.n_components_
         print(f"Text features: {n_components_text} components selected for {explained_variance:.2f} explained variance")
-        text_concat_z = pca_text.transform(text_concat_z)  # Shape: (total_samples, n_components)
-
-    # Process audio features
-    audio_stim = [audio_feat[s][5 + trim:-trim] for s in valid_stories]
-    audio_sample_counts = [a.shape[0] for a in audio_stim]
-    audio_concat = np.vstack(audio_stim)
-    audio_concat_z = zscore(audio_concat)
-
-    if use_pca:
+        text_concat_z = pca_text.transform(text_concat_z)
+        
         print(f"Applying PCA to audio features with explained variance threshold: {explained_variance}")
         pca_audio = PCA(n_components=explained_variance)
         pca_audio.fit(audio_concat_z)
         n_components_audio = pca_audio.n_components_
         print(f"Audio features: {n_components_audio} components selected for {explained_variance:.2f} explained variance")
         audio_concat_z = pca_audio.transform(audio_concat_z)
-
-    # Generate numerical story_ids
-    story_ids = []
-    for i, _ in enumerate(valid_stories):
-        story_ids.extend([i] * text_sample_counts[i])  # Use numerical index
-    story_ids = np.array(story_ids, dtype=int)  # Shape: (total_samples,)
-
-    # Verify sample counts match between text and audio
-    if not np.all(np.array(text_sample_counts) == np.array(audio_sample_counts)):
-        raise ValueError("Text and audio features have mismatched sample counts after trimming.")
-
-    # Apply HRF based on modality
-    if modality == "text":
-        delRstim = make_delayed(text_concat_z, delays)
-    elif modality == "audio":
-        delRstim = make_delayed(audio_concat_z, delays)
-    else:  # text_audio
-        delRstim_text = make_delayed(text_concat_z, delays)
-        delRstim_audio = make_delayed(audio_concat_z, delays)
-        delRstim = np.concatenate([delRstim_text, delRstim_audio], axis=1)
-
+    
+    # ========== STEP 4: Split back into per-story arrays (removed, using story_ids instead) ==========
+    
+    # ========== STEP 5: Apply delays PER-STORY ==========
+    delRstim_list = []
+    
+    for i in range(len(valid_stories)):
+        # Get indices for this story
+        story_mask = (story_ids == i)
+        
+        # Apply delays to individual story
+        if modality == "text":
+            delRstim_story = make_delayed(text_concat_z[story_mask], delays)
+        elif modality == "audio":
+            delRstim_story = make_delayed(audio_concat_z[story_mask], delays)
+        else:  # text_audio
+            delRstim_text_story = make_delayed(text_concat_z[story_mask], delays)
+            delRstim_audio_story = make_delayed(audio_concat_z[story_mask], delays)
+            delRstim_story = np.concatenate([delRstim_text_story, delRstim_audio_story], axis=1)
+        
+        delRstim_list.append(delRstim_story)
+    
+    # ========== STEP 6: Concatenate delayed stories ==========
+    delRstim = np.vstack(delRstim_list)
+    
     return delRstim, story_ids
 
-
-# def get_response(stories, subject):
-# 	"""Get the subject"s fMRI response for stories."""
-# 	main_path = pathlib.Path(__file__).parent.parent.resolve()
-# 	subject_dir = join(DATA_DIR, "ds003020/derivative/preprocessed_data/%s" % subject)
-# 	base = os.path.join(main_path, subject_dir)
-# 	resp = []
-# 	for story in stories:
-# 		resp_path = os.path.join(base, "%s.hf5" % story)
-# 		hf = h5py.File(resp_path, "r")
-# 		resp.extend(hf["data"][:])
-# 		hf.close()
-# 	return np.array(resp)
 
 def get_response(stories, subject):
     """Get the subject"s fMRI response for stories."""
@@ -141,7 +145,6 @@ def get_response(stories, subject):
         hf.close()
     return np.array(resp)
 
-import logging
 
 def get_response_mask(stories, subject, voxel_indices):
     fmri_dir = os.path.join(DATA_DIR, subject)
@@ -162,37 +165,6 @@ def get_response_mask(stories, subject, voxel_indices):
 
     resp = np.array(resp)
     return resp
-
-def compute_thresholded_mask(stories, subject, threshold=0.85):
-    mask_dir = os.path.join(DATA_DIR, "masks", subject)
-    mask_data = []
-    mask_img_ref = None
-
-    for story in stories:
-        mask_path = os.path.join(mask_dir, f"{story}.nii")
-        if not os.path.exists(mask_path):
-            raise FileNotFoundError(f"Mask file not found: {mask_path}")
-        
-        mask_img = nib.load(mask_path)
-        if mask_img_ref is None:
-            mask_img_ref = mask_img
-        
-        mask_data.append(mask_img.get_fdata().flatten())
-        print(f"Loaded mask: {mask_path}")
-
-    # Combine and threshold masks
-    mask_stack = np.stack(mask_data, axis=0)
-    mask_mean = mask_stack.mean(axis=0)
-    thresholded_mask_flat = (mask_mean >= threshold).astype(np.int16)
-
-    # Reconstruct 3D mask
-    mask_shape = mask_img_ref.shape
-    thresholded_mask_3d = thresholded_mask_flat.reshape(mask_shape)
-    thresholded_mask = nib.Nifti1Image(thresholded_mask_3d, mask_img_ref.affine, mask_img_ref.header)
-
-    voxel_indices = np.where(thresholded_mask_flat > 0)[0]
-
-    return thresholded_mask, voxel_indices
 
 def load_embeddings(folder_path):
     embeddings_dict = {}

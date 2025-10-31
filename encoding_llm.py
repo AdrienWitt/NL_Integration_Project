@@ -4,7 +4,7 @@ import argparse
 import json
 import logging
 from os.path import join
-from encoding.encoding_utils import load_embeddings, preprocess_features, get_response_mask, get_response, compute_thresholded_mask
+from encoding.encoding_utils import load_embeddings, preprocess_features, get_response_mask
 from encoding.ridge_utils.ridge import ridge_cv
 from encoding.config import REPO_DIR
 import time
