@@ -349,7 +349,7 @@ def ridge_cv(stim, resp, alphas, story_ids, nboots=50, nsplits=50,
     if nsplits > 0:
         logger.info("Performing %d-group cross-validation...", nsplits) if logger else None
         nsplits = min(nsplits, n_stories)  # Ensure n_groups does not exceed n_stories
-        gkf = GroupKFold(nsplits=nsplits)
+        gkf = GroupKFold(n_splits=nsplits)
         
         def _cv_iter(fold_idx, train_idx, test_idx):
             logger.info(f"Processing CV fold {fold_idx+1}/{nsplits}...") if logger else None
