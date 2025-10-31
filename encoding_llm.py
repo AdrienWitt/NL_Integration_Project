@@ -18,7 +18,7 @@ DEFAULT_ARGS = {
     "trim": 5,
     "ndelays": 4,
     "nboots": 5,
-    "n_splits": 5,
+    "nsplits": 5,
     "chunklen": 12,  # Note: Not used in ridge_cv but kept for compatibility
     "modality": "text_audio",
     "singcutoff": 1e-10,
@@ -58,8 +58,8 @@ def parse_arguments():
     parser.add_argument("--explained_variance", type=float, default=0.90, help="Target explained variance for PCA")
     parser.add_argument("--use_corr", action="store_true", help="Use correlation instead of R-squared")
     parser.add_argument("--return_wt", action="store_true", help="Return regression weights")
-    parser.add_argument("--nboots", type=int, default=20, help="Number of bootstrap iterations")
-    parser.add_argument("--n_splits", type=int, default=5, help="Number of CV folds")
+    parser.add_argument("--nboots", type=int, default=25, help="Number of bootstrap iterations")
+    parser.add_argument("--nsplits", type=int, default=5, help="Number of CV folds")
     parser.add_argument("--chunklen", type=int, default=12, help="Chunk length for bootstrap (unused in ridge_cv)")
     parser.add_argument("--singcutoff", type=float, default=1e-10, help="Singular value cutoff for SVD")
     parser.add_argument("--single_alpha", action="store_true", help="Use single alpha for all voxels (unused in ridge_cv)")
@@ -134,13 +134,13 @@ def main():
     voxel_indices = np.where(resampled_mask_data.flatten() > 0)[0]
     
     # Alphas (shared)
-    alphas = np.logspace(2, 4, 10)
+    alphas = np.logspace(1, 4, 10)
     
     for subject in subjects:
         logging.info(f"Processing subject: {subject}")
         
         # Load and split data
-        stories = load_session_data(subject, args.json_path)[0:3]
+        stories = load_session_data(subject, args.json_path)
         
         # Preprocess features
         delRstim, ids_stories = preprocess_features(
@@ -168,9 +168,9 @@ def main():
         else:
             valphas = None
         
-        # Set nboots and n_splits based on arguments or default to number of participants
+        # Set nboots and nsplits based on arguments or default to number of participants
         nboots = args.nboots if args.nboots is not None else len(ids_stories)
-        n_splits = args.n_splits if args.n_splits is not None else len(ids_stories)
+        nsplits = args.nsplits if args.nsplits is not None else len(ids_stories)
         
         # Perform ridge regression with LOO CV
         _, corrs, valphas, fold_corrs, _ = ridge_cv(
@@ -180,7 +180,7 @@ def main():
             story_ids=ids_stories,
             nboots=nboots,
             corrmin=args.corrmin,
-            n_splits=n_splits,
+            nsplits=nsplits,
             singcutoff=1e-10,
             normalpha=args.normalpha,
             use_corr=args.use_corr,

@@ -20,7 +20,7 @@ if script_dir not in sys.path:
 
 zs = lambda v: (v-v.mean(0))/v.std(0)  # z-score function
 
-def ridge_cv_debug(stim, resp, alphas, story_ids, nboots=50, n_splits=50,
+def ridge_cv_debug(stim, resp, alphas, story_ids, nboots=25, nsplits=5,
              corrmin=0, singcutoff=1e-10, normalpha=False, use_corr=True,
              return_wt=False, normalize_stim=False, normalize_resp=True,
              n_jobs=1, with_replacement=False, optimize_alpha=True,
@@ -28,7 +28,7 @@ def ridge_cv_debug(stim, resp, alphas, story_ids, nboots=50, n_splits=50,
     """
     Performs ridge regression with K-group cross-validation and/or LOPO bootstrapping for alpha optimization.
     Combines group-based CV and alpha optimization into a single function with efficient group splitting.
-    If n_splits equals the number of unique stories, it performs leave-one-story-out CV.
+    If nsplits equals the number of unique stories, it performs leave-one-story-out CV.
 
     Parameters
     ----------
@@ -42,7 +42,7 @@ def ridge_cv_debug(stim, resp, alphas, story_ids, nboots=50, n_splits=50,
         Story IDs for each time point.
     nboots : int, default 50
         Number of LOPO bootstrap iterations for alpha optimization (if optimize_alpha=True).
-    n_splits : int, default 50
+    nsplits : int, default 50
         Number of groups for K-group CV (if equal to number of stories, performs LOPO CV).
     corrmin : float, default 0.0
         Minimum correlation for logging.
@@ -74,11 +74,11 @@ def ridge_cv_debug(stim, resp, alphas, story_ids, nboots=50, n_splits=50,
     wt : array_like, shape (N+P-1[+K-1], M)
         Regression weights (empty if return_wt=False).
     corrs : array_like, shape (M,)
-        Average correlation across CV folds (empty if n_splits=0).
+        Average correlation across CV folds (empty if nsplits=0).
     valphas : array_like, shape (M,)
         Optimal alpha per voxel (either optimized or provided).
-    fold_corrs : array_like, shape (M, n_splits)
-        Correlations per voxel per CV fold (empty if n_splits=0).
+    fold_corrs : array_like, shape (M, nsplits)
+        Correlations per voxel per CV fold (empty if nsplits=0).
     bootstrap_corrs : array_like, shape (A, M, nboots)
         Correlations for each alpha, voxel, and bootstrap iteration (empty if optimize_alpha=False).
     """
@@ -179,13 +179,13 @@ def ridge_cv_debug(stim, resp, alphas, story_ids, nboots=50, n_splits=50,
     
     # Perform K-group cross-validation
     fold_corrs = []
-    if n_splits > 0:
-        logger.info("Performing %d-group cross-validation...", n_splits) if logger else None
-        n_splits = min(n_splits, n_stories)  # Ensure n_splits does not exceed n_stories
-        gkf = GroupKFold(n_splits=n_splits)
+    if nsplits > 0:
+        logger.info("Performing %d-group cross-validation...", nsplits) if logger else None
+        nsplits = min(nsplits, n_stories)  # Ensure nsplits does not exceed n_stories
+        gkf = GroupKFold(nsplits=nsplits)
         
         def _cv_iter(fold_idx, train_idx, test_idx):
-            logger.info(f"Processing CV fold {fold_idx+1}/{n_splits}...") if logger else None
+            logger.info(f"Processing CV fold {fold_idx+1}/{nsplits}...") if logger else None
             Rstim, Pstim = stim[train_idx], stim[test_idx]
             Rresp, Presp = resp[train_idx], resp[test_idx]
             logger.info(f"CV fold {fold_idx+1}: Train stim={Rstim.shape}, Test stim={Pstim.shape}, Train resp={Rresp.shape}, Test resp={Presp.shape}") if logger else None
@@ -218,7 +218,7 @@ def ridge_cv_debug(stim, resp, alphas, story_ids, nboots=50, n_splits=50,
             logger.info("No valid correlations from CV.") if logger else None
     else:
         corrs = np.array([])
-        logger.info("Skipping CV as n_splits=0.") if logger else None
+        logger.info("Skipping CV as nsplits=0.") if logger else None
     
     # Compute weights if requested
     wt = []
@@ -229,7 +229,7 @@ def ridge_cv_debug(stim, resp, alphas, story_ids, nboots=50, n_splits=50,
     
     return wt, corrs, valphas, fold_corrs, bootstrap_corrs
 
-def ridge_cv(stim, resp, alphas, story_ids, nboots=50, n_splits=50,
+def ridge_cv(stim, resp, alphas, story_ids, nboots=50, nsplits=50,
                     corrmin=0, singcutoff=1e-10, normalpha=False, use_corr=True,
                     return_wt=False, normalize_stim=False, normalize_resp=True,
                     n_jobs=1, with_replacement=False, optimize_alpha=True,
@@ -346,13 +346,13 @@ def ridge_cv(stim, resp, alphas, story_ids, nboots=50, n_splits=50,
     
     # Perform K-group cross-validation
     fold_corrs = []
-    if n_splits > 0:
-        logger.info("Performing %d-group cross-validation...", n_splits) if logger else None
-        n_splits = min(n_splits, n_stories)  # Ensure n_groups does not exceed n_stories
-        gkf = GroupKFold(n_splits=n_splits)
+    if nsplits > 0:
+        logger.info("Performing %d-group cross-validation...", nsplits) if logger else None
+        nsplits = min(nsplits, n_stories)  # Ensure n_groups does not exceed n_stories
+        gkf = GroupKFold(nsplits=nsplits)
         
         def _cv_iter(fold_idx, train_idx, test_idx):
-            logger.info(f"Processing CV fold {fold_idx+1}/{n_splits}...") if logger else None
+            logger.info(f"Processing CV fold {fold_idx+1}/{nsplits}...") if logger else None
             Rstim, Pstim = stim[train_idx], stim[test_idx]
             Rresp, Presp = resp[train_idx], resp[test_idx]
             return ridge_corr_pred(Rstim, Pstim, Rresp, Presp, valphas,
