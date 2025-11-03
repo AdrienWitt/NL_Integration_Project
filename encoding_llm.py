@@ -36,7 +36,7 @@ DEFAULT_ARGS = {
     "with_replacement": False,
     "normalpha": False,
     "return_wt": False ,
-    "json_path": "derivative/common_stories_25.json",
+    "json_path": "derivative/common_stories_25_for_9_participants.json",
     "optimize_alpha" : False
 }
 
