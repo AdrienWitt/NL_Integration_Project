@@ -27,7 +27,7 @@ DEFAULT_ARGS = {
     "use_pca": True,
     "explained_variance": 0.90,
     "optimize_alpha": True,
-    "not_use_attention": False,
+    "not_use_attention": True,
     "use_opensmile": False,
     "corrmin": 0.0,
     "normalize_stim": False,
@@ -134,7 +134,7 @@ def main():
     voxel_indices = np.where(resampled_mask_data.flatten() > 0)[0]
     
     # Alphas (shared)
-    alphas = np.logspace(1, 4, 10)
+    alphas = np.logspace(2, 4, 10)
     
     for subject in subjects:
         logging.info(f"Processing subject: {subject}")
