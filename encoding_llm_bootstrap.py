@@ -157,7 +157,7 @@ def main():
         logging.info(f"Processing subject: {subject}")
         
         # Load and split data
-        stories = load_session_data(subject, args.json_path)[0:5]
+        stories = load_session_data(subject, args.json_path)
         train_stories, test_stories = split_train_test(stories, args.test_split)
         
         # Preprocess features for training set
