@@ -11,6 +11,11 @@ from joblib import Parallel, delayed
 
 
 ridge_logger = logging.getLogger("ridge_corr")
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
+)
 
 os.environ['JOBLIB_TEMP_FOLDER'] = '/tmp'
 backend = 'multiprocessing'
@@ -20,7 +25,7 @@ if script_dir not in sys.path:
 
 zs = lambda v: (v-v.mean(0))/v.std(0)  # z-score function
 
-def ridge_cv(stim, resp, alphas, story_ids, nboots=25, nsplits=5,
+def ridge_cv(stim, resp, alphas, story_ids, nboots=50, nsplits=50,
                     corrmin=0, singcutoff=1e-10, normalpha=False, use_corr=True,
                     return_wt=False, normalize_stim=False, normalize_resp=True,
                     n_jobs=1, with_replacement=False, optimize_alpha=True,
@@ -32,19 +37,19 @@ def ridge_cv(stim, resp, alphas, story_ids, nboots=25, nsplits=5,
 
     Parameters
     ----------
-    stim : array_like, shape (T, N+P-1[+K-1])
+    stim_df : pandas.DataFrame, shape (T, N+P-1[+K-1])
         Stimuli with T time points, N features, P-1 participant covariates, K-1 task covariates.
     resp : array_like, shape (T, M)
         fMRI responses with T time points and M voxels.
     alphas : list or array_like, shape (A,)
         Ridge parameters to test (e.g., np.logspace(0, 3, 20)) when optimize_alpha=True.
     story_ids : array_like, shape (T,)
-        Story IDs for each time point.
-    nboots : int, default 25
+        Participant IDs for each time point.
+    nboots : int, default 50
         Number of LOPO bootstrap iterations for alpha optimization (if optimize_alpha=True).
-    nsplits : int, default 5
+    n_groups : int, default 50
         Number of groups for K-group CV (if equal to number of stories, performs LOPO CV).
-    corrmin : float, default 0.0
+    corrmin : float, default 0.1
         Minimum correlation for logging.
     singcutoff : float, default 1e-10
         Singular value cutoff for SVD.
@@ -74,11 +79,11 @@ def ridge_cv(stim, resp, alphas, story_ids, nboots=25, nsplits=5,
     wt : array_like, shape (N+P-1[+K-1], M)
         Regression weights (empty if return_wt=False).
     corrs : array_like, shape (M,)
-        Average correlation across CV folds (empty if nsplits=0).
+        Average correlation across CV folds (empty if n_groups=0).
     valphas : array_like, shape (M,)
         Optimal alpha per voxel (either optimized or provided).
-    fold_corrs : array_like, shape (M, nsplits)
-        Correlations per voxel per CV fold (empty if nsplits=0).
+    fold_corrs : array_like, shape (M, n_groups)
+        Correlations per voxel per CV fold (empty if n_groups=0).
     bootstrap_corrs : array_like, shape (A, M, nboots)
         Correlations for each alpha, voxel, and bootstrap iteration (empty if optimize_alpha=False).
     """
@@ -92,14 +97,10 @@ def ridge_cv(stim, resp, alphas, story_ids, nboots=25, nsplits=5,
     unique_stories = np.unique(story_ids)
     n_stories = len(unique_stories)
     
-    if logger:
-        logger.info(f"Number of unique stories: {n_stories}")
-    
     # Handle alpha optimization
     bootstrap_corrs = None
     if optimize_alpha:
-        if logger:
-            logger.info(f"Starting LOPO alpha optimization with {nboots} iterations...")
+        logger.info("Starting LOPO alpha optimization with %d iterations...", nboots) if logger else None
         if nboots > n_stories and not with_replacement:
             raise ValueError(f"nboots ({nboots}) cannot exceed number of stories ({n_stories}) without replacement.")
         
@@ -109,91 +110,52 @@ def ridge_cv(stim, resp, alphas, story_ids, nboots=25, nsplits=5,
                               np.random.permutation(unique_stories)[:min(nboots, n_stories)])
         
         def _bootstrap_iter(val_participant, iteration, total):
-            """Bootstrap iteration - returns correlations and statistics."""
+            logger.info(f"Bootstrap iteration {iteration+1}/{total} for story {val_participant}...") if logger else None
             heldinds = story_ids == val_participant
             notheldinds = ~heldinds
             RRstim, PRstim = stim[notheldinds, :], stim[heldinds, :]
             RRresp, PRresp = resp[notheldinds, :], resp[heldinds, :]
-            
-            corrs = ridge_corr(RRstim, PRstim, RRresp, PRresp, alphas,
+            return ridge_corr(RRstim, PRstim, RRresp, PRresp, alphas,
                              corrmin=corrmin, singcutoff=singcutoff,
-                             normalpha=normalpha, use_corr=use_corr, logger=None)
-            
-            # Return correlations and stats for logging
-            return corrs, {
-                'iteration': iteration,
-                'total': total,
-                'story': val_participant,
-                'train_shape': RRstim.shape,
-                'test_shape': PRstim.shape,
-                'mean_corr': np.nanmean(corrs),
-                'max_corr': np.nanmax(corrs)
-            }
+                             normalpha=normalpha, use_corr=use_corr, logger=logger)
         
-        # Use verbose for progress tracking
-        bootstrap_results = Parallel(n_jobs=n_jobs, verbose=10 if logger else 0)(
+        bootstrap_results = Parallel(n_jobs=n_jobs)(
             delayed(_bootstrap_iter)(val_participant, i, nboots)
             for i, val_participant in enumerate(participant_choices)
         )
         
-        # Extract correlations and log statistics
-        bootstrap_corrs_list = []
-        for corrs, stats in bootstrap_results:
-            bootstrap_corrs_list.append(corrs)
-            if logger:
-                logger.info(f"Bootstrap {stats['iteration']+1}/{stats['total']} (story {stats['story']}): "
-                           f"Train={stats['train_shape']}, Test={stats['test_shape']}, "
-                           f"Mean corr={stats['mean_corr']:.5f}, Max corr={stats['max_corr']:.5f}")
-        
-        bootstrap_corrs = np.dstack(bootstrap_corrs_list) if nboots > 0 else None
-        
+        bootstrap_corrs = np.dstack(bootstrap_results) if nboots > 0 else None
         if bootstrap_corrs is not None:
             meanbootcorrs = bootstrap_corrs.mean(2)
             bestalphainds = np.argmax(meanbootcorrs, 0)
             valphas = alphas[bestalphainds]
-            
-            if logger:
-                for ua in np.unique(valphas):
-                    sel_vox = np.nonzero(valphas == ua)[0]
-                    mean_corr = np.mean(meanbootcorrs[bestalphainds[sel_vox], sel_vox]) if len(sel_vox) > 0 else 0
-                    logger.info(f"Alpha={ua:.3f} selected for {len(sel_vox)} voxels (mean corr={mean_corr:.5f})")
+            for ua in np.unique(valphas):
+                sel_vox = np.nonzero(valphas == ua)[0]
+                mean_corr = np.mean(meanbootcorrs[bestalphainds[sel_vox], sel_vox]) if len(sel_vox) > 0 else 0
+                logger.info("Alpha=%0.3f selected for %d voxels (mean corr=%0.5f)", ua, len(sel_vox), mean_corr) if logger else None
     else:
         if valphas is None:
             raise ValueError("valphas must be provided when optimize_alpha=False.")
         if not isinstance(valphas, np.ndarray) or valphas.shape != (resp.shape[1],):
             raise ValueError(f"valphas must be a numpy array of shape ({resp.shape[1]},).")
-        if logger:
-            logger.info("Using provided valphas for cross-validation...")
+        logger.info("Using provided valphas for cross-validation...") if logger else None
     
     # Perform K-group cross-validation
     fold_corrs = []
     if nsplits > 0:
-        if logger:
-            logger.info(f"Performing {nsplits}-group cross-validation...")
-        nsplits = min(nsplits, n_stories)  # Ensure nsplits does not exceed n_stories
+        logger.info("Performing %d-group cross-validation...", nsplits) if logger else None
+        nsplits = min(nsplits, n_stories)  # Ensure n_groups does not exceed n_stories
         gkf = GroupKFold(n_splits=nsplits)
         
         def _cv_iter(fold_idx, train_idx, test_idx):
-            """CV iteration - returns correlations and statistics."""
+            logger.info(f"Processing CV fold {fold_idx+1}/{nsplits}...") if logger else None
             Rstim, Pstim = stim[train_idx], stim[test_idx]
             Rresp, Presp = resp[train_idx], resp[test_idx]
-            
-            corrs = ridge_corr_pred(Rstim, Pstim, Rresp, Presp, valphas,
+            return ridge_corr_pred(Rstim, Pstim, Rresp, Presp, valphas,
                                   normalpha=normalpha, singcutoff=singcutoff,
-                                  use_corr=use_corr, logger=None)
-            
-            # Return correlations and stats for logging
-            return corrs, {
-                'fold': fold_idx,
-                'total': nsplits,
-                'train_shape': Rstim.shape,
-                'test_shape': Pstim.shape,
-                'mean_corr': np.nanmean(corrs),
-                'max_corr': np.nanmax(corrs)
-            }
+                                  use_corr=use_corr, logger=logger)
         
-        # Use verbose for progress tracking
-        fold_results = Parallel(n_jobs=n_jobs, verbose=10 if logger else 0)(
+        fold_results = Parallel(n_jobs=n_jobs)(
             delayed(_cv_iter)(fold_idx, train_idx, test_idx)
             for fold_idx, (train_idx, test_idx) in enumerate(gkf.split(stim, resp, groups=story_ids))
         )
