@@ -77,6 +77,12 @@ def parse_arguments():
     parser.add_argument("--num_jobs", type=int, default=1, help="Number of parallel jobs (-1 for all cores)")
     parser.add_argument("--with_replacement", action="store_true", help="Sample with replacement in bootstrap")
     parser.add_argument("--optimize_alpha", action="store_true", help="Optimize alpha using bootstrapping")
+    parser.add_argument("--alpha_min", type=float, default=-2,
+                           help="Minimum exponent for alpha values in logspace (default: -3).")
+    parser.add_argument("--alpha_max", type=float, default=3,
+                           help="Maximum exponent for alpha values in logspace (default: 3).")
+    parser.add_argument("--num_alphas", type=int, default=10,
+                           help="Number of alpha values to test in logspace (default: 10).")
     parser.add_argument("--json_path", type=str,
                         default="derivative/common_stories_25_for_9_participants.json",
                         help="Path to JSON file with story IDs")
@@ -140,7 +146,7 @@ def main():
     voxel_indices = np.where(resampled_mask_data.flatten() > 0)[0]
     
     # Alphas (shared)
-    alphas = np.logspace(0, 3, 10)
+    alphas = np.logspace(args.alpha_min, args.alpha_max, args.num_alphas)
     
     for subject in subjects:
         logging.info(f"Processing subject: {subject}")
