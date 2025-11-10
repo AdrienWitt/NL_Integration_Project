@@ -146,7 +146,7 @@ def main():
         logging.info(f"Processing subject: {subject}")
         
         # Load and split data
-        stories = load_session_data(subject, args.json_path)[0:5]
+        stories = load_session_data(subject, args.json_path)
         
         feature = "eng1000"
         downsampled_feat = get_feature_space(feature, stories)
