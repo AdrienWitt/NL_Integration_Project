@@ -140,7 +140,7 @@ def main():
     voxel_indices = np.where(resampled_mask_data.flatten() > 0)[0]
     
     # Alphas (shared)
-    alphas = np.logspace(1, 3, 10)
+    alphas = np.logspace(0, 3, 10)
     
     for subject in subjects:
         logging.info(f"Processing subject: {subject}")
