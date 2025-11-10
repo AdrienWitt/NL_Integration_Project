@@ -17,23 +17,29 @@ def apply_zscore_and_hrf(stories, downsampled_feat, trim, ndelays):
 	"""Get (z-scored and delayed) stimulus for train and test stories.
 	The stimulus matrix is delayed (typically by 2,4,6,8 secs) to estimate the
 	hemodynamic response function with a Finite Impulse Response model.
-
 	Args:
 		stories: List of stimuli stories.
-
 	Variables:
 		downsampled_feat (dict): Downsampled feature vectors for all stories.
 		trim: Trim downsampled stimulus matrix.
 		delays: List of delays for Finite Impulse Response (FIR) model.
-
 	Returns:
 		delstim: <float32>[TRs, features * ndelays]
+		ids_stories: <int>[TRs] - numeric story ID for each TR
 	"""
 	stim = [zscore(downsampled_feat[s][5+trim:-trim]) for s in stories]
+	
+	# Create array of story IDs (one ID per TR)
+	ids_stories = np.concatenate([
+		np.full(len(zscore(downsampled_feat[s][5+trim:-trim])), i) 
+		for i, s in enumerate(stories)
+	])
+	
 	stim = np.vstack(stim)
 	delays = range(1, ndelays+1)
 	delstim = make_delayed(stim, delays)
-	return delstim
+	
+	return delstim, ids_stories
 
 
 # def preprocess_features(stories, text_feat, audio_feat, modality, trim, ndelays, use_pca=False, explained_variance=0.90):
@@ -255,7 +261,6 @@ def load_embeddings(folder_path):
             file_path = os.path.join(folder_path, file_name)
 
             with h5py.File(file_path, "r") as h5f:
-                # Assuming the dataset is stored under a key; update this if necessary
                 dataset_name = list(h5f.keys())[0]  # Get the first key (modify if needed)
                 embeddings = np.array(h5f[dataset_name])  # Convert to NumPy array
                 embeddings_dict[story_name] = embeddings

@@ -11,6 +11,7 @@ ENV/
 
 # Data directories
 ds003020/
+
 model_output/
 stimuli_16k/
 stimuli_test/

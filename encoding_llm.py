@@ -12,6 +12,11 @@ from nilearn import datasets, image
 from nilearn.image import resample_to_img
 import nibabel as nib
 
+
+from encoding.feature_spaces import get_feature_space
+from encoding.encoding_utils import apply_zscore_and_hrf
+
+
 # Default arguments for GUI debugging
 DEFAULT_ARGS = {
     "subjects": "UTS01",
@@ -103,16 +108,17 @@ def main():
     setup_logging()
     logging.info(f"Arguments: {vars(args)}")
     
-    # Load features (shared across subjects)
-    if args.not_use_attention:
-        text_feat = load_embeddings("features/gpt2_attention")
-    else:
-        text_feat = load_embeddings("features/gpt2")
+    # # Load features (shared across subjects)
+    # if args.not_use_attention:
+    #     text_feat = load_embeddings("features/gpt2_attention")
+    # else:
+    #     text_feat = load_embeddings("features/gpt2")
     
-    if args.use_opensmile:
-        audio_feat = load_embeddings("features/opensmile")
-    else:
-        audio_feat = load_embeddings("features/wav2vec")
+    # if args.use_opensmile:
+    #     audio_feat = load_embeddings("features/opensmile")
+    # else:
+    #     audio_feat = load_embeddings("features/wav2vec")
+    
     
     # Parse subjects
     if args.subjects == "all":
@@ -140,13 +146,17 @@ def main():
         logging.info(f"Processing subject: {subject}")
         
         # Load and split data
-        stories = load_session_data(subject, args.json_path)
+        stories = load_session_data(subject, args.json_path)[0:5]
         
-        # Preprocess features
-        delRstim, ids_stories = preprocess_features(
-            stories, text_feat, audio_feat, args.modality,
-            args.trim, args.ndelays, args.use_pca, args.explained_variance
-        )
+        feature = "eng1000"
+        downsampled_feat = get_feature_space(feature, stories)
+        delRstim, ids_stories = apply_zscore_and_hrf(stories, downsampled_feat, 5, 4)
+            
+        # # Preprocess features
+        # delRstim, ids_stories = preprocess_features(
+        #     stories, text_feat, audio_feat, args.modality,
+        #     args.trim, args.ndelays, args.use_pca, args.explained_variance
+        # )
         
         logging.info(f"delRstim shape: {delRstim.shape}")
         
