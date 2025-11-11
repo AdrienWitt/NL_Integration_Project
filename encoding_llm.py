@@ -32,8 +32,8 @@ DEFAULT_ARGS = {
     "use_pca": True,
     "explained_variance": 0.90,
     "optimize_alpha": True,
-    "not_use_attention": True,
-    "use_opensmile": False,
+    "not_use_attention": False,
+    "use_opensmile": True,
     "corrmin": 0.0,
     "normalize_stim": False,
     "normalize_resp": True,
@@ -83,6 +83,7 @@ def parse_arguments():
                            help="Maximum exponent for alpha values in logspace (default: 3).")
     parser.add_argument("--num_alphas", type=int, default=10,
                            help="Number of alpha values to test in logspace (default: 10).")
+    parser.add_argument("--concat_subjects", action="store_true", help="Concatenate all subjects' data and run one joint analysis")
     parser.add_argument("--json_path", type=str,
                         default="derivative/common_stories_25_for_9_participants.json",
                         help="Path to JSON file with story IDs")
@@ -108,24 +109,23 @@ def save_results(save_location, results):
         np.save(f"{save_location}/{name}", data)
 
 def main():
-    """Run the encoding model."""
+    """Run the encoding model (per subject or concatenated)."""
     args = parse_arguments()
     start_time = time.time()
     setup_logging()
     logging.info(f"Arguments: {vars(args)}")
-    
+
     # Load features (shared across subjects)
     if args.not_use_attention:
         text_feat = load_embeddings("features/gpt2_attention")
     else:
         text_feat = load_embeddings("features/gpt2")
-    
+
     if args.use_opensmile:
         audio_feat = load_embeddings("features/opensmile")
     else:
         audio_feat = load_embeddings("features/wav2vec")
-    
-    
+
     # Parse subjects
     if args.subjects == "all":
         with open(args.json_path, "r") as f:
@@ -135,7 +135,7 @@ def main():
     else:
         subjects = args.subjects.split(",")
         logging.info(f"Processing subjects: {subjects}")
-    
+
     # Load shared mask and example data (outside loop for efficiency)
     icbm = datasets.fetch_icbm152_2009()
     mask_path = icbm['mask']
@@ -144,56 +144,71 @@ def main():
     resampled_mask = resample_to_img(mask, exemple_data, interpolation='nearest')
     resampled_mask_data = resampled_mask.get_fdata()
     voxel_indices = np.where(resampled_mask_data.flatten() > 0)[0]
-    
-    # Alphas (shared)
+
+    # Define alphas (grid to search)
     alphas = np.logspace(args.alpha_min, args.alpha_max, args.num_alphas)
-    
-    for subject in subjects:
-        logging.info(f"Processing subject: {subject}")
-        
-        # Load and split data
-        stories = load_session_data(subject, args.json_path)
-                    
-        # Preprocess features
-        delRstim, ids_stories = preprocess_features(
-            stories, text_feat, audio_feat, args.modality,
-            args.trim, args.ndelays, args.use_pca, args.explained_variance
-        )
-        
-        logging.info(f"delRstim shape: {delRstim.shape}")
-        
-        zRresp = get_response_mask(stories, f"sub-{subject}", voxel_indices)
-        
-        logging.info(f"zRresp shape: {zRresp.shape}")
-        
-        # Setup save location
-        save_location = join(REPO_DIR, "results", args.modality, subject)
-        logging.info(f"Saving results to: {save_location}")
-        
-        # Handle precomputed valphas
+
+    # nboots / nsplits defaults if None (keep behavior from your script)
+    nboots = args.nboots if args.nboots is not None else None
+    nsplits = args.nsplits if args.nsplits is not None else None
+
+    # ===========================
+    # CASE 1: CONCATENATE SUBJECTS
+    # ===========================
+    if args.concat_subjects:
+        logging.info("Concatenating all subjects for a joint analysis...")
+
+        all_stims = []
+        all_resps = []
+        all_story_ids = []
+
+        for subject in subjects:
+            logging.info(f"Loading and processing data for {subject}")
+            stories = load_session_data(subject, args.json_path)
+
+            delRstim, ids_stories = preprocess_features(
+                stories, text_feat, audio_feat, args.modality,
+                args.trim, args.ndelays, args.use_pca, args.explained_variance
+            )
+            logging.info(f"Subject {subject} stim shape: {delRstim.shape}")
+
+            zRresp = get_response_mask(stories, f"sub-{subject}", voxel_indices)
+            logging.info(f"Subject {subject} resp shape: {zRresp.shape}")
+
+            all_stims.append(delRstim)
+            all_resps.append(zRresp)
+            all_story_ids.extend(ids_stories)
+
+        # Concatenate along time axis (axis=0)
+        delRstim_all = np.concatenate(all_stims, axis=0)
+        zRresp_all = np.concatenate(all_resps, axis=0)
+        story_ids_all = np.array(all_story_ids)
+
+        logging.info(f"Concatenated stim shape: {delRstim_all.shape}, resp shape: {zRresp_all.shape}")
+
+        # Handle precomputed valphas for concatenated run if optimize_alpha is False
         if not args.optimize_alpha:
-            valphas_path = join(REPO_DIR, "results", "text_audio", subject, "valphas.npy")
+            valphas_path = join(REPO_DIR, "results", "text_audio", "concatenated_subjects", "valphas.npy")
             if not os.path.exists(valphas_path):
-                raise ValueError(f"Must provide a valid valphas path for subject {subject} when --optimize_alpha is False.")
-            valphas = np.load(valphas_path)
-            logging.info(f"Using precomputed valphas at {valphas_path}")
+                raise ValueError(
+                    f"Must provide a valid valphas path for concatenated subjects when --optimize_alpha is False. "
+                    f"Expected at: {valphas_path}"
+                )
+            valphas_concat = np.load(valphas_path)
+            logging.info(f"Using precomputed concatenated valphas at {valphas_path}")
         else:
-            valphas = None
-        
-        # Set nboots and nsplits based on arguments or default to number of participants
-        nboots = args.nboots if args.nboots is not None else len(ids_stories)
-        nsplits = args.nsplits if args.nsplits is not None else len(ids_stories)
-        
-        # Perform ridge regression with LOO CV
-        _, corrs, valphas, fold_corrs, _ = ridge_cv(
-            stim=delRstim,
-            resp=zRresp,
+            valphas_concat = None
+
+        # Run ridge CV on concatenated data
+        _, corrs, valphas_used, fold_corrs, _ = ridge_cv(
+            stim=delRstim_all,
+            resp=zRresp_all,
             alphas=alphas,
-            story_ids=ids_stories,
-            nboots=nboots,
+            story_ids=story_ids_all,
+            nboots=nboots if nboots is not None else args.nboots,
             corrmin=args.corrmin,
-            nsplits=nsplits,
-            singcutoff=1e-10,
+            nsplits=nsplits if nsplits is not None else args.nsplits,
+            singcutoff=args.singcutoff,
             normalpha=args.normalpha,
             use_corr=args.use_corr,
             return_wt=args.return_wt,
@@ -202,23 +217,90 @@ def main():
             n_jobs=args.num_jobs,
             with_replacement=args.with_replacement,
             optimize_alpha=args.optimize_alpha,
-            valphas=valphas,
+            valphas=valphas_concat,
             logger=logging
         )
-        
-        # Save results
-        results = {
-            "corrs": corrs,
-            "valphas": valphas,
-            "fold_corrs": fold_corrs,
-        }
+
+        # Save concatenated results
+        save_location = join(REPO_DIR, "results", args.modality, "concatenated_subjects")
+        results = {"corrs": corrs, "valphas": valphas_used, "fold_corrs": fold_corrs}
         save_results(save_location, results)
-        
-        r2_score = sum(corrs * np.abs(corrs))
-        logging.info(f"Total R2 score for {subject}: {r2_score}")
-    
+        logging.info(f"Saved concatenated results to: {save_location}")
+
+        # Optional summary metric
+        total_r2 = np.sum(corrs * np.abs(corrs))
+        logging.info(f"Total R2 (concatenated subjects): {total_r2}")
+
+    # ===========================
+    # CASE 2: PER-SUBJECT LOOP
+    # ===========================
+    else:
+        for subject in subjects:
+            logging.info(f"Processing subject: {subject}")
+
+            # Load and split data
+            stories = load_session_data(subject, args.json_path)
+
+            delRstim, ids_stories = preprocess_features(
+                stories, text_feat, audio_feat, args.modality,
+                args.trim, args.ndelays, args.use_pca, args.explained_variance
+            )
+            logging.info(f"delRstim shape: {delRstim.shape}")
+
+            zRresp = get_response_mask(stories, f"sub-{subject}", voxel_indices)
+            logging.info(f"zRresp shape: {zRresp.shape}")
+
+            # Setup save location for this subject
+            save_location = join(REPO_DIR, "results", args.modality, subject)
+            logging.info(f"Saving results to: {save_location}")
+
+            # Handle precomputed valphas per subject (if optimize_alpha is False)
+            if not args.optimize_alpha:
+                valphas_path = join(REPO_DIR, "results", "text_audio", subject, "valphas.npy")
+                if not os.path.exists(valphas_path):
+                    raise ValueError(f"Must provide a valid valphas path for subject {subject} when --optimize_alpha is False. Expected at: {valphas_path}")
+                valphas_subject = np.load(valphas_path)
+                logging.info(f"Using precomputed valphas for {subject} at {valphas_path}")
+            else:
+                valphas_subject = None
+
+            # Run ridge CV for subject
+            _, corrs, valphas_used, fold_corrs, _ = ridge_cv(
+                stim=delRstim,
+                resp=zRresp,
+                alphas=alphas,
+                story_ids=ids_stories,
+                nboots=nboots if nboots is not None else args.nboots,
+                corrmin=args.corrmin,
+                nsplits=nsplits if nsplits is not None else args.nsplits,
+                singcutoff=args.singcutoff,
+                normalpha=args.normalpha,
+                use_corr=args.use_corr,
+                return_wt=args.return_wt,
+                normalize_stim=args.normalize_stim,
+                normalize_resp=args.normalize_resp,
+                n_jobs=args.num_jobs,
+                with_replacement=args.with_replacement,
+                optimize_alpha=args.optimize_alpha,
+                valphas=valphas_subject,
+                logger=logging
+            )
+
+            # Save subject results
+            results = {
+                "corrs": corrs,
+                "valphas": valphas_used,
+                "fold_corrs": fold_corrs,
+            }
+            save_results(save_location, results)
+
+            r2_score = np.sum(corrs * np.abs(corrs))
+            logging.info(f"Total R2 score for {subject}: {r2_score}")
+
+    # Final summary
     total_time = time.time() - start_time
     logging.info(f"Total analysis completed in {total_time:.2f} seconds ({total_time / 60:.2f} minutes)")
+
 
 if __name__ == "__main__":
     main()

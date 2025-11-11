@@ -101,7 +101,7 @@ def main():
 
     # Save results - EXACTLY like Wav2Vec
     for story in stories:
-        output_file = os.path.join(output_dir, f"{story}_embeddings.hf5")
+        output_file = os.path.join(output_dir, f"{story}.hf5")
         with h5py.File(output_file, 'w') as f:
             f.create_dataset('data', data=vectors[story])
         logging.info(f"Saved TR-aligned embeddings for {story} with shape {vectors[story].shape}")
