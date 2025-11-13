@@ -66,7 +66,7 @@ def get_gpt2_attention_vectors(stories, main_dir, context_window=10):
                 embedding = np.zeros(768)
                 print(f"Replaced WORD '{words[i]}' with empty embedding")
             else:
-                embedding = get_gpt2_attention_embeddings(context_text)  # ALL context!
+                embedding = get_gpt2_multi_attention_embeddings(context_text)  # ALL context!
             
             story_vectors.append(embedding)
         
@@ -74,6 +74,43 @@ def get_gpt2_attention_vectors(stories, main_dir, context_window=10):
         print(f"Done processing attention embeddings for story: {story}")
 
     return vectors
+
+
+def get_gpt2_multi_attention_embeddings(context_text):
+    """NEW: Multi-head attention-weighted GPT-2 embedding (current word = query)."""
+    inputs = tokenizer(context_text, return_tensors="pt")
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+   
+    with torch.no_grad():
+        outputs = model(
+            **inputs,
+            output_hidden_states=True,
+            output_attentions=True
+        )
+   
+    # [1, seq_len, 768]
+    last_layer_states = outputs.hidden_states[-1]  # [1, seq, 768]
+    seq_len = last_layer_states.size(1)
+    
+    # [1, num_heads, seq, seq] → [num_heads, seq, seq]
+    attn_maps = outputs.attentions[-1]      # last layer attention
+    attn_maps = attn_maps.squeeze(0)        # [num_heads, seq, seq]
+    
+    # Extract attention from **current (last) token** to all previous tokens
+    # attn_to_current: [num_heads, seq] — how much each position attends TO the last token
+    attn_to_current = attn_maps[:, -1, :]   # [num_heads, seq]
+    
+    # Values: all token embeddings in the sequence
+    values = last_layer_states.squeeze(0)   # [seq, 768]
+    
+    # Compute per-head context vector: sum over source positions
+    # (num_heads, seq) @ (seq, 768) → (num_heads, 768)
+    head_contexts = torch.matmul(attn_to_current, values)  # [num_heads, 768]
+    
+    # Average over heads → final embedding
+    weighted_embedding = head_contexts.mean(dim=0)  # [768]
+    
+    return weighted_embedding.cpu().numpy().astype(np.float32)
 
 def downsample_gpt2_vectors(stories, word_vectors, wordseqs):
     """Get Lanczos downsampled GPT-2 vectors for specified stories."""
@@ -87,7 +124,7 @@ def downsample_gpt2_vectors(stories, word_vectors, wordseqs):
 def main():
     # Define paths
     main_dir = r"C:\Users\adywi\OneDrive - unige.ch\Documents\Sarcasm_experiment\NL_Project"
-    output_dir = join(main_dir, "features", "gpt2_attention")
+    output_dir = join(main_dir, "features", "gpt2_multi_attention")
     os.makedirs(output_dir, exist_ok=True)
 
     # Get all stories from TextGrids directory

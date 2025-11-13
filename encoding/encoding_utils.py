@@ -41,8 +41,7 @@ def apply_zscore_and_hrf(stories, downsampled_feat, trim, ndelays):
 	
 	return delstim, ids_stories
 
-
-def preprocess_features(stories, text_feat, audio_feat, modality, trim, ndelays, use_pca=False, explained_variance=0.90):
+def preprocess_features(stories, text_feat, audio_feat, modality, trim, ndelays, use_pca=False, n_comp=0.90):
     """Preprocess features: trim, z-score, PCA, and HRF for a single list of stories.
     
     IMPORTANT: Z-scoring and PCA are applied globally across all stories,
@@ -56,7 +55,7 @@ def preprocess_features(stories, text_feat, audio_feat, modality, trim, ndelays,
         trim (int): Number of samples to trim from start/end.
         ndelays (int): Number of delays for HRF.
         use_pca (bool): If True, apply PCA to reduce dimensionality.
-        explained_variance (float): Target explained variance for PCA (e.g., 0.90).
+        n_comp (float): Target explained variance for PCA (e.g., 0.90).
     
     Returns:
         tuple: (delRstim, story_ids)
@@ -97,18 +96,18 @@ def preprocess_features(stories, text_feat, audio_feat, modality, trim, ndelays,
     
     # ========== STEP 3: Global PCA (if requested) ==========
     if use_pca:
-        print(f"Applying PCA to text features with explained variance threshold: {explained_variance}")
-        pca_text = PCA(n_components=explained_variance)
+        print(f"Applying PCA to text features with explained variance threshold: {n_comp}")
+        pca_text = PCA(n_components=n_comp)
         pca_text.fit(text_concat_z)
         n_components_text = pca_text.n_components_
-        print(f"Text features: {n_components_text} components selected for {explained_variance:.2f} explained variance")
+        print(f"Text features: {n_components_text} components selected for {n_comp:.2f} components or explained variance")
         text_concat_z = pca_text.transform(text_concat_z)
         
-        print(f"Applying PCA to audio features with explained variance threshold: {explained_variance}")
-        pca_audio = PCA(n_components=explained_variance)
+        print(f"Applying PCA to audio features with explained variance threshold: {n_comp}")
+        pca_audio = PCA(n_components=n_comp)
         pca_audio.fit(audio_concat_z)
         n_components_audio = pca_audio.n_components_
-        print(f"Audio features: {n_components_audio} components selected for {explained_variance:.2f} explained variance")
+        print(f"Audio features: {n_components_audio} components selected for {n_comp:.2f} components or explained variance")
         audio_concat_z = pca_audio.transform(audio_concat_z)
     
     # ========== STEP 4: Split back into per-story arrays (removed, using story_ids instead) ==========

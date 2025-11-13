@@ -62,8 +62,8 @@ if __name__ == "__main__":
     # Define base paths
     bids_dir = "E:/NL/ds003020"
     source_base_dir = os.path.join(bids_dir, "derivative", "preprocessed_data")
-    dest_base_dir = os.path.join(bids_dir, "derivative", "to_send")
-    json_path = r"C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\NL_Project\derivative\common_stories_27.json"
+    dest_base_dir = r"D:\NL_Integration_Project\derivative\preprocessed_data"
+    json_path = r"D:\NL_Integration_Project\derivative\common_stories_83_for_3_participants.json"
     
     # Load the JSON data once (contains all subjects)
     try:
