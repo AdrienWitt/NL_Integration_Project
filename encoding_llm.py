@@ -25,7 +25,7 @@ DEFAULT_ARGS = {
     "use_corr": True,
     "single_alpha": False,  # Note: Not used in ridge_cv but kept for compatibility
     "use_pca": True,
-    "n_comp": 20,
+    "n_comps": 20,
     "optimize_alpha": True,
     "not_use_attention": False,
     "use_opensmile": True,
@@ -55,7 +55,7 @@ def parse_arguments():
     parser.add_argument("--trim", type=int, default=5, help="Number of samples to trim from start/end")
     parser.add_argument("--ndelays", type=int, default=4, help="Number of delays for HRF")
     parser.add_argument("--use_pca", action="store_true", help="Apply PCA to reduce dimensionality")
-    parser.add_argument("--n_comp", type=float, default=0.90, help="Target explained variance for PCA")
+    parser.add_argument("--n_comps", type=float, default=0.90, help="Target explained variance for PCA")
     parser.add_argument("--use_corr", action="store_true", help="Use correlation instead of R-squared")
     parser.add_argument("--return_wt", action="store_true", help="Return regression weights")
     parser.add_argument("--nboots", type=int, default=25, help="Number of bootstrap iterations")
@@ -175,7 +175,7 @@ def main():
 
             delRstim, ids_stories = preprocess_features(
                 stories, text_feat, audio_feat, args.modality,
-                args.trim, args.ndelays, args.use_pca, args.n_comp
+                args.trim, args.ndelays, args.use_pca, args.n_comps
             )
             logging.info(f"delRstim shape: {delRstim.shape}")
 
@@ -247,7 +247,7 @@ def main():
 
             delRstim, ids_stories = preprocess_features(
                 stories, text_feat, audio_feat, args.modality,
-                args.trim, args.ndelays, args.use_pca, args.n_comp
+                args.trim, args.ndelays, args.use_pca, args.n_comps
             )
             logging.info(f"Subject {subject} stim shape: {delRstim.shape}")
 
