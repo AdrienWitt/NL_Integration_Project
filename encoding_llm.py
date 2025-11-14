@@ -110,6 +110,9 @@ def main():
     setup_logging()
     logging.info(f"Arguments: {vars(args)}")
     
+    text_feat = None
+    audio_feat = None
+    
     text_model_name = "gpt2_simple" if args.not_use_attention else "gpt2_attention"
     audio_model_name = "opensmile" if args.use_opensmile else "wav2vec"
     
