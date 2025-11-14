@@ -109,24 +109,17 @@ def main():
     start_time = time.time()
     setup_logging()
     logging.info(f"Arguments: {vars(args)}")
-    
-    text_feat = None
-    audio_feat = None
-    
+        
     text_model_name = "gpt2_simple" if args.not_use_attention else "gpt2_attention"
     audio_model_name = "opensmile" if args.use_opensmile else "wav2vec"
     
-    # Load text features
-    if args.modality in ["text", "text_audio"]:
-        text_feat_path = f"features/{'gpt2_attention' if args.not_use_attention else 'gpt2'}"
-        logging.info(f"Loading text features from: {text_feat_path}")
-        text_feat = load_embeddings(text_feat_path)
-    
-    # Load audio features
-    if args.modality in ["audio", "text_audio"]:
-        audio_feat_path = f"features/{audio_model_name}"
-        logging.info(f"Loading audio features from: {audio_feat_path}")
-        audio_feat = load_embeddings(audio_feat_path)
+    text_feat_path = f"features/{'gpt2_attention' if args.not_use_attention else 'gpt2'}"
+    logging.info(f"Loading text features from: {text_feat_path}")
+    text_feat = load_embeddings(text_feat_path)
+
+    audio_feat_path = f"features/{audio_model_name}"
+    logging.info(f"Loading audio features from: {audio_feat_path}")
+    audio_feat = load_embeddings(audio_feat_path)
     
     if args.modality == "text":
         feature_str = text_model_name
