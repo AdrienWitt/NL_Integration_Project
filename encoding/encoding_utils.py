@@ -96,6 +96,7 @@ def preprocess_features(stories, text_feat, audio_feat, modality, trim, ndelays,
     
     # ========== STEP 3: Global PCA (if requested) ==========
     if use_pca:
+        n_comps = int(n_comps) if n_comps > 1 else n_comps
         print(f"Applying PCA to text features with explained variance threshold: {n_comps}")
         pca_text = PCA(n_components=n_comps)
         pca_text.fit(text_concat_z)

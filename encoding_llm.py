@@ -158,9 +158,6 @@ def main():
     nboots = args.nboots if args.nboots is not None else None
     nsplits = args.nsplits if args.nsplits is not None else None
 
-    # ===========================
-    # CASE 1: CONCATENATE SUBJECTS
-    # ===========================
     if not args.concat_subjects:
         
         for subject in subjects:
@@ -226,9 +223,6 @@ def main():
             r2_score = np.sum(corrs * np.abs(corrs))
             logging.info(f"Total R2 score for {subject}: {r2_score}")
         
-    # ===========================
-    # CASE 2: PER-SUBJECT LOOP
-    # ===========================
     else:
         
         logging.info("Concatenating all subjects for a joint analysis...")
