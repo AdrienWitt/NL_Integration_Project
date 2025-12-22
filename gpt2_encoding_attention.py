@@ -134,7 +134,7 @@ def main():
 
     # Get word sequences and GPT-2 attention embeddings
     wordseqs = get_story_wordseqs(stories, main_dir)
-    vectors = get_gpt2_attention_vectors(stories, main_dir, context_window=10)
+    vectors = get_gpt2_attention_vectors(stories, main_dir, context_window=5)
     
     # Downsample vectors to TR times
     downsampled_vectors = downsample_gpt2_vectors(stories, vectors, wordseqs)

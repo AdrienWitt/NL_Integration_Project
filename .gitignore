@@ -20,8 +20,11 @@ Huth/
 trash/
 finetuning_results/
 derivative/preprocessed_data/
+derivative/preprocessed_data_old/
+
 derivative/masks/
 derivative/exemple_data/
+results/
 
 results/
 

@@ -23,7 +23,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 if script_dir not in sys.path:
     sys.path.append(script_dir)
 
-zs = lambda v: (v-v.mean(0))/v.std(0)  # z-score function
+zs = lambda v: (v-v.mean(0))/(v.std(0) + 1e-8)  # z-score function
 
 def ridge_cv(stim, resp, alphas, story_ids, nboots=50, nsplits=50,
                     corrmin=0, singcutoff=1e-10, normalpha=False, use_corr=True,

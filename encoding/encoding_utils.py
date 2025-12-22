@@ -172,6 +172,26 @@ def get_response_mask(stories, subject, voxel_indices):
     resp = np.array(resp)
     return resp
 
+def get_response_surf(stories, subject):
+    fmri_dir = os.path.join(DATA_DIR, subject)
+    resp = []
+
+    for story in stories:
+        hdf5_path = os.path.join(fmri_dir, "surf", f"{story}.h5")
+        if not os.path.exists(hdf5_path):
+            raise FileNotFoundError(f"HDF5 file not found: {hdf5_path}")
+        
+        with h5py.File(hdf5_path, "r") as hf:
+            data = hf["data"][:]  # shape: (time, voxels)
+            print(data.shape)
+            resp.extend(data)
+        
+        print(f"Loaded and masked fMRI data: {hdf5_path}")
+
+    resp = np.array(resp)
+    return resp
+
+
 def load_embeddings(folder_path):
     embeddings_dict = {}
 

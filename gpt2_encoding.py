@@ -113,7 +113,7 @@ def main():
 
     # Save results
     for story in stories:
-        output_file = join(output_dir, f"{story}_gpt2_embeddings.hf5")
+        output_file = join(output_dir, f"{story}.hf5")
         with h5py.File(output_file, 'w') as f:
             f.create_dataset('data', data=downsampled_vectors[story])
         logging.info(f"Saved embeddings for {story}")
