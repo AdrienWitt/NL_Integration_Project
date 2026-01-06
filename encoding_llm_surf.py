@@ -213,6 +213,55 @@ def main():
         r2_score = np.sum(corrs * np.abs(corrs))
         logging.info(f"Total R2 score for {subject}: {r2_score}")
         
+    # Cross-subject summary
+    logging.info("\n=== Cross-subject R² summary ===")
+    
+    all_mean_r2_all = []
+    all_mean_r2_pos = []
+    all_min_r2 = []
+    all_max_r2 = []
+    
+    header = "Subject\t\tMean R² (all)\tMean R² (pos)\tMin R²\tMax R²"
+    print_str = header + "\n" + "-" * 70 + "\n"
+    
+    for subject in subjects:
+        corrs_path = join(base_result_dir, subject, "corrs.npy")
+        if not os.path.exists(corrs_path):
+            logging.warning(f"No corrs.npy found for {subject} – skipping in summary")
+            continue
+            
+        corrs = np.load(corrs_path)
+        r2_all = corrs ** 2
+        pos_corrs = corrs[corrs > 0]
+        r2_pos = pos_corrs ** 2 if len(pos_corrs) > 0 else np.array([])
+        
+        mean_r2_all = np.mean(r2_all) if len(r2_all) > 0 else 0.0
+        mean_r2_pos = np.mean(r2_pos) if len(r2_pos) > 0 else 0.0
+        min_r2 = np.min(r2_all) if len(r2_all) > 0 else 0.0
+        max_r2 = np.max(r2_all) if len(r2_all) > 0 else 0.0
+        
+        all_mean_r2_all.append(mean_r2_all)
+        all_mean_r2_pos.append(mean_r2_pos)
+        all_min_r2.append(min_r2)
+        all_max_r2.append(max_r2)
+        
+        print_str += (f"{subject.ljust(12)}\t"
+                      f"{mean_r2_all:.6f}\t\t"
+                      f"{mean_r2_pos:.6f}\t\t"
+                      f"{min_r2:.6f}\t"
+                      f"{max_r2:.6f}\n")
+    
+    logging.info(print_str)
+    
+    if all_mean_r2_all:
+        n_subjects = len(all_mean_r2_all)
+        logging.info(f"Grand averages across {n_subjects} subjects:")
+        logging.info(f"  Mean R² (all voxels): {np.mean(all_mean_r2_all):.6f} ± {np.std(all_mean_r2_all):.6f}")
+        logging.info(f"  Mean R² (positive only): {np.mean(all_mean_r2_pos):.6f} ± {np.std(all_mean_r2_pos):.6f}")
+        logging.info(f"  Average min R²: {np.mean(all_min_r2):.6f}")
+        logging.info(f"  Average max R²: {np.mean(all_max_r2):.6f}")
+    else:
+        logging.info("No valid correlation data found for summary.")    
     # Final summary
     total_time = time.time() - start_time
     logging.info(f"Total analysis completed in {total_time:.2f} seconds ({total_time / 60:.2f} minutes)")
