@@ -276,7 +276,6 @@ def main():
     else:
         logging.info("No correlation data available for cross-subject summary.")
     
-    # <<< End of summary >>>
     
     total_time = time.time() - start_time
     logging.info(f"Total analysis completed in {total_time:.2f} seconds ({total_time / 60:.2f} minutes)")

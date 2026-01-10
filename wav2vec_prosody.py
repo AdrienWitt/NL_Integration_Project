@@ -9,6 +9,7 @@ import torchaudio
 from torch.utils.data import Dataset
 from transformers import (
     Wav2Vec2Model,
+    Wav2Vec2Processor,
     Wav2Vec2PreTrainedModel,
     Wav2Vec2Config,
     TrainingArguments,
@@ -20,174 +21,218 @@ from torch import nn
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from sklearn.decomposition import PCA
+from encoding.config import REPO_DIR
+from encoding.ridge_utils.stimulus_utils import load_simulated_trfiles
+
 
 # Constants
 SAMPLING_RATE = 16000
+WINDOW_SIZE_SEC = 2.0
+RESPDICT_PATH = os.path.join(REPO_DIR, "ds003020/derivative/respdict.json")
+
 
 class ProsodyDataset(Dataset):
-    def __init__(self, audio_dir, prosody_dir, processor, story_names: List[str] = None, use_pca: bool = False, pca_threshold: float = 0.90, pca=None, scalers=None):
-        """
-        Args:
-            audio_dir: Path to directory containing .wav files
-            prosody_dir: Path to directory containing OpenSMILE JSON feature files
-            processor: Wav2Vec2Processor for audio processing
-            story_names: List of story names to filter dataset
-            use_pca: Whether to apply PCA to features
-            pca_threshold: Explained variance threshold for PCA (default: 0.90)
-            pca: Pre-fitted PCA object (optional)
-            scalers: Pre-fitted feature scalers (optional)
-        """
+    """
+    Dataset that loads TR-aligned 2-second audio windows and corresponding OpenSMILE prosody features.
+    - One sample per valid TR (non-overlapping, starting at TR onset).
+    - Labels are taken from pre-computed JSON files.
+    - Supports global normalization and optional PCA.
+    """
+
+    def __init__(
+        self,
+        audio_dir: str,
+        prosody_dir: str,
+        processor: Wav2Vec2Processor,
+        story_names: Optional[List[str]] = None,
+        use_pca: bool = False,
+        pca_threshold: float = 0.90,
+        pca: Optional[PCA] = None,
+        scalers: Optional[Dict[str, StandardScaler]] = None,
+        respdict_path: str = "ds003020/derivative/respdict.json",
+        tr: float = 2.0,
+        pad: int = 5,
+        sampling_rate: int = 16000,
+        window_size_sec: float = 2.0,
+    ):
         self.audio_dir = audio_dir
         self.prosody_dir = prosody_dir
         self.processor = processor
-        self.story_names = story_names
+        self.story_names_filter = story_names or []
         self.use_pca = use_pca
         self.pca_threshold = pca_threshold
         self.pca = pca
         self.scalers = scalers
-        
-        # Get sorted list of all audio and prosody files
-        self.audio_files = sorted([f for f in os.listdir(audio_dir) if f.endswith(".wav")])
-        self.prosody_files = sorted([f for f in os.listdir(prosody_dir) if f.endswith("_opensmile_windows.json")])
-        
-        if len(self.audio_files) != len(self.prosody_files):
-            raise ValueError(f"Mismatch: {len(self.audio_files)} audio files vs {len(self.prosody_files)} prosody files.")
 
-        # Set maximum audio length for 2-second windows at 16kHz
-        self.max_length = int(2.0 * SAMPLING_RATE)  # 2 seconds * 16000 Hz = 32000 samples
-        
-        # Define resampler if needed
-        self.resampler = torchaudio.transforms.Resample(orig_freq=SAMPLING_RATE, new_freq=SAMPLING_RATE)
+        self.sampling_rate = sampling_rate
+        self.max_length = int(window_size_sec * sampling_rate)
+        self.window_size_sec = window_size_sec
 
-        # Pre-process audio and features
+        self.resampler = torchaudio.transforms.Resample(
+            orig_freq=sampling_rate, new_freq=sampling_rate
+        )
+
+        # Load TR timing information once
+        with open(respdict_path, "r") as f:
+            respdict = json.load(f)
+        self.trfiles = load_simulated_trfiles(respdict, tr=tr, pad=pad, start_time=10)
+
+        # Discover valid stories (audio + JSON + TR info)
+        self.available_stories = sorted(
+            f[:-4] for f in os.listdir(audio_dir) if f.endswith(".wav")
+        )
+        self.valid_stories = [
+            story
+            for story in self.available_stories
+            if story in self.trfiles
+            and os.path.exists(os.path.join(prosody_dir, f"{story}_opensmile_tr_aligned.json"))
+        ]
+
+        if not self.valid_stories:
+            raise ValueError("No valid stories found (audio + JSON + TR timing)")
+
+        # Pre-process all data
         self.preprocessed_data = self._preprocess_data()
 
-        # Filter preprocessed data based on story_names if provided
-        if story_names is not None:
+        # Apply optional story name filter
+        if self.story_names_filter:
             self.preprocessed_data = [
-                item for item in self.preprocessed_data 
-                if item["story_name"] in story_names
+                item for item in self.preprocessed_data
+                if item["story_name"] in self.story_names_filter
             ]
 
-        # Initialize feature names
-        if self.preprocessed_data:
-            self.feature_names = self.preprocessed_data[0]["feature_names"]
-        else:
-            self.feature_names = []
+        # Set feature names from first sample
+        self.feature_names = (
+            self.preprocessed_data[0]["feature_names"] if self.preprocessed_data else []
+        )
 
-    def _preprocess_data(self):
-        """Pre-process audio and features into tensors with normalization based on all stories."""
-        preprocessed_data = []
-        all_features = {}
+    def _preprocess_data(self) -> List[Dict]:
+        preprocessed = []
+        all_raw_features = {}  # Collect for global normalization
 
-        # First pass: collect all feature values across all stories for normalization
-        for file in self.prosody_files:
-            prosody_path = os.path.join(self.prosody_dir, file)
-            with open(prosody_path, "r") as f:
-                windows = json.load(f)
-                for window in windows:
-                    for feat_name, feat_value in window['features'].items():
-                        if feat_name not in all_features:
-                            all_features[feat_name] = []
-                        all_features[feat_name].append(feat_value)
+        # 1. Collect all raw feature values across all stories
+        for story in self.valid_stories:
+            json_path = os.path.join(self.prosody_dir, f"{story}_opensmile_tr_aligned.json")
+            with open(json_path, "r") as f:
+                windows = json.load(f) or []
 
-        # Create scalers for each feature using data from all stories if not provided
+            for window in windows:
+                for feat, val in window.get("features", {}).items():
+                    all_raw_features.setdefault(feat, []).append(val)
+
+        # Fit scalers if not provided
         if self.scalers is None:
             self.scalers = {
                 feat: StandardScaler().fit(np.array(values).reshape(-1, 1))
-                for feat, values in all_features.items()
+                for feat, values in all_raw_features.items()
             }
 
-        # Second pass: process audio and features
-        for file in self.prosody_files:
-            story_name = file.replace('_opensmile_windows.json', '')
-            prosody_path = os.path.join(self.prosody_dir, file)
-            with open(prosody_path, "r") as f:
-                windows = json.load(f)
-                
-                # Load audio
-                audio_path = os.path.join(self.audio_dir, f"{story_name}.wav")
-                waveform, sr = torchaudio.load(audio_path)
-                
-                # Convert to mono if stereo
-                if waveform.shape[0] > 1:
-                    waveform = torch.mean(waveform, dim=0, keepdim=True)
-                    
-                # Resample if needed
-                if sr != SAMPLING_RATE:
-                    waveform = self.resampler(waveform)
-                
-                for window in windows:
-                    # Extract the window segment using start and end times
-                    start_time = float(window['window_start_time'])
-                    end_time = float(window['window_end_time'])
-                    start_sample = int(start_time * SAMPLING_RATE)
-                    end_sample = int(end_time * SAMPLING_RATE)
-                    
-                    # Ensure end_sample doesn't exceed audio length
-                    end_sample = min(end_sample, waveform.shape[1])
-                    
-                    # Extract window audio
-                    window_audio = waveform[0, start_sample:end_sample].numpy()
-                    
-                    # Process audio
+        # 2. Process each story and generate samples
+        for story in self.valid_stories:
+            # Load full waveform
+            audio_path = os.path.join(self.audio_dir, f"{story}.wav")
+            waveform, sr = torchaudio.load(audio_path)
+
+            if waveform.shape[0] > 1:
+                waveform = torch.mean(waveform, dim=0, keepdim=True)
+
+            if sr != self.sampling_rate:
+                waveform = self.resampler(waveform)
+
+            # Get TR times
+            tr_info = self.trfiles[story][0]
+            tr_times = tr_info.get_reltriggertimes() + tr_info.soundstarttime
+
+            # Load corresponding OpenSMILE windows (assume order matches)
+            json_path = os.path.join(self.prosody_dir, f"{story}_opensmile_tr_aligned.json")
+            with open(json_path, "r") as f:
+                opensmile_windows = json.load(f) or []
+
+            if len(opensmile_windows) != len(tr_times):
+                print(
+                    f"Warning: {story} - {len(opensmile_windows)} JSON windows vs "
+                    f"{len(tr_times)} TR times → mismatch!"
+                )
+
+            for idx, (tr_time, osm_window) in enumerate(zip(tr_times, opensmile_windows)):
+                for shift in [0.0, 1.0]:
+                    start_time = float(tr_time)
+                    end_time = start_time + self.window_size_sec
+    
+                    start_sample = int(start_time * self.sampling_rate)
+                    end_sample = min(
+                        int(end_time * self.sampling_rate), waveform.shape[1]
+                    )
+    
+                    window_audio_np = waveform[0, start_sample:end_sample].numpy()
+    
+                    # Process with Wav2Vec2 processor
                     inputs = self.processor(
-                        window_audio, 
-                        sampling_rate=SAMPLING_RATE, 
+                        window_audio_np,
+                        sampling_rate=self.sampling_rate,
                         return_tensors="pt",
                         padding="max_length",
-                        max_length=self.max_length
+                        max_length=self.max_length,
+                        truncation=True,
                     )
-                    input_values = inputs.input_values.squeeze()
-                    
-                    # Normalize features
-                    normalized_features = {}
-                    for feat_name, feat_value in window['features'].items():
-                        normalized_features[feat_name] = float(
-                            self.scalers[feat_name].transform([[feat_value]])[0][0]
+                    input_values = inputs.input_values.squeeze(0)  # [max_length]
+    
+                    # Normalize labels
+                    normalized = {}
+                    for feat, raw_val in osm_window.get("features", {}).items():
+                        normalized[feat] = float(
+                            self.scalers[feat].transform([[raw_val]])[0][0]
                         )
-                    
-                    # Get all normalized features in a fixed order
-                    feature_names = sorted(normalized_features.keys())
-                    normalized_features_list = [normalized_features[feat] for feat in feature_names]
-                    
-                    preprocessed_data.append({
-                        "input_values": input_values,
-                        "labels": torch.tensor(normalized_features_list, dtype=torch.float32),
-                        "story_name": story_name,
-                        "window_time": f"{start_time:.2f}-{end_time:.2f}",
-                        "feature_names": feature_names
-                    })
+    
+                    feat_names = sorted(normalized.keys())
+                    labels_tensor = torch.tensor(
+                        [normalized[fn] for fn in feat_names], dtype=torch.float32
+                    )
+    
+                    preprocessed.append(
+                        {
+                            "input_values": input_values,
+                            "labels": labels_tensor,
+                            "story_name": story,
+                            "window_time": f"{start_time:.2f}-{end_time:.2f}",
+                            "feature_names": feat_names,
+                            "tr_index": idx,
+                            "tr_time": float(tr_time),
+                        }
+                    )
 
-        # Apply PCA if requested
-        if self.use_pca:
-            X = np.array([item["labels"].numpy() for item in preprocessed_data])
+        # Optional PCA
+        if self.use_pca and preprocessed:
+            X = np.array([item["labels"].numpy() for item in preprocessed])
+
             if self.pca is None:
                 self.pca = PCA(n_components=self.pca_threshold)
                 X_pca = self.pca.fit_transform(X)
-                print(f"PCA components: {self.pca.n_components_}, variance explained: {sum(self.pca.explained_variance_ratio_):.3f}")
+                print(
+                    f"PCA → {self.pca.n_components_} components, "
+                    f"explained variance: {sum(self.pca.explained_variance_ratio_):.3f}"
+                )
             else:
                 X_pca = self.pca.transform(X)
-            
-            for i, item in enumerate(preprocessed_data):
+
+            for i, item in enumerate(preprocessed):
                 item["labels"] = torch.tensor(X_pca[i], dtype=torch.float32)
                 item["feature_names"] = [f"PC_{j+1}" for j in range(X_pca.shape[1])]
-            
-            # Store PCA information
+
             self.pca_info = {
                 "n_components": self.pca.n_components_,
                 "explained_variance_ratio": self.pca.explained_variance_ratio_.tolist(),
-                "cumulative_explained_variance": np.cumsum(self.pca.explained_variance_ratio_).tolist()
+                "cumulative_explained_variance": np.cumsum(
+                    self.pca.explained_variance_ratio_
+                ).tolist(),
             }
-        
-        return preprocessed_data
 
-    def __len__(self):
-        """Returns total number of windows across all stories."""
+        return preprocessed
+
+    def __len__(self) -> int:
         return len(self.preprocessed_data)
 
-    def __getitem__(self, idx):
-        """Returns a single window's pre-processed audio and features."""
+    def __getitem__(self, idx: int) -> Dict:
         return self.preprocessed_data[idx]
 
 class Wav2Vec2ForProsody(Wav2Vec2PreTrainedModel):
@@ -371,7 +416,7 @@ def train_model(
     val_dataset: Dataset,
     output_dir: str,
     num_layers_to_freeze: int = None,
-    learning_rate: float = 1e-4,
+    learning_rate: float = 3e-5,
     batch_size: int = 8,
     num_epochs: int = 10,
     patience: int = 3,
@@ -450,39 +495,33 @@ def train_model(
     
     # Define training arguments with multi-GPU support
     training_args = TrainingArguments(
-        output_dir=output_dir,
-        num_train_epochs=num_epochs,
-        per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=batch_size,
-        learning_rate=learning_rate,
-        load_best_model_at_end=True,
-        eval_strategy="epoch",
-        save_strategy="epoch",
-        save_total_limit=save_total_limit,
-        metric_for_best_model="eval_loss",
-        greater_is_better=False,
-        logging_dir=os.path.join(output_dir, "logs"),
-        report_to=[],
-        warmup_steps=100,
-        weight_decay=0.01,
-        # Multi-GPU settings
-        local_rank=-1,  # For distributed training
-        ddp_find_unused_parameters=False,  # Optimize DDP performance
-        # Mixed precision settings
-        fp16=True,  # Enable mixed precision training
-        fp16_opt_level="O1",  # Use O1 for better stability
-        # Gradient settings
-        gradient_accumulation_steps=4,  # Accumulate gradients for larger effective batch size
-        gradient_checkpointing=True,  # Enable gradient checkpointing for memory efficiency
-        # Performance optimizations
-        dataloader_num_workers=4,  # Parallel data loading
-        dataloader_pin_memory=True,  # Pin memory for faster data transfer to GPU
-        # Optional: Use 8-bit Adam optimizer for memory efficiency
-        optim="adamw_torch_fused" if num_gpus > 0 else "adamw_torch",
-        # Resume from checkpoint
-        resume_from_checkpoint=resume_from_checkpoint
-        
-    )
+    output_dir=output_dir,
+    num_train_epochs=num_epochs,
+    per_device_train_batch_size=batch_size,
+    per_device_eval_batch_size=batch_size,
+    gradient_accumulation_steps=4,
+    learning_rate=3e-5,              
+    weight_decay=0.05,                
+    warmup_steps=500,                 
+    lr_scheduler_type="cosine",       
+    bf16=True,                        
+    fp16=False,
+    gradient_checkpointing=True,
+    optim="adamw_torch_fused",
+    dataloader_num_workers=4,
+    dataloader_pin_memory=True,
+    eval_strategy="epoch",
+    save_strategy="epoch",
+    save_total_limit=save_total_limit,
+    load_best_model_at_end=True,
+    metric_for_best_model="eval_loss",
+    greater_is_better=False,
+    logging_dir=os.path.join(output_dir, "logs"),
+    report_to=[],
+    # Optional but recommended
+    torch_compile=True,
+    ddp_find_unused_parameters=False,
+)
     
     # Initialize trainer with callbacks
     trainer = Trainer(
