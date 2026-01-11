@@ -23,38 +23,43 @@ from encoding.config import DATA_DIR
 
 if __name__ == "__main__":
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Train wav2vec model for prosody prediction")
-    parser.add_argument("--audio_dir", type=str, required=True, 
-                      help="Directory containing .wav files")
+
+    parser.add_argument("--audio_dir", type=str, required=True,
+                        help="Directory containing .wav files")
     parser.add_argument("--prosody_dir", type=str, required=True,
-                      help="Directory containing JSON feature files")
-    parser.add_argument("--output_dir", type=str, required=True, 
-                      help="Directory to save the model")
-    parser.add_argument("--test_size", type=float, default=0.2, 
-                      help="Fraction of data to use for validation")
-    parser.add_argument("--random_state", type=int, default=42, 
-                      help="Random seed for train/val split")
-    parser.add_argument("--freeze_layers", type=str, default=None, 
-                      help="Layers to freeze. Either a single number N to freeze first N layers, "
-                           "or comma-separated list of specific layers (e.g., '0,1,2')")
-    parser.add_argument("--learning_rate", type=float, default=1e-4, 
-                      help="Learning rate")
-    parser.add_argument("--batch_size", type=int, default=8, 
-                      help="Batch size")
-    parser.add_argument("--num_epochs", type=int, default=10, 
-                      help="Number of epochs")
-    parser.add_argument("--patience", type=int, default=3, 
-                      help="Early stopping patience")
-    parser.add_argument("--save_total_limit", type=int, default=3, 
-                      help="Number of best checkpoints to keep")
-    parser.add_argument("--resume_from_checkpoint", type=str, default=None, 
-                      help="Path to a checkpoint directory to resume training from")
+                        help="Directory containing JSON feature files")
+    parser.add_argument("--output_dir", type=str, required=True,
+                        help="Directory to save the model")
+
+    parser.add_argument("--test_size", type=float, default=0.2,
+                        help="Fraction of data to use for validation")
+    parser.add_argument("--random_state", type=int, default=42,
+                        help="Random seed for train/val split")
+
+    parser.add_argument("--freeze_layers", type=str, default="6",
+                        help="Layers to freeze. Either a single number N to freeze first N layers, "
+                             "or comma-separated list of specific layers (e.g., '0,1,2')")
+
+    parser.add_argument("--learning_rate", type=float, default=3e-5,
+                        help="Learning rate (recommended: 3e-5 for large model)")
+    parser.add_argument("--batch_size", type=int, default=8,
+                        help="Per-device batch size (effective batch = batch_size × accum_steps × num_gpus)")
+    parser.add_argument("--num_epochs", type=int, default=10,
+                        help="Number of epochs")
+    parser.add_argument("--patience", type=int, default=3,
+                        help="Early stopping patience")
+    parser.add_argument("--save_total_limit", type=int, default=3,
+                        help="Number of best checkpoints to keep")
+
+    parser.add_argument("--resume_from_checkpoint", type=str, default=None,
+                        help="Path to a checkpoint directory to resume training from")
+
     parser.add_argument("--use_pca", action="store_true",
-                             help="Use PCA for embeddings (default: False)")
+                        help="Use PCA for embeddings (default: False)")
     parser.add_argument("--pca_threshold", type=float, default=0.90,
-                             help="PCA threshold for dataset (default: 0.50)")
-    
+                        help="PCA threshold for dataset (default: 0.90)")
 
     args = parser.parse_args()
     
