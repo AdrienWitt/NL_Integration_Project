@@ -8,10 +8,12 @@ from typing import Dict, List, Optional, Union
 import torchaudio
 from torch.utils.data import Dataset
 from transformers import (
-    Wav2Vec2Model,
-    Wav2Vec2Processor,
+    AutoModel,
+    AutoProcessor,
+    AutoFeatureExtractor,
+    Wav2Vec2FeatureExtractor,
     Wav2Vec2PreTrainedModel,
-    Wav2Vec2Config,
+    AutoConfig,
     TrainingArguments,
     Trainer,
     EarlyStoppingCallback,
@@ -43,7 +45,7 @@ class ProsodyDataset(Dataset):
         self,
         audio_dir: str,
         prosody_dir: str,
-        processor: Wav2Vec2Processor,
+        processor: Wav2Vec2FeatureExtractor,
         story_names: Optional[List[str]] = None,
         use_pca: bool = False,
         pca_threshold: float = 0.90,
@@ -87,7 +89,7 @@ class ProsodyDataset(Dataset):
             if story in self.trfiles
             and os.path.exists(os.path.join(prosody_dir, f"{story}_opensmile_tr_aligned.json"))
         ]
-
+        
         if not self.valid_stories:
             raise ValueError("No valid stories found (audio + JSON + TR timing)")
 
@@ -235,351 +237,311 @@ class ProsodyDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict:
         return self.preprocessed_data[idx]
 
-class Wav2Vec2ForProsody(Wav2Vec2PreTrainedModel):
-    def __init__(self, config: Wav2Vec2Config, num_features: int, freeze_layers: Union[int, List[int]] = 6):
-        """
-        Args:
-            config: Wav2Vec2Config configuration
-            num_features: Number of OpenSMILE features to predict
-            freeze_layers: Number of layers to freeze (default: 4) or list of specific layers to freeze
-        """
-        super().__init__(config)
-        self.wav2vec2 = Wav2Vec2Model(config)
-        self.dropout = nn.Dropout(0.1)
-        
-        # Determine the hidden size from config, with fallback to detect at runtime
-        self.hidden_size = getattr(config, "hidden_size", 1024)
-        
+
+
+class AudioEncoderForProsody(nn.Module):
+    """
+    Generic prosody regression head on top of self-supervised speech encoders.
+    Supports: wav2vec2, hubert, wavlm, etc.
+    """
+    def __init__(
+        self,
+        base_model_name: str,
+        num_features: int,
+        freeze_layers: Union[int, List[int]] = 8,
+        dropout_p: float = 0.1,
+    ):
+        super().__init__()
+        self.base_model_name = base_model_name
+
+        self.config = AutoConfig.from_pretrained(base_model_name)
+        self.encoder = AutoModel.from_pretrained(base_model_name)
+
+        self.hidden_size = self.config.hidden_size
+        print(f"Loaded {base_model_name} — hidden size: {self.hidden_size}")
+
+        self.dropout = nn.Dropout(dropout_p)
+
         self.regressor = nn.Sequential(
             nn.Linear(self.hidden_size, 512),
-            nn.ReLU(),  
-            nn.Dropout(0.1),
-            nn.Linear(512, num_features) 
+            nn.ReLU(),
+            nn.Dropout(dropout_p),
+            nn.Linear(512, num_features),
         )
+
         self.loss_fct = nn.MSELoss()
-        self.init_weights()
-        
-        # Freeze layers by default
+
         self.freeze_base_model(freeze_layers)
 
-    def freeze_feature_encoder(self):
-        """Freeze the feature encoder layers"""
-        for param in self.wav2vec2.feature_extractor.parameters():
-            param.requires_grad = False
-
     def freeze_base_model(self, layers_to_freeze: Union[int, List[int]] = None):
-        """Freeze transformer layers.
-        
-        Args:
-            layers_to_freeze: If int, freezes layers 0 to layers_to_freeze-1.
-                            If list, freezes only the specified layer indices.
-                            If None, no layers are frozen.
-        """
-        # Always freeze feature encoder
-        self.freeze_feature_encoder()
-        
+        # Freeze conv / projection layers if present
+        for name, module in self.encoder.named_modules():
+            if "feature_extractor" in name or "feature_projection" in name:
+                for p in module.parameters():
+                    p.requires_grad = False
+
         if layers_to_freeze is not None:
             if isinstance(layers_to_freeze, int):
-                # Freeze first N layers
                 layers_to_freeze = list(range(layers_to_freeze))
-            
-            # Freeze specified layers
-            for i in layers_to_freeze:
-                print(f"Freezing layer {i}")
-                for param in self.wav2vec2.encoder.layers[i].parameters():
-                    param.requires_grad = False
 
-    def unfreeze_all(self):
-        """Unfreeze all layers except feature encoder."""
-        # Unfreeze all transformer layers
-        for i in range(len(self.wav2vec2.encoder.layers)):
-            for param in self.wav2vec2.encoder.layers[i].parameters():
-                param.requires_grad = True
+            # Find transformer layers (common patterns)
+            if hasattr(self.encoder, "encoder") and hasattr(self.encoder.encoder, "layers"):
+                layers = self.encoder.encoder.layers
+            elif hasattr(self.encoder, "layers"):
+                layers = self.encoder.layers
+            else:
+                print("Warning: Could not find transformer layers to freeze — skipping layer freezing")
+                return
+
+            for i in layers_to_freeze:
+                if i >= len(layers):
+                    print(f"Warning: Cannot freeze layer {i} (max {len(layers)-1})")
+                    continue
+                print(f"Freezing layer {i}")
+                for p in layers[i].parameters():
+                    p.requires_grad = False
+
+    def unfreeze_all_transformer_layers(self):
+        if hasattr(self.encoder, "encoder") and hasattr(self.encoder.encoder, "layers"):
+            layers = self.encoder.encoder.layers
+        elif hasattr(self.encoder, "layers"):
+            layers = self.encoder.layers
+        else:
+            return
+
+        for layer in layers:
+            for p in layer.parameters():
+                p.requires_grad = True
         print("Unfroze all transformer layers")
 
     def forward(
         self,
         input_values: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
         labels: Optional[torch.Tensor] = None,
     ):
-        outputs = self.wav2vec2(input_values)
-        hidden_states = outputs[0]  # Get the last hidden state
-        
-        # Pool the output (mean pooling over time dimension)
-        pooled_output = torch.mean(hidden_states, dim=1)
-        
-        pooled_output = self.dropout(pooled_output)
-        
-        # Predict prosody features
-        logits = self.regressor(pooled_output)
-        
-        loss = None
-        if labels is not None:
-            loss = self.loss_fct(logits, labels)
-            
+        outputs = self.encoder(
+            input_values,
+            attention_mask=attention_mask,
+            output_hidden_states=False,
+        )
+        hidden_states = outputs.last_hidden_state  # [B, T, D]
+        pooled = torch.mean(hidden_states, dim=1)   # mean over time
+        pooled = self.dropout(pooled)
+        logits = self.regressor(pooled)
+
+        loss = self.loss_fct(logits, labels) if labels is not None else None
+
         return {"loss": loss, "logits": logits} if loss is not None else {"logits": logits}
 
+    @torch.no_grad()
     def get_hidden_states(
         self,
         input_values: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
         output_hidden_states: bool = True,
-        return_dict: bool = True,
     ):
-        """Extract hidden states (embeddings) from different layers of the model.
-        
-        Args:
-            input_values: Audio input tensor
-            output_hidden_states: Whether to return hidden states from all layers
-            return_dict: Whether to return output as a dict or tuple
-            
-        Returns:
-            Dictionary containing:
-                - last_hidden_state: Final layer hidden states [batch, seq_len, hidden_size]
-                - hidden_states: Tuple of hidden states from all layers (if output_hidden_states=True)
-        """
-        # Set model to eval mode during embedding extraction
         was_training = self.training
         self.eval()
-        
-        # Run model with output_hidden_states=True to get embeddings from all layers
-        with torch.no_grad():
-            outputs = self.wav2vec2(
-                input_values,
-                output_hidden_states=output_hidden_states,
-                return_dict=return_dict
-            )
-        
-        # Return to original training state
+
+        outputs = self.encoder(
+            input_values,
+            attention_mask=attention_mask,
+            output_hidden_states=output_hidden_states,
+            return_dict=True,
+        )
+
         self.train(was_training)
-        
         return outputs
 
-def compute_metrics(eval_pred):
-    """Compute metrics for each prosody feature."""
+
+
+def compute_metrics_with_names(eval_pred, feature_names):
     predictions, labels = eval_pred
-    
-    # Initialize metrics dictionary
-    metrics = {
-        'eval_loss': 0.0,  # Overall MSE loss
-        'feature_metrics': {}
-    }
-    
-    # Compute overall MSE loss
-    mse = mean_squared_error(labels, predictions)
-    metrics['eval_loss'] = mse
-    
-    # Get feature names from the dataset
-    feature_names = train_dataset.feature_names
-    
-    # Compute metrics for each feature
-    for i, feature in enumerate(feature_names):
-        feature_pred = predictions[:, i]
-        feature_true = labels[:, i]
-        
-        feature_metrics = {
-            'mse': mean_squared_error(feature_true, feature_pred),
-            'rmse': np.sqrt(mean_squared_error(feature_true, feature_pred)),
-            'mae': mean_absolute_error(feature_true, feature_pred),
-            'r2': r2_score(feature_true, feature_pred)
-        }
-        
-        # Add feature-specific metrics to the main metrics dict
-        for metric_name, value in feature_metrics.items():
-            metrics[f'{feature}_{metric_name}'] = value
-        
-        metrics['feature_metrics'][feature] = feature_metrics
-    
+    metrics = {"eval_loss": mean_squared_error(labels, predictions)}
+
+    for i, feat in enumerate(feature_names):
+        p, t = predictions[:, i], labels[:, i]
+        metrics.update({
+            f"{feat}_mse":  mean_squared_error(t, p),
+            f"{feat}_rmse": np.sqrt(mean_squared_error(t, p)),
+            f"{feat}_mae":  mean_absolute_error(t, p),
+            f"{feat}_r2":   r2_score(t, p),
+        })
+
     return metrics
 
+
 class MetricsCallback(TrainerCallback):
-    """Custom callback to save detailed metrics history."""
-    def __init__(self, output_dir):
+    def __init__(self, output_dir: str):
         self.output_dir = output_dir
         self.metrics_history = []
-        
+
     def on_evaluate(self, args, state, control, metrics, **kwargs):
-        # Add epoch number to metrics
-        metrics['epoch'] = state.epoch
+        metrics["epoch"] = state.epoch
         self.metrics_history.append(metrics)
-        
-        # Save metrics history to CSV
-        metrics_df = pd.DataFrame(self.metrics_history)
-        metrics_df.to_csv(os.path.join(self.output_dir, 'metrics_history.csv'), index=False)
-        
-        # Save detailed metrics for current epoch
-        epoch_metrics_file = os.path.join(self.output_dir, f'metrics_epoch_{state.epoch:.1f}.json')
-        with open(epoch_metrics_file, 'w') as f:
+
+        pd.DataFrame(self.metrics_history).to_csv(
+            os.path.join(self.output_dir, "metrics_history.csv"), index=False
+        )
+
+        with open(os.path.join(self.output_dir, f"metrics_epoch_{state.epoch:.1f}.json"), "w") as f:
             json.dump(metrics, f, indent=2)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+#   Main training function 
+# ──────────────────────────────────────────────────────────────────────────────
 
 def train_model(
     train_dataset: Dataset,
     val_dataset: Dataset,
     output_dir: str,
-    num_layers_to_freeze: int = None,
+    model_type: str = "wav2vec2",
+    base_model_name: Optional[str] = None,
+    num_layers_to_freeze: Optional[int] = 8,
     learning_rate: float = 3e-5,
     batch_size: int = 8,
     num_epochs: int = 10,
     patience: int = 3,
     save_total_limit: int = 3,
-    resume_from_checkpoint: Optional[str] = None
+    resume_from_checkpoint: Optional[str] = None,
 ):
-    """Train the wav2vec model for prosody prediction, with support for resuming from checkpoint."""
+    """
+    Flexible training for prosody regression.
+    model_type: "wav2vec2", "hubert", "wavlm"
+    """
+    MODEL_MAP = {
+        "wav2vec2": "facebook/wav2vec2-large-960h",
+        "hubert":   "facebook/hubert-large-ll60k",          # or -ls960-ft
+        "wavlm":    "microsoft/wavlm-large",
+    }
+
+    if base_model_name is None:
+        base_model_name = MODEL_MAP.get(model_type.lower())
+        if base_model_name is None:
+            raise ValueError(f"Unknown model_type '{model_type}'. Provide base_model_name.")
+
+    print(f"Training with {model_type} backbone: {base_model_name}")
+
+    # Subdirectory naming — now includes model identifier
+    model_id = model_type.lower()
+    if base_model_name and base_model_name not in MODEL_MAP.get(model_type.lower(), ""):
+        # If custom checkpoint name, use a short sanitized version
+        model_id = base_model_name.split("/")[-1].replace("-", "_").lower()
+
+    layers_str = f"layers_frozen_{num_layers_to_freeze}" if num_layers_to_freeze is not None else "no_layers_frozen"
+    if hasattr(train_dataset, "use_pca") and train_dataset.use_pca:
+        pca_str = f"PCA_{train_dataset.pca_threshold:.2f}_ncomp_{train_dataset.pca.n_components_}"
+        layers_str = f"{layers_str}_{pca_str}"
+
+    # Final subfolder name example: hubert_layers_frozen_10_PCA_0.90_ncomp_15
+    #               or: wavlm_layers_frozen_6
+    subfolder_name = f"{model_id}_{layers_str}"
+
+    output_dir = os.path.join(output_dir, subfolder_name)
     
-    # Create a subdirectory for the number of layers frozen and PCA information
-    layers_frozen_dir = f"layers_frozen_{num_layers_to_freeze}" if num_layers_to_freeze is not None else "no_layers_frozen"
-    
-    # Add PCA information to directory name if PCA is used
-    if hasattr(train_dataset, 'use_pca') and train_dataset.use_pca:
-        pca_info = f"PCA_{train_dataset.pca_threshold:.2f}_ncomp_{train_dataset.pca.n_components_}"
-        layers_frozen_dir = f"{layers_frozen_dir}_{pca_info}"
-    
-    output_dir = os.path.join(output_dir, layers_frozen_dir)
-    
-    # Create metrics directory
-    metrics_dir = os.path.join(output_dir, 'metrics')
+    metrics_dir = os.path.join(output_dir, "metrics")
     os.makedirs(metrics_dir, exist_ok=True)
-    
-    # Number of features to predict
+
     num_features = len(train_dataset.feature_names)
-    print(f"Number of features (model output size): {num_features}")
-    
+    print(f"Predicting {num_features} features")
+
     # Load model
     if resume_from_checkpoint and os.path.isdir(resume_from_checkpoint):
-        print(f"Resuming from checkpoint: {resume_from_checkpoint}")
-        # Load model from checkpoint instead of base pretrained weights
-        model = Wav2Vec2ForProsody.from_pretrained(resume_from_checkpoint, num_features=num_features)
-        # Ensure feature encoder and layers are frozen as in original training
-        model.freeze_base_model(num_layers_to_freeze)
-    else:
-        print("Starting fresh training from pretrained weights")
-        model = Wav2Vec2ForProsody.from_pretrained(
-            "facebook/wav2vec2-large-960h",
-            num_features=num_features
+        print(f"Resuming from {resume_from_checkpoint}")
+        model = AudioEncoderForProsody.from_pretrained(
+            resume_from_checkpoint,
+            base_model_name=base_model_name,  # ignored if checkpoint has it
+            num_features=num_features,
         )
         model.freeze_base_model(num_layers_to_freeze)
-    
-    # Create a compute_metrics function with access to feature names
-    def compute_metrics_with_names(eval_pred):
-        predictions, labels = eval_pred
-        metrics = {
-            'eval_loss': 0.0,
-            'feature_metrics': {}
-        }
-        
-        mse = mean_squared_error(labels, predictions)
-        metrics['eval_loss'] = mse
-        
-        for i, feature in enumerate(train_dataset.feature_names):
-            feature_pred = predictions[:, i]
-            feature_true = labels[:, i]
-            
-            feature_metrics = {
-                'mse': mean_squared_error(feature_true, feature_pred),
-                'rmse': np.sqrt(mean_squared_error(feature_true, feature_pred)),
-                'mae': mean_absolute_error(feature_true, feature_pred),
-                'r2': r2_score(feature_true, feature_pred)
-            }
-            
-            for metric_name, value in feature_metrics.items():
-                metrics[f'{feature}_{metric_name}'] = value
-            
-            metrics['feature_metrics'][feature] = feature_metrics
-        
-        return metrics
+    else:
+        model = AudioEncoderForProsody(
+            base_model_name=base_model_name,
+            num_features=num_features,
+            freeze_layers=num_layers_to_freeze,
+        )
 
-    # Check for available GPUs
-    num_gpus = torch.cuda.device_count()
-    print(f"Number of GPUs available: {num_gpus}")
-    if num_gpus > 0:
-        print(f"Using GPUs: {[torch.cuda.get_device_name(i) for i in range(num_gpus)]}")
+    # Processor should already be set in datasets — but ensure consistency
     
-    # Define training arguments with multi-GPU support
+    processor = Wav2Vec2FeatureExtractor.from_pretrained(base_model_name)
+    
+    # Training args (unchanged — good defaults)
     training_args = TrainingArguments(
-    output_dir=output_dir,
-    num_train_epochs=num_epochs,
-    per_device_train_batch_size=batch_size,
-    per_device_eval_batch_size=batch_size,
-    gradient_accumulation_steps=4,
-    learning_rate=3e-5,              
-    weight_decay=0.05,                
-    warmup_steps=500,                 
-    lr_scheduler_type="cosine",       
-    bf16=True,                        
-    fp16=False,
-    gradient_checkpointing=True,
-    optim="adamw_torch_fused",
-    dataloader_num_workers=4,
-    dataloader_pin_memory=True,
-    eval_strategy="epoch",
-    save_strategy="epoch",
-    save_total_limit=save_total_limit,
-    load_best_model_at_end=True,
-    metric_for_best_model="eval_loss",
-    greater_is_better=False,
-    logging_dir=os.path.join(output_dir, "logs"),
-    report_to=[],
-    # Optional but recommended
-    torch_compile=True,
-    ddp_find_unused_parameters=False,
-)
-    
-    # Initialize trainer with callbacks
+        output_dir=output_dir,
+        num_train_epochs=num_epochs,
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
+        gradient_accumulation_steps=4,
+        learning_rate=learning_rate,
+        weight_decay=0.05,
+        warmup_steps=500,
+        lr_scheduler_type="cosine",
+        bf16=True,
+        gradient_checkpointing=True,
+        optim="adamw_torch_fused",
+        dataloader_num_workers=4,
+        dataloader_pin_memory=True,
+        eval_strategy="epoch",
+        save_strategy="epoch",
+        save_total_limit=save_total_limit,
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",
+        greater_is_better=False,
+        logging_dir=os.path.join(output_dir, "logs"),
+        report_to=[],
+        torch_compile=True,
+        ddp_find_unused_parameters=False,
+    )
+
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
-        compute_metrics=compute_metrics_with_names,
+        compute_metrics=lambda p: compute_metrics_with_names(p, train_dataset.feature_names),
         callbacks=[
             EarlyStoppingCallback(early_stopping_patience=patience),
-            MetricsCallback(metrics_dir)
-        ]
+            MetricsCallback(metrics_dir),
+        ],
     )
-    
-    # Train the model
+
     train_result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
-    
-    # Save the final model
-    final_output_dir = os.path.join(output_dir, "final_model")
-    trainer.save_model(final_output_dir)
-    
-    # Save feature scalers - FIX: access scalers from story_data
-    if hasattr(train_dataset, 'scalers'):
-        torch.save(train_dataset.scalers, os.path.join(final_output_dir, "feature_scalers.pt"))
-    else:
-        print("Warning: Scalers not found in dataset. Add them to ProsodyDataset if needed.")
-    
-    # Compute final metrics on validation set
+
+    # Save final model & artifacts
+    final_dir = os.path.join(output_dir, "final_model")
+    trainer.save_model(final_dir)
+
+    if hasattr(train_dataset, "scalers"):
+        torch.save(train_dataset.scalers, os.path.join(final_dir, "feature_scalers.pt"))
+
     final_metrics = trainer.evaluate()
-    
-    # Save training info with detailed metrics
+
     training_info = {
-        "features": train_dataset.feature_names,  # Use actual feature names
+        "model_type": model_type,
+        "base_model": base_model_name,
+        "features": train_dataset.feature_names,
         "num_layers_frozen": num_layers_to_freeze,
         "best_eval_loss": trainer.state.best_metric,
         "num_epochs_completed": trainer.state.epoch,
         "early_stopped": trainer.state.global_step < num_epochs * len(train_dataset) // batch_size,
         "final_metrics": final_metrics,
-        "training_time": train_result.metrics.get("train_runtime", None),
-        "total_steps": train_result.metrics.get("train_steps", None),
+        "training_time": train_result.metrics.get("train_runtime"),
         "gpu_info": {
-            "num_gpus": num_gpus,
-            "gpu_names": [torch.cuda.get_device_name(i) for i in range(num_gpus)] if num_gpus > 0 else None
+            "num_gpus": torch.cuda.device_count(),
+            "gpu_names": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())] if torch.cuda.is_available() else None
         }
     }
-    
-    # Save training info
-    with open(os.path.join(final_output_dir, "training_info.json"), "w") as f:
+
+    with open(os.path.join(final_dir, "training_info.json"), "w") as f:
         json.dump(training_info, f, indent=2)
-    
-    # Save final metrics separately
+
     with open(os.path.join(metrics_dir, "final_metrics.json"), "w") as f:
         json.dump(final_metrics, f, indent=2)
-    
-    # Save PCA information if available
-    if hasattr(train_dataset, 'pca_info'):
-        with open(os.path.join(final_output_dir, "pca_info.json"), "w") as f:
+
+    if hasattr(train_dataset, "pca_info"):
+        with open(os.path.join(final_dir, "pca_info.json"), "w") as f:
             json.dump(train_dataset.pca_info, f, indent=2)
-    
+
     return training_info
-   
