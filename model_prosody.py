@@ -273,6 +273,24 @@ class AudioEncoderForProsody(nn.Module):
 
         self.freeze_base_model(freeze_layers)
 
+    @property
+    def gradient_checkpointing(self):
+        return getattr(self.encoder, 'gradient_checkpointing', False)
+
+    def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
+        if hasattr(self.encoder, "gradient_checkpointing_enable"):
+            self.encoder.gradient_checkpointing_enable(gradient_checkpointing_kwargs=gradient_checkpointing_kwargs)
+        else:
+            if hasattr(self.encoder, "gradient_checkpointing"):
+                self.encoder.gradient_checkpointing = True
+
+    def gradient_checkpointing_disable(self):
+        if hasattr(self.encoder, "gradient_checkpointing_disable"):
+            self.encoder.gradient_checkpointing_disable()
+        else:
+            if hasattr(self.encoder, "gradient_checkpointing"):
+                self.encoder.gradient_checkpointing = False
+
     def freeze_base_model(self, layers_to_freeze: Union[int, List[int]] = None):
         # Freeze conv / projection layers if present
         for name, module in self.encoder.named_modules():
