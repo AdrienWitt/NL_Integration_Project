@@ -12,6 +12,7 @@ from transformers import (
     AutoProcessor,
     AutoFeatureExtractor,
     Wav2Vec2FeatureExtractor,
+    PreTrainedModel,
     Wav2Vec2PreTrainedModel,
     AutoConfig,
     TrainingArguments,
@@ -45,7 +46,7 @@ class ProsodyDataset(Dataset):
         self,
         audio_dir: str,
         prosody_dir: str,
-        processor: Wav2Vec2FeatureExtractor,
+        processor: AutoFeatureExtractor,
         story_names: Optional[List[str]] = None,
         use_pca: bool = False,
         pca_threshold: float = 0.90,
@@ -239,36 +240,38 @@ class ProsodyDataset(Dataset):
 
 
 
-class AudioEncoderForProsody(nn.Module):
+class AudioEncoderForProsody(PreTrainedModel):
+
     """
     Generic prosody regression head on top of self-supervised speech encoders.
-    Supports: wav2vec2, hubert, wavlm, etc.
     """
+    config_class = AutoConfig  # ← optional but recommended
+
     def __init__(
         self,
         base_model_name: str,
         num_features: int,
         freeze_layers: Union[int, List[int]] = 8,
         dropout_p: float = 0.1,
+        **kwargs  # important: accept extra kwargs for from_pretrained compatibility
     ):
-        super().__init__()
+        # We need to pass config to super() when using PreTrainedModel
+        # But since you're using a third-party base model, we usually load config first
+        config = AutoConfig.from_pretrained(base_model_name)
+        super().__init__(config=config, **kwargs)
+
         self.base_model_name = base_model_name
-
-        self.config = AutoConfig.from_pretrained(base_model_name)
         self.encoder = AutoModel.from_pretrained(base_model_name)
-
-        self.hidden_size = self.config.hidden_size
+        self.hidden_size = self.config.hidden_size   # now safe
         print(f"Loaded {base_model_name} — hidden size: {self.hidden_size}")
 
         self.dropout = nn.Dropout(dropout_p)
-
         self.regressor = nn.Sequential(
             nn.Linear(self.hidden_size, 512),
             nn.ReLU(),
             nn.Dropout(dropout_p),
             nn.Linear(512, num_features),
         )
-
         self.loss_fct = nn.MSELoss()
 
         self.freeze_base_model(freeze_layers)
@@ -483,7 +486,7 @@ def train_model(
 
     # Processor should already be set in datasets — but ensure consistency
     
-    processor = Wav2Vec2FeatureExtractor.from_pretrained(base_model_name)
+    processor = AutoFeatureExtractor.from_pretrained(base_model_name)
     
     # Training args (unchanged — good defaults)
     training_args = TrainingArguments(
