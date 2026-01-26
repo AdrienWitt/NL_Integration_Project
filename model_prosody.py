@@ -279,7 +279,8 @@ class AudioEncoderForProsody(PreTrainedModel):
         print(f"Initializing with backbone: {self.base_model_name}")
         self.encoder = AutoModel.from_pretrained(self.base_model_name)
 
-        self.hidden_size = config.hidden_size
+        self.hidden_size = getattr(config, "hidden_size", 1024)
+
         print(f"Hidden size: {self.hidden_size}")
 
         self.dropout = nn.Dropout(dropout_p)
