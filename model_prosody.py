@@ -91,6 +91,18 @@ class ProsodyDataset(Dataset):
             and os.path.exists(os.path.join(prosody_dir, f"{story}_opensmile_tr_aligned.json"))
         ]
         
+        if story_names:
+            requested = set(story_names)
+            self.valid_stories = [
+                s for s in self.valid_stories if s in requested
+            ]
+            if not self.valid_stories:
+                raise ValueError(
+                    f"None of the requested stories {story_names} "
+                    f"are valid. Available valid: {self.valid_stories}"
+                )
+
+              
         if not self.valid_stories:
             raise ValueError("No valid stories found (audio + JSON + TR timing)")
 
@@ -241,29 +253,34 @@ class ProsodyDataset(Dataset):
 
 
 class AudioEncoderForProsody(PreTrainedModel):
-
-    """
-    Generic prosody regression head on top of self-supervised speech encoders.
-    """
-    config_class = AutoConfig  # ← optional but recommended
+    config_class = AutoConfig
 
     def __init__(
         self,
-        base_model_name: str,
+        config,                               # ← first positional = config (required!)
         num_features: int,
+        base_model_name: Optional[str] = None,
         freeze_layers: Union[int, List[int]] = 8,
         dropout_p: float = 0.1,
-        **kwargs  # important: accept extra kwargs for from_pretrained compatibility
+        **kwargs
     ):
-        # We need to pass config to super() when using PreTrainedModel
-        # But since you're using a third-party base model, we usually load config first
-        config = AutoConfig.from_pretrained(base_model_name)
-        super().__init__(config=config, **kwargs)
+        super().__init__(config, **kwargs)
 
+        # Determine base_model_name: from argument → from config → error
         self.base_model_name = base_model_name
-        self.encoder = AutoModel.from_pretrained(base_model_name)
-        self.hidden_size = self.config.hidden_size   # now safe
-        print(f"Loaded {base_model_name} — hidden size: {self.hidden_size}")
+        if self.base_model_name is None:
+            self.base_model_name = getattr(config, "base_model_name", None)
+            if self.base_model_name is None:
+                raise ValueError(
+                    "base_model_name is required when creating a new model.\n"
+                    "Either pass it explicitly or make sure it's stored in the saved config."
+                )
+
+        print(f"Initializing with backbone: {self.base_model_name}")
+        self.encoder = AutoModel.from_pretrained(self.base_model_name)
+
+        self.hidden_size = config.hidden_size
+        print(f"Hidden size: {self.hidden_size}")
 
         self.dropout = nn.Dropout(dropout_p)
         self.regressor = nn.Sequential(
@@ -274,7 +291,13 @@ class AudioEncoderForProsody(PreTrainedModel):
         )
         self.loss_fct = nn.MSELoss()
 
+        # Freeze after initialization
         self.freeze_base_model(freeze_layers)
+
+        # Save important attributes to config for future loading
+        self.config.base_model_name = self.base_model_name
+        self.config.num_features = num_features
+        self.config.dropout_p = dropout_p
 
     @property
     def gradient_checkpointing(self):
@@ -473,17 +496,20 @@ def train_model(
         print(f"Resuming from {resume_from_checkpoint}")
         model = AudioEncoderForProsody.from_pretrained(
             resume_from_checkpoint,
-            base_model_name=base_model_name,  # ignored if checkpoint has it
-            num_features=num_features,
+            base_model_name=base_model_name,
+            num_features=num_features,            
         )
         model.freeze_base_model(num_layers_to_freeze)
+    
     else:
         model = AudioEncoderForProsody(
             base_model_name=base_model_name,
             num_features=num_features,
-            freeze_layers=num_layers_to_freeze,
         )
+        model.freeze_base_model(num_layers_to_freeze)
 
+        
+        
     # Processor should already be set in datasets — but ensure consistency
     
     processor = AutoFeatureExtractor.from_pretrained(base_model_name)
