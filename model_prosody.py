@@ -279,9 +279,13 @@ class AudioEncoderForProsody(PreTrainedModel):
         print(f"Initializing with backbone: {self.base_model_name}")
         self.encoder = AutoModel.from_pretrained(self.base_model_name)
 
-        self.hidden_size = getattr(config, "hidden_size", 1024)
-
-        print(f"Hidden size: {self.hidden_size}")
+        encoder_hidden = self.encoder.config.hidden_size
+        assert encoder_hidden == 1024, (
+            f"Expected hidden size 1024, got {encoder_hidden}. "
+            f"Backbone: {self.base_model_name}"
+        )
+        
+        self.hidden_size = encoder_hidden
 
         self.dropout = nn.Dropout(dropout_p)
         self.regressor = nn.Sequential(
