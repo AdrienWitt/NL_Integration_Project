@@ -76,7 +76,7 @@ if __name__ == "__main__":
     # ────────────────────────────────────────────────────────────────
     audio_files = sorted(f for f in os.listdir(args.audio_dir) if f.lower().endswith(".wav"))
     story_names = [os.path.splitext(f)[0] for f in audio_files]
-    story_names = story_names[0:3]
+    #story_names = story_names[0:3]
 
     if not story_names:
         raise FileNotFoundError(f"No .wav files found in {args.audio_dir}")
