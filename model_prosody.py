@@ -257,7 +257,8 @@ class AudioEncoderForProsody(PreTrainedModel):
 
     def __init__(
         self,
-        config,                               # ← first positional = config (required!)
+        config,
+        *,
         num_features: int,
         base_model_name: Optional[str] = None,
         freeze_layers: Union[int, List[int]] = 8,
