@@ -498,17 +498,30 @@ def train_model(
     # Load model
     if resume_from_checkpoint and os.path.isdir(resume_from_checkpoint):
         print(f"Resuming from {resume_from_checkpoint}")
+        # Load config first to get num_features if stored
+        config = AutoConfig.from_pretrained(resume_from_checkpoint)
+        
+        # Use num_features from config if it exists there, otherwise use the one passed in
+        if hasattr(config, 'num_features'):
+            if num_features != config.num_features:
+                print(f"Warning: num_features mismatch. Using {config.num_features} from checkpoint config.")
+                num_features = config.num_features
+        
+        # Create model with config and num_features
         model = AudioEncoderForProsody.from_pretrained(
             resume_from_checkpoint,
+            num_features=num_features,
             base_model_name=base_model_name,
-            num_features=num_features,            
         )
         model.freeze_base_model(num_layers_to_freeze)
     
     else:
+        # Create new model - need to create config first
+        config = AutoConfig.from_pretrained(base_model_name)
         model = AudioEncoderForProsody(
-            base_model_name=base_model_name,
+            config=config,
             num_features=num_features,
+            base_model_name=base_model_name,
         )
         model.freeze_base_model(num_layers_to_freeze)
 
