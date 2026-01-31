@@ -258,14 +258,18 @@ class AudioEncoderForProsody(PreTrainedModel):
     def __init__(
         self,
         config,
-        *,
         num_features: int,
-        base_model_name: Optional[str] = None,
-        freeze_layers: Union[int, List[int]] = 8,
-        dropout_p: float = 0.1,
-        **kwargs
+        base_model_name: str = None,           # optional
+        freeze_layers: Union[int, List[int]] = 6,
+        **kwargs                               # ← very important!
     ):
         super().__init__(config, **kwargs)
+        
+        self.num_features = num_features
+        self.dropout = nn.Dropout(0.1)
+        self.base_model_name = base_model_name
+
+
 
         # Determine base_model_name: from argument → from config → error
         self.base_model_name = base_model_name
@@ -279,31 +283,25 @@ class AudioEncoderForProsody(PreTrainedModel):
 
         print(f"Initializing with backbone: {self.base_model_name}")
         self.encoder = AutoModel.from_pretrained(self.base_model_name)
-
-        encoder_hidden = self.encoder.config.hidden_size
-        assert encoder_hidden == 1024, (
-            f"Expected hidden size 1024, got {encoder_hidden}. "
-            f"Backbone: {self.base_model_name}"
-        )
         
-        self.hidden_size = encoder_hidden
-
-        self.dropout = nn.Dropout(dropout_p)
+        self.hidden_size = getattr(config, "hidden_size", 1024)
+        
         self.regressor = nn.Sequential(
             nn.Linear(self.hidden_size, 512),
-            nn.ReLU(),
-            nn.Dropout(dropout_p),
-            nn.Linear(512, num_features),
+            nn.ReLU(),  
+            nn.Dropout(0.1),
+            nn.Linear(512, num_features) 
         )
         self.loss_fct = nn.MSELoss()
-
-        # Freeze after initialization
+        self.init_weights()
+        
+        # Freeze layers by default
         self.freeze_base_model(freeze_layers)
+
 
         # Save important attributes to config for future loading
         self.config.base_model_name = self.base_model_name
         self.config.num_features = num_features
-        self.config.dropout_p = dropout_p
 
     @property
     def gradient_checkpointing(self):
@@ -514,7 +512,6 @@ def train_model(
         )
         model.freeze_base_model(num_layers_to_freeze)
 
-        
         
     # Processor should already be set in datasets — but ensure consistency
     
