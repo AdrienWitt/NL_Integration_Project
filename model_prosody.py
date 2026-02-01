@@ -258,48 +258,53 @@ class AudioEncoderForProsody(PreTrainedModel):
     def __init__(
         self,
         config,
-        num_features: int,
-        base_model_name: str = None,           # optional
+        num_features: Optional[int] = None,
+        base_model_name: Optional[str] = None,
         freeze_layers: Union[int, List[int]] = 6,
-        **kwargs                               # ← very important!
+        **kwargs
     ):
         super().__init__(config, **kwargs)
-        
-        self.num_features = num_features
-        self.dropout = nn.Dropout(0.1)
-        self.base_model_name = base_model_name
 
-
-
-        # Determine base_model_name: from argument → from config → error
-        self.base_model_name = base_model_name
-        if self.base_model_name is None:
-            self.base_model_name = getattr(config, "base_model_name", None)
-            if self.base_model_name is None:
+        # num_features
+        if num_features is None:
+            num_features = getattr(config, "num_features", None)
+            if num_features is None:
                 raise ValueError(
-                    "base_model_name is required when creating a new model.\n"
-                    "Either pass it explicitly or make sure it's stored in the saved config."
+                    "num_features must be provided either as an argument "
+                    "or stored in the config."
                 )
+        self.num_features = num_features
 
-        print(f"Initializing with backbone: {self.base_model_name}")
-        self.encoder = AutoModel.from_pretrained(self.base_model_name)
-        
+        # base model name
+        if base_model_name is None:
+            base_model_name = getattr(config, "base_model_name", None)
+            if base_model_name is None:
+                raise ValueError(
+                    "base_model_name is required when creating a new model "
+                    "or loading from checkpoint."
+                )
+        self.base_model_name = base_model_name
+
+        self.dropout = nn.Dropout(0.1)
+
+        # IMPORTANT: build encoder from config, not from_pretrained
+        self.encoder = AutoModel.from_config(config)
+
         self.hidden_size = getattr(config, "hidden_size", 1024)
-        
+
         self.regressor = nn.Sequential(
             nn.Linear(self.hidden_size, 512),
-            nn.ReLU(),  
+            nn.ReLU(),
             nn.Dropout(0.1),
-            nn.Linear(512, num_features) 
+            nn.Linear(512, num_features),
         )
+
         self.loss_fct = nn.MSELoss()
-        self.init_weights()
-        
-        # Freeze layers by default
+
+        # Freeze layers
         self.freeze_base_model(freeze_layers)
 
-
-        # Save important attributes to config for future loading
+        # Persist for reload
         self.config.base_model_name = self.base_model_name
         self.config.num_features = num_features
 
