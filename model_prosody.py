@@ -261,11 +261,11 @@ class AudioEncoderForProsody(PreTrainedModel):
         num_features: Optional[int] = None,
         base_model_name: Optional[str] = None,
         freeze_layers: Union[int, List[int]] = 6,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(config, **kwargs)
 
-        # num_features
+        # ── num_features ─────────────────────────────────────────────
         if num_features is None:
             num_features = getattr(config, "num_features", None)
             if num_features is None:
@@ -275,7 +275,7 @@ class AudioEncoderForProsody(PreTrainedModel):
                 )
         self.num_features = num_features
 
-        # base model name
+        # ── base model name ──────────────────────────────────────────
         if base_model_name is None:
             base_model_name = getattr(config, "base_model_name", None)
             if base_model_name is None:
@@ -285,13 +285,16 @@ class AudioEncoderForProsody(PreTrainedModel):
                 )
         self.base_model_name = base_model_name
 
+        # ── encoder (PRETRAINED) ─────────────────────────────────────
+        self.encoder = AutoModel.from_pretrained(
+            self.base_model_name,
+            config=config,  # ensures config consistency
+        )
+
+        self.hidden_size = config.hidden_size
         self.dropout = nn.Dropout(0.1)
 
-        # IMPORTANT: build encoder from config, not from_pretrained
-        self.encoder = AutoModel.from_config(config)
-
-        self.hidden_size = getattr(config, "hidden_size", 1024)
-
+        # ── regression head (trained from scratch) ───────────────────
         self.regressor = nn.Sequential(
             nn.Linear(self.hidden_size, 512),
             nn.ReLU(),
@@ -301,12 +304,12 @@ class AudioEncoderForProsody(PreTrainedModel):
 
         self.loss_fct = nn.MSELoss()
 
-        # Freeze layers
+        # ── freeze layers if requested ───────────────────────────────
         self.freeze_base_model(freeze_layers)
 
-        # Persist for reload
+        # ── persist metadata for reload ──────────────────────────────
         self.config.base_model_name = self.base_model_name
-        self.config.num_features = num_features
+        self.config.num_features = self.num_features
 
     @property
     def gradient_checkpointing(self):
