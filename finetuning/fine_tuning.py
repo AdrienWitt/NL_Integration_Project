@@ -4,18 +4,19 @@ from sklearn.model_selection import train_test_split
 
 from transformers import AutoFeatureExtractor, Wav2Vec2FeatureExtractor
 
-from model_prosody import ProsodyDataset, train_model   # your module with the generalized classes
-from encoding.config import DATA_DIR   # if still needed
+from utils.prosody_dataset import ProsodyDataset
+from utils.training import train_model
+from utils.config import STIMULI_DIR, PROSODY_DIR
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train self-supervised speech model for prosody feature prediction")
     
-    # Required paths
-    parser.add_argument("--audio_dir", type=str, required=True,
-                        help="Directory containing .wav files")
-    parser.add_argument("--prosody_dir", type=str, required=True,
-                        help="Directory containing _opensmile_tr_aligned.json files")
+    # Required paths (audio_dir defaults to STIMULI_DIR if not provided)
+    parser.add_argument("--audio_dir", type=str, default=STIMULI_DIR, required=False,
+                        help=f"Directory containing .wav files (defaults to STIMULI_DIR: {STIMULI_DIR})")
+    parser.add_argument("--prosody_dir", type=str, default=PROSODY_DIR, required=False,
+                        help=f"Directory containing _opensmile_tr_aligned.json files (defaults to PROSODY_DIR: {PROSODY_DIR})")
     parser.add_argument("--output_dir", type=str, required=True,
                         help="Base directory to save models, metrics, splits, etc.")
 
@@ -76,7 +77,7 @@ if __name__ == "__main__":
     # ────────────────────────────────────────────────────────────────
     audio_files = sorted(f for f in os.listdir(args.audio_dir) if f.lower().endswith(".wav"))
     story_names = [os.path.splitext(f)[0] for f in audio_files]
-    #story_names = story_names[0:3]
+    story_names = story_names[0:3]
 
     if not story_names:
         raise FileNotFoundError(f"No .wav files found in {args.audio_dir}")
@@ -122,6 +123,23 @@ if __name__ == "__main__":
     # ────────────────────────────────────────────────────────────────
     # Create datasets
     # ────────────────────────────────────────────────────────────────
+    # Diagnostic checks: list available audio/prosody files to help debugging
+    print("Resolved paths:")
+    print("  audio_dir:", args.audio_dir)
+    print("  prosody_dir:", args.prosody_dir)
+    try:
+        audio_list = sorted(f for f in os.listdir(args.audio_dir) if f.lower().endswith('.wav'))
+    except Exception as e:
+        audio_list = []
+        print("  Error listing audio_dir:", e)
+    try:
+        prosody_list = sorted(f for f in os.listdir(args.prosody_dir) if f.endswith('_opensmile_tr_aligned.json'))
+    except Exception as e:
+        prosody_list = []
+        print("  Error listing prosody_dir:", e)
+    print(f"  Found {len(audio_list)} .wav files (examples): {audio_list[:10]}")
+    print(f"  Found {len(prosody_list)} prosody json files (examples): {prosody_list[:10]}")
+
     common_kwargs = {
         "audio_dir": args.audio_dir,
         "prosody_dir": args.prosody_dir,

@@ -1,0 +1,75 @@
+{
+    "dataset_info": {
+        "num_participants": 4,
+        "participants": [
+            "UTS01",
+            "UTS02",
+            "UTS03",
+            "UTS09"
+        ],
+        "train_stories_count": 53
+    },
+    "train": {
+        "stories": [
+            "adollshouse",
+            "adventuresinsayingyes",
+            "againstthewind",
+            "alternateithicatom",
+            "avatar",
+            "backsideofthestorm",
+            "becomingindian",
+            "bluehope",
+            "breakingupintheageofgoogle",
+            "buck",
+            "catfishingstrangerstofindmyself",
+            "christmas1940",
+            "exorcism",
+            "eyespy",
+            "forgettingfear",
+            "goingthelibertyway",
+            "gpsformylostidentity",
+            "hangtime",
+            "haveyoumethimyet",
+            "howtodraw",
+            "ifthishaircouldtalk",
+            "inamoment",
+            "itsabox",
+            "kiksuya",
+            "legacy",
+            "life",
+            "lifeanddeathontheoregontrail",
+            "lifereimagined",
+            "myfirstdaywiththeyankees",
+            "naked",
+            "odetostepfather",
+            "onlyonewaytofindout",
+            "penpal",
+            "shoppinginchina",
+            "singlewomanseekingmanwich",
+            "sloth",
+            "souls",
+            "stagefright",
+            "stumblinginthedark",
+            "superheroesjustforeachother",
+            "sweetaspie",
+            "swimmingwithastronauts",
+            "thatthingonmyarm",
+            "theclosetthatateeverything",
+            "thefreedomridersandme",
+            "thepostmanalwayscalls",
+            "thetiniestbouquet",
+            "thumbsup",
+            "tildeath",
+            "treasureisland",
+            "undertheinfluence",
+            "waitingtogo",
+            "whenmothersbullyback"
+        ]
+    },
+    "test": {
+        "stories": [
+            "wheretheressmoke"
+        ],
+        "note": "repeated story (use individual_repeats if available)"
+    }
+}

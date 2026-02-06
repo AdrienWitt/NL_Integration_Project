@@ -178,7 +178,7 @@ def analyze_story_overlap(main_folder, output_file="story_overlap_analysis.json"
 
 if __name__ == "__main__":
     # Update these paths to match your system
-    main_folder = r"E:\NL\ds003020\derivative\data\preprocessed_data"
+    main_folder = r"E:\NL\clean_nl_preproc\ds003020\derivative\preprocessed_data"
     output_dir = r"C:\Users\wittmann\OneDrive - unige.ch\Documents\Sarcasm_experiment\NL_Project\derivative"
     
     # Find optimal configurations for all participant counts

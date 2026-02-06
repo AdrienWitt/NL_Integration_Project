@@ -32,39 +32,8 @@
         "wheretheressmoke"
     ],
     "participants": {
-        "sub-UTS01": {
-            "folder": "E:\\NL\\ds003020\\derivative\\data\\preprocessed_data\\sub-UTS01",
-            "stories": [
-                "adollshouse",
-                "adventuresinsayingyes",
-                "alternateithicatom",
-                "avatar",
-                "buck",
-                "exorcism",
-                "eyespy",
-                "hangtime",
-                "haveyoumethimyet",
-                "howtodraw",
-                "inamoment",
-                "itsabox",
-                "legacy",
-                "myfirstdaywiththeyankees",
-                "naked",
-                "odetostepfather",
-                "sloth",
-                "souls",
-                "stagefright",
-                "swimmingwithastronauts",
-                "thatthingonmyarm",
-                "theclosetthatateeverything",
-                "tildeath",
-                "undertheinfluence",
-                "wheretheressmoke"
-            ],
-            "total_stories_available": 83
-        },
-        "sub-UTS02": {
-            "folder": "E:\\NL\\ds003020\\derivative\\data\\preprocessed_data\\sub-UTS02",
+        "UTS01": {
+            "folder": "E:\\NL\\clean_nl_preproc\\ds003020\\derivative\\preprocessed_data\\UTS01",
             "stories": [
                 "adollshouse",
                 "adventuresinsayingyes",
@@ -94,8 +63,8 @@
             ],
             "total_stories_available": 84
         },
-        "sub-UTS03": {
-            "folder": "E:\\NL\\ds003020\\derivative\\data\\preprocessed_data\\sub-UTS03",
+        "UTS02": {
+            "folder": "E:\\NL\\clean_nl_preproc\\ds003020\\derivative\\preprocessed_data\\UTS02",
             "stories": [
                 "adollshouse",
                 "adventuresinsayingyes",
@@ -125,8 +94,39 @@
             ],
             "total_stories_available": 84
         },
-        "sub-UTS04": {
-            "folder": "E:\\NL\\ds003020\\derivative\\data\\preprocessed_data\\sub-UTS04",
+        "UTS03": {
+            "folder": "E:\\NL\\clean_nl_preproc\\ds003020\\derivative\\preprocessed_data\\UTS03",
+            "stories": [
+                "adollshouse",
+                "adventuresinsayingyes",
+                "alternateithicatom",
+                "avatar",
+                "buck",
+                "exorcism",
+                "eyespy",
+                "hangtime",
+                "haveyoumethimyet",
+                "howtodraw",
+                "inamoment",
+                "itsabox",
+                "legacy",
+                "myfirstdaywiththeyankees",
+                "naked",
+                "odetostepfather",
+                "sloth",
+                "souls",
+                "stagefright",
+                "swimmingwithastronauts",
+                "thatthingonmyarm",
+                "theclosetthatateeverything",
+                "tildeath",
+                "undertheinfluence",
+                "wheretheressmoke"
+            ],
+            "total_stories_available": 84
+        },
+        "UTS04": {
+            "folder": "E:\\NL\\clean_nl_preproc\\ds003020\\derivative\\preprocessed_data\\UTS04",
             "stories": [
                 "adollshouse",
                 "adventuresinsayingyes",
@@ -156,8 +156,8 @@
             ],
             "total_stories_available": 26
         },
-        "sub-UTS05": {
-            "folder": "E:\\NL\\ds003020\\derivative\\data\\preprocessed_data\\sub-UTS05",
+        "UTS05": {
+            "folder": "E:\\NL\\clean_nl_preproc\\ds003020\\derivative\\preprocessed_data\\UTS05",
             "stories": [
                 "adollshouse",
                 "adventuresinsayingyes",
@@ -187,8 +187,8 @@
             ],
             "total_stories_available": 27
         },
-        "sub-UTS06": {
-            "folder": "E:\\NL\\ds003020\\derivative\\data\\preprocessed_data\\sub-UTS06",
+        "UTS06": {
+            "folder": "E:\\NL\\clean_nl_preproc\\ds003020\\derivative\\preprocessed_data\\UTS06",
             "stories": [
                 "adollshouse",
                 "adventuresinsayingyes",
@@ -218,8 +218,8 @@
             ],
             "total_stories_available": 27
         },
-        "sub-UTS07": {
-            "folder": "E:\\NL\\ds003020\\derivative\\data\\preprocessed_data\\sub-UTS07",
+        "UTS07": {
+            "folder": "E:\\NL\\clean_nl_preproc\\ds003020\\derivative\\preprocessed_data\\UTS07",
             "stories": [
                 "adollshouse",
                 "adventuresinsayingyes",
@@ -249,8 +249,8 @@
             ],
             "total_stories_available": 27
         },
-        "sub-UTS08": {
-            "folder": "E:\\NL\\ds003020\\derivative\\data\\preprocessed_data\\sub-UTS08",
+        "UTS08": {
+            "folder": "E:\\NL\\clean_nl_preproc\\ds003020\\derivative\\preprocessed_data\\UTS08",
             "stories": [
                 "adollshouse",
                 "adventuresinsayingyes",
@@ -280,8 +280,8 @@
             ],
             "total_stories_available": 27
         },
-        "sub-UTS09": {
-            "folder": "E:\\NL\\ds003020\\derivative\\data\\preprocessed_data\\sub-UTS09",
+        "UTS09": {
+            "folder": "E:\\NL\\clean_nl_preproc\\ds003020\\derivative\\preprocessed_data\\UTS09",
             "stories": [
                 "adollshouse",
                 "adventuresinsayingyes",

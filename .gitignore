@@ -11,14 +11,15 @@ ENV/
 
 # Data directories
 ds003020/
-
-model_output/
+voxelwise_tutorials/
+*model_output/
 stimuli_16k/
 stimuli_test/
 features/
 Huth/
-trash/
-finetuning_results/
+*trash/
+*_norton_/
+*finetuning_results/
 derivative/preprocessed_data/
 derivative/preprocessed_data_old/
 

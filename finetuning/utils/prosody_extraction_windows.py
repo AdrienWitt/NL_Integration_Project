@@ -5,9 +5,9 @@ import librosa
 import opensmile
 from tqdm import tqdm
 from pathlib import Path
-from encoding.config import REPO_DIR
+from .config import REPO_DIR
 
-from encoding.ridge_utils.stimulus_utils import load_simulated_trfiles
+from prosody_utils import load_simulated_trfiles
 
 # Initialize OpenSMILE
 smile = opensmile.Smile(

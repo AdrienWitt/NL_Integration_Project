@@ -1,0 +1,40 @@
+{
+    "dataset_info": {
+        "total_participants": 9,
+        "total_unique_stories": 84,
+        "analysis_date": "2026-02-06",
+        "total_groups": 6
+    },
+    "groups": [
+        {
+            "file": "train_test_split_83_stories_3_subs.json",
+            "train_stories": 83,
+            "participants": 3
+        },
+        {
+            "file": "train_test_split_53_stories_4_subs.json",
+            "train_stories": 53,
+            "participants": 4
+        },
+        {
+            "file": "train_test_split_26_stories_7_subs.json",
+            "train_stories": 26,
+            "participants": 7
+        },
+        {
+            "file": "train_test_split_25_stories_8_subs.json",
+            "train_stories": 25,
+            "participants": 8
+        },
+        {
+            "file": "train_test_split_25_stories_8_subs_1.json",
+            "train_stories": 25,
+            "participants": 8
+        },
+        {
+            "file": "train_test_split_24_stories_9_subs.json",
+            "train_stories": 24,
+            "participants": 9
+        }
+    ]
+}
