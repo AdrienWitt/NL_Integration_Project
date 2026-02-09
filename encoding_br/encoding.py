@@ -107,7 +107,6 @@ def process_subject(subject, args, gpu_id):
         ndelays=args.ndelays,
         use_pca=args.use_pca,
         n_comps=args.n_comps,
-        diagonalize_method='svd'
     )
 
     X_text_train, onset_train = preprocess_features(train_stories, text_feat, **kwargs)
@@ -157,6 +156,7 @@ def process_subject(subject, args, gpu_id):
         n_targets_batch=args.n_targets_batch,
         n_alphas_batch=args.n_alphas_batch,
         n_targets_batch_refit=args.n_targets_batch_refit,
+        diagonalize_method='svd'
     )
 
     mkr = MultipleKernelRidgeCV(
