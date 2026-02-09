@@ -242,7 +242,8 @@ def main():
 
     # Subjects
     if args.subjects == "all":
-        with open(args.json_name) as f:
+        json_path = join(DER_DIR, args.json_name)
+        with open(json_path) as f:
             subjects = json.load(f)["dataset_info"]["participants"]
     else:
         subjects = args.subjects.split(",")
