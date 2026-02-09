@@ -198,6 +198,15 @@ def process_subject(subject, args, gpu_id):
 
     split_scores = np.zeros((split_scores_mask.shape[0], n_voxels))
     split_scores[:, mask] = split_scores_mask
+    
+    if mask.sum() > 0:
+        valid_scores = scores[mask]
+        logging.info(f"[{subject}] Joint scores (masked voxels, n={len(valid_scores)}): "
+                     f"min={valid_scores.min():.4f}, "
+                     f"max={valid_scores.max():.4f}, "
+                     f"mean={valid_scores.mean():.4f}, "
+                     f"median={np.median(valid_scores):.4f}, "
+                     f"std={valid_scores.std():.4f}")
 
     # -----------------------------------------------------------------
     # Save
