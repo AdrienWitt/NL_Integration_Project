@@ -142,7 +142,7 @@ def get_response(stories, subject):
     """Get the subject"s fMRI response for stories."""
     #subject_dir = join(DATA_DIR, "ds003020/derivative/data_normalized/preprocessed_data/%s" % subject)
     #base_path = "E:/NL/ds003020/derivative/data_normalized"
-    subject_dir = os.path.join(DATA_DIR, "preprocessed_data", subject)
+    subject_dir = os.path.join(DATA_DIR, subject)
     resp = []
     for story in stories:
         resp_path = os.path.join(subject_dir, "%s.hf5" % story)

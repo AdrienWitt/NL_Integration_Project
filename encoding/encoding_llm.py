@@ -4,7 +4,7 @@ import argparse
 import json
 import logging
 from os.path import join
-from encoding.encoding_utils import load_embeddings, preprocess_features, get_response_mask
+from encoding.encoding_utils import load_embeddings, preprocess_features, get_response
 from encoding.ridge_utils.ridge import ridge_cv
 from encoding.config import REPO_DIR
 import time
@@ -17,18 +17,17 @@ DEFAULT_ARGS = {
     "subjects": "UTS01",
     "trim": 5,
     "ndelays": 4,
-    "nboots": 5,
+    "nboots": 3,
     "nsplits": 5,
     "chunklen": 12,  # Note: Not used in ridge_cv but kept for compatibility
-    "modality": "text_audio",
+    "modality": "audio",
     "singcutoff": 1e-10,
     "use_corr": True,
     "single_alpha": False,  # Note: Not used in ridge_cv but kept for compatibility
-    "use_pca": True,
+    "use_pca": False,
     "n_comps": 20,
-    "optimize_alpha": True,
-    "not_use_attention": False,
-    "use_opensmile": True,
+    "text_type" : "gpt2_mean",
+    "audio_type": "opensmile",
     "corrmin": 0.0,
     "normalize_stim": False,
     "normalize_resp": True,
@@ -36,9 +35,11 @@ DEFAULT_ARGS = {
     "with_replacement": False,
     "normalpha": False,
     "return_wt": False ,
-    "json_path": "derivative/common_stories_25_for_9_participants.json",
-    "optimize_alpha" : False
-}
+    "json_name": "derivative/common_stories_25_for_9_participants.json",
+    "optimize_alpha" : True,
+    "alpha_min" : 1,
+    "alpha_max": 20,
+    "num_alphas" : 20}
 
 args = argparse.Namespace(**DEFAULT_ARGS)
 
@@ -64,8 +65,8 @@ def parse_arguments():
     parser.add_argument("--singcutoff", type=float, default=1e-10, help="Singular value cutoff for SVD")
     parser.add_argument("--single_alpha", action="store_true", help="Use single alpha for all voxels (unused in ridge_cv)")
     parser.add_argument("--normalpha", action="store_true", help="Normalize alphas by largest singular value")
-    parser.add_argument("--not_use_attention", action="store_true", help="Use simple GPT-2 embeddings if set")
-    parser.add_argument("--use_opensmile", action="store_true", help="Use OpenSMILE audio features if set")
+    parser.add_argument("--text_type", type=str, help="Use simple this type of text embeddings",  default = "gpt2_attention")
+    parser.add_argument("--audio_type",type=str, help="Use this type of audio features", default = "opensmile")
     parser.add_argument("--corrmin", type=float, default=0.0, help="Minimum correlation for logging")
     parser.add_argument("--normalize_stim", action="store_true", help="Z-score stimuli")
     parser.add_argument("--normalize_resp", action="store_true", help="Z-score responses")
@@ -90,7 +91,7 @@ def load_session_data(subject, json_path):
         data = json.load(f)
     
     # Get subject key (e.g., 'sub-subject1')
-    subject_key = f"sub-{subject}"
+    subject_key = f"{subject}"
   
     # Extract train and test stories for the subject
     stories = data["participants"][subject_key]["stories"]
@@ -110,23 +111,21 @@ def main():
     setup_logging()
     logging.info(f"Arguments: {vars(args)}")
         
-    text_model_name = "gpt2_simple" if args.not_use_attention else "gpt2_attention"
-    audio_model_name = "opensmile" if args.use_opensmile else "wav2vec"
     
-    text_feat_path = f"features/{'gpt2_attention' if args.not_use_attention else 'gpt2'}"
+    text_feat_path = f"{REPO_DIR}/features/{args.text_type}"
     logging.info(f"Loading text features from: {text_feat_path}")
     text_feat = load_embeddings(text_feat_path)
 
-    audio_feat_path = f"features/{audio_model_name}"
+    audio_feat_path = f"{REPO_DIR}/features/{args.audio_type}"
     logging.info(f"Loading audio features from: {audio_feat_path}")
     audio_feat = load_embeddings(audio_feat_path)
     
     if args.modality == "text":
-        feature_str = text_model_name
+        feature_str = args.text_type
     elif args.modality == "audio":
-        feature_str = audio_model_name
+        feature_str = args.audio_type
     else:  # text_audio
-        feature_str = f"{text_model_name}_{audio_model_name}"
+        feature_str = f"{args.text_type}_{args.audio_type}"
     
     base_result_dir = join(REPO_DIR, "results", feature_str)
     logging.info(f"All results will be saved under: {base_result_dir}")
@@ -142,14 +141,6 @@ def main():
         subjects = args.subjects.split(",")
         logging.info(f"Processing subjects: {subjects}")
 
-    # Load shared mask and example data (outside loop for efficiency)
-    icbm = datasets.fetch_icbm152_2009()
-    mask_path = icbm['mask']
-    mask = image.load_img(mask_path)
-    exemple_data = nib.load("derivative/exemple_data/swausub-UTS01_ses-2_task-alternateithicatom_bold.nii")
-    resampled_mask = resample_to_img(mask, exemple_data, interpolation='nearest')
-    resampled_mask_data = resampled_mask.get_fdata()
-    voxel_indices = np.where(resampled_mask_data.flatten() > 0)[0]
 
     # Define alphas (grid to search)
     alphas = np.logspace(args.alpha_min, args.alpha_max, args.num_alphas)
@@ -158,122 +149,45 @@ def main():
     nboots = args.nboots if args.nboots is not None else None
     nsplits = args.nsplits if args.nsplits is not None else None
 
-    if not args.concat_subjects:
         
-        for subject in subjects:
-            logging.info(f"Processing subject: {subject}")
+    for subject in subjects:
+        logging.info(f"Processing subject: {subject}")
 
-            # Load and split data
-            stories = load_session_data(subject, args.json_path)
+        # Load and split data
+        json_path = os.path.join(REPO_DIR, args.json_name)
+        stories = load_session_data(subject, json_path)
+        #stories = ["alternateithicatom", "avatar", "legacy"]
 
-            delRstim, ids_stories = preprocess_features(
-                stories, text_feat, audio_feat, args.modality,
-                args.trim, args.ndelays, args.use_pca, args.n_comps
-            )
-            logging.info(f"delRstim shape: {delRstim.shape}")
+        delRstim, ids_stories = preprocess_features(
+            stories, text_feat, audio_feat, args.modality,
+            args.trim, args.ndelays, args.use_pca, args.n_comps
+        )
+        logging.info(f"delRstim shape: {delRstim.shape}")
 
-            zRresp = get_response_mask(stories, f"sub-{subject}", voxel_indices)
-            logging.info(f"zRresp shape: {zRresp.shape}")
+        zRresp = get_response(stories, f"{subject}")
+        logging.info(f"zRresp shape: {zRresp.shape}")
 
-            # Setup save location for this subject
-            save_location = join(base_result_dir, subject)
-            
-            logging.info(f"Saving results to: {save_location}")
-
-            # Handle precomputed valphas per subject (if optimize_alpha is False)
-            if not args.optimize_alpha:
-                valphas_path = join(base_result_dir, subject, "valphas.npy")
-                if not os.path.exists(valphas_path):
-                    raise ValueError(f"Must provide a valid valphas path for subject {subject} when --optimize_alpha is False. Expected at: {valphas_path}")
-                valphas_subject = np.load(valphas_path)
-                logging.info(f"Using precomputed valphas for {subject} at {valphas_path}")
-            else:
-                valphas_subject = None
-
-            # Run ridge CV for subject
-            _, corrs, valphas_used, fold_corrs, _ = ridge_cv(
-                stim=delRstim,
-                resp=zRresp,
-                alphas=alphas,
-                story_ids=ids_stories,
-                nboots=nboots if nboots is not None else args.nboots,
-                corrmin=args.corrmin,
-                nsplits=nsplits if nsplits is not None else args.nsplits,
-                singcutoff=args.singcutoff,
-                normalpha=args.normalpha,
-                use_corr=args.use_corr,
-                return_wt=args.return_wt,
-                normalize_stim=args.normalize_stim,
-                normalize_resp=args.normalize_resp,
-                n_jobs=args.num_jobs,
-                with_replacement=args.with_replacement,
-                optimize_alpha=args.optimize_alpha,
-                valphas=valphas_subject,
-                logger=logging
-            )
-
-            # Save subject results
-            results = {
-                "corrs": corrs,
-                "valphas": valphas_used,
-                "fold_corrs": fold_corrs,
-            }
-            save_results(save_location, results)
-
-            r2_score = np.sum(corrs * np.abs(corrs))
-            logging.info(f"Total R2 score for {subject}: {r2_score}")
+        # Setup save location for this subject
+        save_location = join(base_result_dir, subject)
         
-    else:
-        
-        logging.info("Concatenating all subjects for a joint analysis...")
+        logging.info(f"Saving results to: {save_location}")
 
-        all_stims = []
-        all_resps = []
-        all_story_ids = []
-
-        for subject in subjects:
-            logging.info(f"Loading and processing data for {subject}")
-            stories = load_session_data(subject, args.json_path)
-
-            delRstim, ids_stories = preprocess_features(
-                stories, text_feat, audio_feat, args.modality,
-                args.trim, args.ndelays, args.use_pca, args.n_comps
-            )
-            logging.info(f"Subject {subject} stim shape: {delRstim.shape}")
-
-            zRresp = get_response_mask(stories, f"sub-{subject}", voxel_indices)
-            logging.info(f"Subject {subject} resp shape: {zRresp.shape}")
-
-            all_stims.append(delRstim)
-            all_resps.append(zRresp)
-            all_story_ids.extend(ids_stories)
-
-        # Concatenate along time axis (axis=0)
-        delRstim_all = np.concatenate(all_stims, axis=0)
-        zRresp_all = np.concatenate(all_resps, axis=0)
-        story_ids_all = np.array(all_story_ids)
-
-        logging.info(f"Concatenated stim shape: {delRstim_all.shape}, resp shape: {zRresp_all.shape}")
-
-        # Handle precomputed valphas for concatenated run if optimize_alpha is False
+        # Handle precomputed valphas per subject (if optimize_alpha is False)
         if not args.optimize_alpha:
-            valphas_path = join(base_result_dir, "concatenated_subjects", "valphas.npy")
+            valphas_path = join(base_result_dir, subject, "valphas.npy")
             if not os.path.exists(valphas_path):
-                raise ValueError(
-                    f"Must provide a valid valphas path for concatenated subjects when --optimize_alpha is False. "
-                    f"Expected at: {valphas_path}"
-                )
-            valphas_concat = np.load(valphas_path)
-            logging.info(f"Using precomputed concatenated valphas at {valphas_path}")
+                raise ValueError(f"Must provide a valid valphas path for subject {subject} when --optimize_alpha is False. Expected at: {valphas_path}")
+            valphas_subject = np.load(valphas_path)
+            logging.info(f"Using precomputed valphas for {subject} at {valphas_path}")
         else:
-            valphas_concat = None
+            valphas_subject = None
 
-        # Run ridge CV on concatenated data
+        # Run ridge CV for subject
         _, corrs, valphas_used, fold_corrs, _ = ridge_cv(
-            stim=delRstim_all,
-            resp=zRresp_all,
+            stim=delRstim,
+            resp=zRresp,
             alphas=alphas,
-            story_ids=story_ids_all,
+            story_ids=ids_stories,
             nboots=nboots if nboots is not None else args.nboots,
             corrmin=args.corrmin,
             nsplits=nsplits if nsplits is not None else args.nsplits,
@@ -286,22 +200,85 @@ def main():
             n_jobs=args.num_jobs,
             with_replacement=args.with_replacement,
             optimize_alpha=args.optimize_alpha,
-            valphas=valphas_concat,
+            valphas=valphas_subject,
             logger=logging
         )
 
-        # Save concatenated results
-        save_location = join(base_result_dir, "concatenated_subjects")
-        results = {"corrs": corrs, "valphas": valphas_used, "fold_corrs": fold_corrs}
+        # Save subject results
+        results = {
+            "corrs": corrs,
+            "valphas": valphas_used,
+            "fold_corrs": fold_corrs,
+        }
         save_results(save_location, results)
-        logging.info(f"Saved concatenated results to: {save_location}")
 
-        # Optional summary metric
-        total_r2 = np.sum(corrs * np.abs(corrs))
-        logging.info(f"Total R2 (concatenated subjects): {total_r2}")
-       
-
-    # Final summary
+        r2_score = np.sum(corrs * np.abs(corrs))
+        logging.info(f"Total R2 score for {subject}: {r2_score}")
+        
+    # Cross-subject summary
+    logging.info("\n=== Cross-Subject Summary ===")
+    
+    all_total_r2 = []       # Sum of r² (total explained variance)
+    all_mean_r2 = []        # Mean R² across voxels
+    all_mean_r = []         # Mean correlation (all voxels)
+    all_mean_r_pos = []     # Mean correlation (only positive)
+    all_min_r = []
+    all_max_r = []
+    
+    # Table header
+    header = f"{'Subject':<12} {'Total R²':>10} {'Mean R²':>12} {'Mean r':>10} {'Mean r (pos)':>14} {'Min r':>10} {'Max r':>10}"
+    separator = "-" * 90
+    table_str = header + "\n" + separator + "\n"
+    
+    for subject in subjects:
+        corrs_path = join(base_result_dir, subject, "corrs.npy")
+        if not os.path.exists(corrs_path):
+            logging.warning(f"  No corrs.npy found for {subject} – skipping in summary")
+            continue
+    
+        corrs = np.load(corrs_path)
+        r2 = corrs ** 2
+    
+        total_r2 = np.sum(r2)
+        mean_r2 = np.mean(r2)
+        mean_r = np.mean(corrs)
+        pos_corrs = corrs[corrs > 0]
+        mean_r_pos = np.mean(pos_corrs) if len(pos_corrs) > 0 else 0.0
+        min_r = np.min(corrs)
+        max_r = np.max(corrs)
+    
+        # Store for grand averages
+        all_total_r2.append(total_r2)
+        all_mean_r2.append(mean_r2)
+        all_mean_r.append(mean_r)
+        all_mean_r_pos.append(mean_r_pos)
+        all_min_r.append(min_r)
+        all_max_r.append(max_r)
+    
+        # Add row to table
+        table_str += (f"{subject:<12} "
+                      f"{total_r2:10.2f} "
+                      f"{mean_r2:12.6f} "
+                      f"{mean_r:10.4f} "
+                      f"{mean_r_pos:14.4f} "
+                      f"{min_r:10.4f} "
+                      f"{max_r:10.4f}\n")
+    
+    logging.info(table_str)
+    
+    if all_total_r2:
+        n = len(all_total_r2)
+        logging.info(f"Grand averages across {n} subjects:")
+        logging.info(f"  Total R² (sum):         {np.mean(all_total_r2):.2f} ± {np.std(all_total_r2):.2f}")
+        logging.info(f"  Mean R² (per voxel):    {np.mean(all_mean_r2):.6f} ± {np.std(all_mean_r2):.6f}")
+        logging.info(f"  Mean r (all voxels):    {np.mean(all_mean_r):.4f} ± {np.std(all_mean_r):.4f}")
+        logging.info(f"  Mean r (positive only): {np.mean(all_mean_r_pos):.4f} ± {np.std(all_mean_r_pos):.4f}")
+        logging.info(f"  Average min r:          {np.mean(all_min_r):.4f}")
+        logging.info(f"  Average max r:          {np.mean(all_max_r):.4f}")
+    else:
+        logging.info("No correlation data available for cross-subject summary.")
+    
+    
     total_time = time.time() - start_time
     logging.info(f"Total analysis completed in {total_time:.2f} seconds ({total_time / 60:.2f} minutes)")
 
