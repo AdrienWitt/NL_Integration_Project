@@ -71,7 +71,7 @@ def find_optimal_common_stories(main_folder, output_dir="derivative", verbose=Tr
             "configuration": {
                 "num_participants": target_count,
                 "num_stories": max_stories,
-                "total_participants_in_dataset": num_participants
+                "participants": num_participants
             },
             "selected_stories": sorted(best_common_stories),
             "participants": {}

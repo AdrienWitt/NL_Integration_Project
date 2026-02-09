@@ -2,7 +2,7 @@
     "configuration": {
         "num_participants": 8,
         "num_stories": 26,
-        "total_participants_in_dataset": 9
+        "participants": 9
     },
     "selected_stories": [
         "adollshouse",

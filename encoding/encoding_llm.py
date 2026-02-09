@@ -136,7 +136,7 @@ def main():
     if args.subjects == "all":
         with open(json_path, "r") as f:
             data = json.load(f)
-        subjects = [key[4:] for key in data["participants"] if key.startswith("sub-")]
+        subjects = [key for key in data["participants"] ]
         logging.info(f"Processing all subjects: {subjects}")
     else:
         subjects = args.subjects.split(",")
