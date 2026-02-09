@@ -129,10 +129,12 @@ def main():
     base_result_dir = join(REPO_DIR, "results", feature_str)
     logging.info(f"All results will be saved under: {base_result_dir}")
     os.makedirs(base_result_dir, exist_ok=True)
+    
+    json_path = os.path.join(REPO_DIR, args.json_name)
 
     # Parse subjects
     if args.subjects == "all":
-        with open(args.json_path, "r") as f:
+        with open(json_path, "r") as f:
             data = json.load(f)
         subjects = [key[4:] for key in data["participants"] if key.startswith("sub-")]
         logging.info(f"Processing all subjects: {subjects}")
@@ -153,7 +155,6 @@ def main():
         logging.info(f"Processing subject: {subject}")
 
         # Load and split data
-        json_path = os.path.join(REPO_DIR, args.json_name)
         stories = load_session_data(subject, json_path)
         #stories = ["alternateithicatom", "avatar", "legacy"]
 
