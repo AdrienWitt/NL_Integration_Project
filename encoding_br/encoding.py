@@ -211,19 +211,20 @@ def process_subject(subject, args, gpu_id):
     # -----------------------------------------------------------------
     # Save
     # -----------------------------------------------------------------
-    os.makedirs("results", exist_ok=True)
+    # In process_subject, change the call to:
+    result_dir = join("results", subject)  # e.g. results/UTS01
+    
     save_results(
-        dict(
-            subject=subject,
-            scores=scores,
-            split_scores=split_scores,
-            mask=mask,
-            ev=ev,
-            n_voxels=n_voxels,
-            n_masked=mask.sum(),
-            gpu_id=gpu_id,
-        ),
-        join("results", f"{subject}_results.npz")
+        result_dir,                            # ← directory path first
+        {
+            "subject": subject,                # will be saved as subject.npy (but it's a string — see note)
+            "scores": scores,
+            "split_scores": split_scores,
+            "mask": mask,
+            "ev": ev,
+            "n_voxels": n_voxels,
+            "n_masked": mask.sum(),
+        }
     )
 
     duration = time.time() - start_time

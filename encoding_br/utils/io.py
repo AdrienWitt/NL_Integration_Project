@@ -1,4 +1,5 @@
 import os
+import numpy as np 
 
 def save_results(save_location, results):
     """Save regression results."""
