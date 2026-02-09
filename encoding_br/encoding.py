@@ -106,7 +106,8 @@ def process_subject(subject, args, gpu_id):
         trim=args.trim,
         ndelays=args.ndelays,
         use_pca=args.use_pca,
-        n_comps=args.n_comps
+        n_comps=args.n_comps,
+        diagonalize_method='svd'
     )
 
     X_text_train, onset_train = preprocess_features(train_stories, text_feat, **kwargs)
