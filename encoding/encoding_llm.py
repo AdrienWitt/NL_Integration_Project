@@ -12,6 +12,7 @@ from nilearn import datasets, image
 from nilearn.image import resample_to_img
 import nibabel as nib
 
+
 # Default arguments for GUI debugging
 DEFAULT_ARGS = {
     "subjects": "UTS01",
@@ -19,11 +20,9 @@ DEFAULT_ARGS = {
     "ndelays": 4,
     "nboots": 3,
     "nsplits": 5,
-    "chunklen": 12,  # Note: Not used in ridge_cv but kept for compatibility
-    "modality": "audio",
+    "modality": "text_audio",
     "singcutoff": 1e-10,
     "use_corr": True,
-    "single_alpha": False,  # Note: Not used in ridge_cv but kept for compatibility
     "use_pca": False,
     "n_comps": 20,
     "text_type" : "gpt2_mean",
@@ -80,7 +79,7 @@ def parse_arguments():
     parser.add_argument("--num_alphas", type=int, default=10,
                            help="Number of alpha values to test in logspace (default: 10).")
     parser.add_argument("--concat_subjects", action="store_true", help="Concatenate all subjects' data and run one joint analysis")
-    parser.add_argument("--json_path", type=str,
+    parser.add_argument("--json_name", type=str,
                         default="derivative/common_stories_25_for_9_participants.json",
                         help="Path to JSON file with story IDs")
     return parser.parse_args()
