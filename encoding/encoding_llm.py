@@ -155,7 +155,7 @@ def main():
 
         # Load and split data
         stories, test_story = load_session_data(subject, json_path)
-        stories = stories[0:3]
+        #stories = stories[0:3]
 
         X_train, ids_stories = preprocess_features(
             stories, text_feat, audio_feat, args.modality,
