@@ -5,17 +5,17 @@ import json
 import logging
 from os.path import join
 from encoding.encoding_utils import load_embeddings, preprocess_features, get_response
-from encoding.ridge_utils.ridge import ridge_cv
-from encoding.config import REPO_DIR
+from encoding.ridge_utils.ridge import ridge_cv, ridge_corr_pred
+from encoding.config import REPO_DIR, DER_DIR
 import time
 from nilearn import datasets, image
 from nilearn.image import resample_to_img
 import nibabel as nib
-
+from scipy.stats import zscore
 
 # Default arguments for GUI debugging
 DEFAULT_ARGS = {
-    "subjects": "UTS01",
+    "subjects": "all",
     "trim": 5,
     "ndelays": 4,
     "nboots": 3,
@@ -34,11 +34,12 @@ DEFAULT_ARGS = {
     "with_replacement": False,
     "normalpha": False,
     "return_wt": False ,
-    "json_name": "derivative/common_stories_25_for_9_participants.json",
+    "json_name": "train_test_split_25_stories_8_subs.json",
     "optimize_alpha" : True,
     "alpha_min" : 1,
     "alpha_max": 20,
-    "num_alphas" : 20}
+    "num_alphas" : 20,
+    "final_test" : False}
 
 args = argparse.Namespace(**DEFAULT_ARGS)
 
@@ -78,6 +79,8 @@ def parse_arguments():
                            help="Maximum exponent for alpha values in logspace (default: 3).")
     parser.add_argument("--num_alphas", type=int, default=10,
                            help="Number of alpha values to test in logspace (default: 10).")
+    parser.add_argument("--final_test", action="store_true", help="Test on the final held-out story")
+
     parser.add_argument("--concat_subjects", action="store_true", help="Concatenate all subjects' data and run one joint analysis")
     parser.add_argument("--json_name", type=str,
                         default="derivative/common_stories_25_for_9_participants.json",
@@ -87,15 +90,12 @@ def parse_arguments():
 def load_session_data(subject, json_path):
     # Load the JSON file
     with open(json_path, "r") as f:
-        data = json.load(f)
-    
-    # Get subject key (e.g., 'sub-subject1')
-    subject_key = f"{subject}"
-  
+        data = json.load(f)  
     # Extract train and test stories for the subject
-    stories = data["participants"][subject_key]["stories"]
+    train_stories = data["train"]["stories"]
+    test_stories = data["test"]["stories"]
         
-    return stories
+    return train_stories, test_stories
 
 def save_results(save_location, results):
     """Save regression results."""
@@ -109,8 +109,7 @@ def main():
     start_time = time.time()
     setup_logging()
     logging.info(f"Arguments: {vars(args)}")
-        
-    
+         
     text_feat_path = f"{REPO_DIR}/features/{args.text_type}"
     logging.info(f"Loading text features from: {text_feat_path}")
     text_feat = load_embeddings(text_feat_path)
@@ -126,17 +125,17 @@ def main():
     else:  # text_audio
         feature_str = f"{args.text_type}_{args.audio_type}"
     
-    base_result_dir = join(REPO_DIR, "results", feature_str)
+    base_result_dir = join("results", feature_str)
     logging.info(f"All results will be saved under: {base_result_dir}")
     os.makedirs(base_result_dir, exist_ok=True)
     
-    json_path = os.path.join(REPO_DIR, args.json_name)
+    json_path = os.path.join(DER_DIR, args.json_name)
 
     # Parse subjects
     if args.subjects == "all":
         with open(json_path, "r") as f:
             data = json.load(f)
-        subjects = [key for key in data["participants"] ]
+        subjects = data["dataset_info"]["participants"]
         logging.info(f"Processing all subjects: {subjects}")
     else:
         subjects = args.subjects.split(",")
@@ -155,17 +154,32 @@ def main():
         logging.info(f"Processing subject: {subject}")
 
         # Load and split data
-        stories = load_session_data(subject, json_path)
+        stories, test_story = load_session_data(subject, json_path)
         #stories = ["alternateithicatom", "avatar", "legacy"]
 
-        delRstim, ids_stories = preprocess_features(
+        X_train, ids_stories = preprocess_features(
             stories, text_feat, audio_feat, args.modality,
             args.trim, args.ndelays, args.use_pca, args.n_comps
         )
-        logging.info(f"delRstim shape: {delRstim.shape}")
+        logging.info(f"X_train shape: {X_train.shape}")
 
-        zRresp = get_response(stories, f"{subject}")
-        logging.info(f"zRresp shape: {zRresp.shape}")
+        Y_train = get_response(stories, f"{subject}")
+        logging.info(f"Y_train shape: {Y_train.shape}")
+        
+        X_test, ids_stories = preprocess_features(
+            test_story, text_feat, audio_feat, args.modality,
+            args.trim, args.ndelays, args.use_pca, args.n_comps
+        )
+        logging.info(f"X_test shape: {X_test.shape}")
+
+        Y_test = get_response(test_story, f"{subject}")
+        logging.info(f"Y_test shape: {Y_test.shape}")
+        
+        Y_test = zscore(Y_test, axis=0)
+        Y_train = np.nan_to_num(Y_train)
+        Y_test = np.nan_to_num(Y_test)
+        Y_train -= Y_train.mean(0)
+        Y_test -= Y_test.mean(0)
 
         # Setup save location for this subject
         save_location = join(base_result_dir, subject)
@@ -184,8 +198,8 @@ def main():
 
         # Run ridge CV for subject
         _, corrs, valphas_used, fold_corrs, _ = ridge_cv(
-            stim=delRstim,
-            resp=zRresp,
+            stim=X_train,
+            resp=Y_train,
             alphas=alphas,
             story_ids=ids_stories,
             nboots=nboots if nboots is not None else args.nboots,
@@ -201,9 +215,15 @@ def main():
             with_replacement=args.with_replacement,
             optimize_alpha=args.optimize_alpha,
             valphas=valphas_subject,
+            final_test=args.final_test,
             logger=logging
         )
-
+        
+        
+        ridge_corr_pred(X_train, X_test, Y_train, Y_test, valphas_used, args.normalpha,
+                    singcutoff=1e-10, use_corr=True, logger=logging)
+        
+        
         # Save subject results
         results = {
             "corrs": corrs,

@@ -25,11 +25,11 @@ if script_dir not in sys.path:
 
 zs = lambda v: (v-v.mean(0))/(v.std(0) + 1e-8)  # z-score function
 
-def ridge_cv(stim, resp, alphas, story_ids, nboots=50, nsplits=50,
+def ridge_cv(stim, resp, alphas, story_ids, stim_test = None, resp_test = None, nboots=50, nsplits=50,
                     corrmin=0, singcutoff=1e-10, normalpha=False, use_corr=True,
                     return_wt=False, normalize_stim=False, normalize_resp=True,
                     n_jobs=1, with_replacement=False, optimize_alpha=True,
-                    valphas=None, logger=None):
+                    valphas=None, final_test = False, logger=None):
     """
     Performs ridge regression with K-group cross-validation and/or LOPO bootstrapping for alpha optimization.
     Combines group-based CV and alpha optimization into a single function with efficient group splitting.
@@ -177,8 +177,31 @@ def ridge_cv(stim, resp, alphas, story_ids, nboots=50, nsplits=50,
         logger.info("Computing weights on full dataset...") if logger else None
         wt = ridge(stim, resp, valphas, singcutoff=singcutoff, normalpha=normalpha, logger=logger)
         logger.info("Weights computed for %d features and %d voxels.", wt.shape[0], wt.shape[1]) if logger else None
+        
+        
+    test_corrs = None
+    if final_test is True and stim_test is not None and resp_test is not None:
+        logger.info("Evaluating on final held-out story...") if logger else None
     
-    return wt, corrs, valphas, fold_corrs, bootstrap_corrs
+        # Fit on ALL training data, predict on final story
+        test_corrs = ridge_corr_pred(
+            stim,          
+            stim_test,     
+            resp,          
+            resp_test,       
+            valphas,
+            normalpha=normalpha,
+            singcutoff=singcutoff,
+            use_corr=use_corr,
+            logger=logger
+        )
+    
+        logger.info(
+            "Final test story: mean corr=%0.5f, max=%0.5f",
+            np.mean(test_corrs), np.max(test_corrs)
+        ) if logger else None
+    
+    return wt, corrs, valphas, fold_corrs, bootstrap_corrs, test_corrs
 
 def ridge(stim, resp, alpha, singcutoff=1e-10, normalpha=False, logger=ridge_logger):
     """Uses ridge regression to find a linear transformation of [stim] that approximates

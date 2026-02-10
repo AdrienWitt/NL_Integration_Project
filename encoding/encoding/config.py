@@ -5,5 +5,6 @@ from os.path import join, dirname
 REPO_DIR = join(dirname(dirname(dirname(os.path.abspath(__file__)))))
 EM_DATA_DIR = join(REPO_DIR, 'Huth', 'em_data')
 DATA_DIR = join(REPO_DIR, 'ds003020', 'derivative','preprocessed_data')
+DER_DIR = join(REPO_DIR, 'derivative')
 TEXT_EMB = join(REPO_DIR, 'features', 'gpt2')
 AUDIO_EMB = join(REPO_DIR, 'features', 'wav2vec')
