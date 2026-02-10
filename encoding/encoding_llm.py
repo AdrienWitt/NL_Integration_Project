@@ -74,16 +74,16 @@ def parse_arguments():
     parser.add_argument("--with_replacement", action="store_true", help="Sample with replacement in bootstrap")
     parser.add_argument("--optimize_alpha", action="store_true", help="Optimize alpha using bootstrapping")
     parser.add_argument("--alpha_min", type=float, default=-2,
-                           help="Minimum exponent for alpha values in logspace (default: -3).")
+                            help="Minimum exponent for alpha values in logspace (default: -3).")
     parser.add_argument("--alpha_max", type=float, default=3,
-                           help="Maximum exponent for alpha values in logspace (default: 3).")
+                            help="Maximum exponent for alpha values in logspace (default: 3).")
     parser.add_argument("--num_alphas", type=int, default=10,
-                           help="Number of alpha values to test in logspace (default: 10).")
+                            help="Number of alpha values to test in logspace (default: 10).")
     parser.add_argument("--final_test", action="store_true", help="Test on the final held-out story")
 
     parser.add_argument("--concat_subjects", action="store_true", help="Concatenate all subjects' data and run one joint analysis")
     parser.add_argument("--json_name", type=str,
-                        default="derivative/common_stories_25_for_9_participants.json",
+                        default="common_stories_25_for_9_participants.json",
                         help="Path to JSON file with story IDs")
     return parser.parse_args()
 
@@ -145,7 +145,7 @@ def main():
     # Define alphas (grid to search)
     alphas = np.logspace(args.alpha_min, args.alpha_max, args.num_alphas)
 
-    # nboots / nsplits defaults if None (keep behavior from your script)
+    # nboots / nsplits defaults if None
     nboots = args.nboots if args.nboots is not None else None
     nsplits = args.nsplits if args.nsplits is not None else None
 
@@ -161,12 +161,13 @@ def main():
             stories, text_feat, audio_feat, args.modality,
             args.trim, args.ndelays, args.use_pca, args.n_comps
         )
+                
         logging.info(f"X_train shape: {X_train.shape}")
 
         Y_train = get_response(stories, f"{subject}")
         logging.info(f"Y_train shape: {Y_train.shape}")
         
-        X_test, ids_stories = preprocess_features(
+        X_test, _ = preprocess_features(
             test_story, text_feat, audio_feat, args.modality,
             args.trim, args.ndelays, args.use_pca, args.n_comps
         )

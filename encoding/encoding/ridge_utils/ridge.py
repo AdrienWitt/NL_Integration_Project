@@ -97,6 +97,7 @@ def ridge_cv(stim, resp, alphas, story_ids, stim_test = None, resp_test = None, 
     unique_stories = np.unique(story_ids)
     n_stories = len(unique_stories)
     
+    
     # Handle alpha optimization
     bootstrap_corrs = None
     if optimize_alpha:
