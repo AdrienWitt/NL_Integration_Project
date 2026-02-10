@@ -83,7 +83,7 @@ def parse_arguments():
 
     parser.add_argument("--concat_subjects", action="store_true", help="Concatenate all subjects' data and run one joint analysis")
     parser.add_argument("--json_name", type=str,
-                        default="common_stories_25_for_9_participants.json",
+                        default="train_test_split_25_stories_8_subs.json",
                         help="Path to JSON file with story IDs")
     return parser.parse_args()
 
@@ -155,7 +155,7 @@ def main():
 
         # Load and split data
         stories, test_story = load_session_data(subject, json_path)
-        #stories = ["alternateithicatom", "avatar", "legacy"]
+        stories = stories[0:3]
 
         X_train, ids_stories = preprocess_features(
             stories, text_feat, audio_feat, args.modality,
@@ -198,7 +198,7 @@ def main():
             valphas_subject = None
 
         # Run ridge CV for subject
-        _, corrs, valphas_used, fold_corrs, _ = ridge_cv(
+        _, corrs, valphas_used, fold_corrs, _, _ = ridge_cv(
             stim=X_train,
             resp=Y_train,
             alphas=alphas,
@@ -220,11 +220,7 @@ def main():
             logger=logging
         )
         
-        
-        ridge_corr_pred(X_train, X_test, Y_train, Y_test, valphas_used, args.normalpha,
-                    singcutoff=1e-10, use_corr=True, logger=logging)
-        
-        
+                
         # Save subject results
         results = {
             "corrs": corrs,
