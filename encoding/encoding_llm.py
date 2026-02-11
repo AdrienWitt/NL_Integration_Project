@@ -125,7 +125,9 @@ def main():
     else:  # text_audio
         feature_str = f"{args.text_type}_{args.audio_type}"
     
-    base_result_dir = join("results", feature_str)
+    
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    base_result_dir = join(SCRIPT_DIR, "results", feature_str)
     logging.info(f"All results will be saved under: {base_result_dir}")
     os.makedirs(base_result_dir, exist_ok=True)
     

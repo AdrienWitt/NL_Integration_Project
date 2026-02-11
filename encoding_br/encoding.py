@@ -213,6 +213,8 @@ def process_subject(subject, args, gpu_id):
     # Save
     # -----------------------------------------------------------------
     # In process_subject, change the call to:
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    result_dir = join(SCRIPT_DIR, "results")
     result_dir = join("results", subject)  # e.g. results/UTS01
     
     save_results(
