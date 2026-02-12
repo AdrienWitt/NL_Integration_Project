@@ -4,9 +4,9 @@ import argparse
 import json
 import logging
 from os.path import join
-from encoding.encoding_utils import load_embeddings, preprocess_features, get_response
-from encoding.ridge_utils.ridge import ridge_cv, ridge_corr_pred
-from encoding.config import REPO_DIR, DER_DIR
+from utils.encoding_utils import load_embeddings, preprocess_features, get_response
+from utils.ridge_utils.ridge import ridge_cv, ridge_corr_pred
+from utils.config import REPO_DIR, DER_DIR
 import time
 from nilearn import datasets, image
 from nilearn.image import resample_to_img
@@ -34,7 +34,7 @@ DEFAULT_ARGS = {
     "with_replacement": False,
     "normalpha": False,
     "return_wt": False ,
-    "json_name": "train_test_split_25_stories_8_subs.json",
+    "json_name": "all_stories.json",
     "optimize_alpha" : True,
     "alpha_min" : 1,
     "alpha_max": 20,
@@ -87,7 +87,7 @@ def parse_arguments():
                         help="Path to JSON file with story IDs")
     return parser.parse_args()
 
-def load_session_data(subject, json_path):
+def load_train_test(subject, json_path):
     # Load the JSON file
     with open(json_path, "r") as f:
         data = json.load(f)  
@@ -96,6 +96,15 @@ def load_session_data(subject, json_path):
     test_stories = data["test"]["stories"]
         
     return train_stories, test_stories
+
+def load_stories(subject, json_path):
+    # Load the JSON file
+    with open(json_path, "r") as f:
+        data = json.load(f)  
+    # Extract train and test stories for the subject
+    stories = data["participants"][subject]
+    
+    return stories
 
 def save_results(save_location, results):
     """Save regression results."""
@@ -156,8 +165,13 @@ def main():
         logging.info(f"Processing subject: {subject}")
 
         # Load and split data
-        stories, test_story = load_session_data(subject, json_path)
-        #stories = stories[0:3]
+        
+        if args.json_name == "all_stories.json":
+            stories = load_stories(subject, json_path)
+            test_story = "wheretheressmoke"
+        else:
+            stories, test_story = load_train_test(subject, json_path)
+            #stories = stories[0:3]
 
         X_train, ids_stories = preprocess_features(
             stories, text_feat, audio_feat, args.modality,

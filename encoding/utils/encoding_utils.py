@@ -7,9 +7,9 @@ from multiprocessing.pool import ThreadPool
 from os.path import join, dirname
 import nibabel as nib
 
-from encoding.ridge_utils.npp import zscore, mcorr
-from encoding.ridge_utils.utils import make_delayed
-from encoding.config import DATA_DIR
+from .ridge_utils.npp import zscore, mcorr
+from .ridge_utils.utils import make_delayed
+from .config import DATA_DIR
 from sklearn.decomposition import PCA
 
  

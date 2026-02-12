@@ -10,16 +10,22 @@ Optimized for your fine-tuned wav2vec2-large (24 layers).
 """
 
 import os
+from os.path import dirname, join
 import json
 import numpy as np
 import torch
 import torchaudio
 import h5py
 import logging
-from os.path import join
+REPO_DIR = join(dirname(dirname(dirname(os.path.abspath(__file__)))))
+import sys
+sys.path.insert(0, REPO_DIR)
+os.chdir(REPO_DIR)
+
+
 
 from transformers import Wav2Vec2Processor, Wav2Vec2Model
-from encoding.ridge_utils.stimulus_utils import load_simulated_trfiles
+from encoding.encoding.ridge_utils.stimulus_utils import load_simulated_trfiles
 
 # ============================= CONFIG =============================
 SAMPLING_RATE = 16000
@@ -29,14 +35,14 @@ WINDOW_SAMPLES = int(WINDOW_SIZE * SAMPLING_RATE)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-BASE_DIR = "features_new"
-OUT_LAST = join(BASE_DIR, "wav2vec_mean")
-OUT_18_23 = join(BASE_DIR, "wav2vec_mean_layers18to23")
+BASE_DIR = "features"
+OUT_LAST = join(BASE_DIR, "wav2vec_mean_v2")
+OUT_18_23 = join(BASE_DIR, "wav2vec_mean_layers18to23_v2")
 
 os.makedirs(OUT_LAST, exist_ok=True)
 os.makedirs(OUT_18_23, exist_ok=True)
 
-MODEL_PATH = "finetuning_results/layers_frozen_6/final_model"
+MODEL_PATH = "finetuning/model_output/layers_frozen_18/final_model"
 PROCESSOR_NAME = "facebook/wav2vec2-large-960h"
 
 BEST_LAYER_INDICES = list(range(18, 24))  # 18–23
