@@ -168,7 +168,7 @@ def main():
         
         if args.json_name == "all_stories.json":
             stories = load_stories(subject, json_path)
-            test_story = "wheretheressmoke"
+            test_story = ["wheretheressmoke"]
         else:
             stories, test_story = load_train_test(subject, json_path)
             #stories = stories[0:3]
