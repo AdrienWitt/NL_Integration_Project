@@ -59,8 +59,8 @@ def parse_arguments():
     parser.add_argument("--n_comps", type=float, default=0.90, help="Target explained variance for PCA")
     parser.add_argument("--use_corr", action="store_true", help="Use correlation instead of R-squared")
     parser.add_argument("--return_wt", action="store_true", help="Return regression weights")
-    parser.add_argument("--nboots", type=int, default=25, help="Number of bootstrap iterations")
-    parser.add_argument("--nsplits", type=int, default=5, help="Number of CV folds")
+    parser.add_argument("--nboots", type=int, default=None, help="Number of bootstrap iterations")
+    parser.add_argument("--nsplits", type=int, default=None, help="Number of CV folds")
     parser.add_argument("--chunklen", type=int, default=12, help="Chunk length for bootstrap (unused in ridge_cv)")
     parser.add_argument("--singcutoff", type=float, default=1e-10, help="Singular value cutoff for SVD")
     parser.add_argument("--single_alpha", action="store_true", help="Use single alpha for all voxels (unused in ridge_cv)")
@@ -157,8 +157,7 @@ def main():
     alphas = np.logspace(args.alpha_min, args.alpha_max, args.num_alphas)
 
     # nboots / nsplits defaults if None
-    nboots = args.nboots if args.nboots is not None else None
-    nsplits = args.nsplits if args.nsplits is not None else None
+
 
         
     for subject in subjects:
@@ -172,6 +171,11 @@ def main():
         else:
             stories, test_story = load_train_test(subject, json_path)
             #stories = stories[0:3]
+         
+        n_train_stories = len(stories)
+            
+        nboots = args.nboots if args.nboots is not None else n_train_stories
+        nsplits = args.nsplits if args.nsplits is not None else n_train_stories
 
         X_train, ids_stories = preprocess_features(
             stories, text_feat, audio_feat, args.modality,

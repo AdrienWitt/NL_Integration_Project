@@ -1,9 +1,7 @@
 import os
-from encoding.config import DATA_DIR, REPO_DIR
+from utils.config import DATA_DIR, REPO_DIR
 import h5py
 import numpy as np
-
-
 
 def get_response(stories, subject):
     """Get the subject"s fMRI response for stories."""
@@ -26,4 +24,4 @@ def load_encoding_scores(subject):
 
     
 
-    
+results_fold = load_encoding_scores("UTS01")
