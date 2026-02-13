@@ -22,7 +22,7 @@ def load_trfiles(respdict_path: str = RESPDICT_PATH, tr: float = 2.0, pad: int =
 
     This wraps the import so that the caller doesn't need to manage sys.path.
     """
-    from encoding.encoding.ridge_utils.stimulus_utils import load_simulated_trfiles
+    from encoding.utils.ridge_utils.stimulus_utils import load_simulated_trfiles
 
     with open(respdict_path, "r") as f:
         respdict = json.load(f)

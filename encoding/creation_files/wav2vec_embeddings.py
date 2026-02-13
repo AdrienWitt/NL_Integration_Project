@@ -1,173 +1,221 @@
 # -*- coding: utf-8 -*-
 """
-FINAL CLEAN SCRIPT – prosody-aware wav2vec2 embeddings (NO ATTENTION)
+Clean & modular script for extracting prosody-aware wav2vec2 embeddings
+- Mean-pooled last layer (baseline)
+- Mean-pooled average over a user-defined set of layers (e.g. fine-tuned layers)
 
-Extracted features:
-  • Mean-pooled LAST layer (baseline)
-  • Mean-pooled LAYERS 18–23 (prosody-rich stack)
-
-Optimized for your fine-tuned wav2vec2-large (24 layers).
+Supports wav2vec2-large (24 transformer layers, indices 0–23)
 """
 
 import os
 from os.path import dirname, join
 import json
+import logging
 import numpy as np
 import torch
 import torchaudio
 import h5py
-import logging
+
+# Make sure repo root is in path
 REPO_DIR = join(dirname(dirname(dirname(os.path.abspath(__file__)))))
 import sys
 sys.path.insert(0, REPO_DIR)
 os.chdir(REPO_DIR)
 
-
-
 from transformers import Wav2Vec2Processor, Wav2Vec2Model
-from encoding.encoding.ridge_utils.stimulus_utils import load_simulated_trfiles
+from encoding.utils.ridge_utils.stimulus_utils import load_simulated_trfiles
 
-# ============================= CONFIG =============================
-SAMPLING_RATE = 16000
-WINDOW_SIZE = 2.0
-WINDOW_SAMPLES = int(WINDOW_SIZE * SAMPLING_RATE)
+# ============================= CONFIGURATION =============================
+
+SAMPLING_RATE    = 16000
+WINDOW_SIZE_SEC  = 2.0
+WINDOW_SAMPLES   = int(WINDOW_SIZE_SEC * SAMPLING_RATE)
+
+BASE_OUTPUT_DIR  = "features"
+
+# === Choose which layers to average ===
+# Common choices:
+# - Fine-tuned layers only:   range(6, 24)   → layers 6–23
+# - Late layers (prosody):    range(18, 24)  → layers 18–23
+# - Middle + late:            range(9, 24)
+# - All transformer layers:   range(0, 24)
+
+LAYER_RANGE_TO_AVERAGE = range(6, 24)          # ← edit this line to choose layers
+
+# Derived names (used in folders & logs)
+layer_str = f"layers{LAYER_RANGE_TO_AVERAGE.start}to{LAYER_RANGE_TO_AVERAGE.stop-1}"
+print(f"Selected layers to average: {layer_str} ({len(LAYER_RANGE_TO_AVERAGE)} layers)")
+
+MODEL_PATH       = "finetuning/model_output/layers_frozen_18/final_model"
+PROCESSOR_NAME   = "facebook/wav2vec2-large-960h"
+
+# Output subdirectories
+OUT_LAST_LAYER   = join(BASE_OUTPUT_DIR, "wav2vec_mean")
+OUT_SELECTED     = join(BASE_OUTPUT_DIR, f"wav2vec_mean_{layer_str}")
+# -------------------------------------------------------------------------
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-BASE_DIR = "features"
-OUT_LAST = join(BASE_DIR, "wav2vec_mean_v2")
-OUT_18_23 = join(BASE_DIR, "wav2vec_mean_layers18to23_v2")
-
-os.makedirs(OUT_LAST, exist_ok=True)
-os.makedirs(OUT_18_23, exist_ok=True)
-
-MODEL_PATH = "finetuning/model_output/layers_frozen_18/final_model"
-PROCESSOR_NAME = "facebook/wav2vec2-large-960h"
-
-BEST_LAYER_INDICES = list(range(18, 24))  # 18–23
-
-# ================================================================
 
 def load_model_and_processor():
+    """Load fine-tuned model and matching processor"""
     processor = Wav2Vec2Processor.from_pretrained(PROCESSOR_NAME)
     model = Wav2Vec2Model.from_pretrained(MODEL_PATH)
     model.to(device).eval()
-
+    
     n_layers = model.config.num_hidden_layers
-    logging.info(f"Loaded fine-tuned wav2vec2 with {n_layers} transformer layers")
+    logging.info(f"Loaded fine-tuned wav2vec2-large – {n_layers} transformer layers")
+    logging.info(f"Device: {device}")
+    
     return model, processor
 
 
-# ------------------------------------------------
-# Feature extractors (MEAN ONLY)
-# ------------------------------------------------
-
-def mean_last_layer(audio_window, processor, model):
+def extract_mean_last_layer(audio_chunk: torch.Tensor, processor, model) -> np.ndarray:
+    """Mean-pool the final hidden state (classic wav2vec2 baseline)"""
     inputs = processor(
-        audio_window.squeeze(0).cpu().numpy(),
+        audio_chunk.squeeze(0).cpu().numpy(),
         sampling_rate=SAMPLING_RATE,
         return_tensors="pt",
         padding="max_length",
+        max_length=WINDOW_SAMPLES,
         truncation=True,
-        max_length=WINDOW_SAMPLES
     ).to(device)
 
     with torch.no_grad():
-        out = model(**inputs)
+        outputs = model(**inputs)
+    
+    embedding = outputs.last_hidden_state.mean(dim=1).squeeze(0)
+    return embedding.cpu().numpy().astype(np.float32)
 
-    return out.last_hidden_state.mean(dim=1).squeeze(0).cpu().numpy().astype(np.float32)
 
-
-def mean_layers_18_to_23(audio_window, processor, model):
+def extract_mean_selected_layers(audio_chunk: torch.Tensor, processor, model,
+                                layer_indices: range) -> np.ndarray:
+    """Average mean-pooled hidden states from the selected transformer layers"""
     inputs = processor(
-        audio_window.squeeze(0).cpu().numpy(),
+        audio_chunk.squeeze(0).cpu().numpy(),
         sampling_rate=SAMPLING_RATE,
         return_tensors="pt",
         padding="max_length",
+        max_length=WINDOW_SAMPLES,
         truncation=True,
-        max_length=WINDOW_SAMPLES
     ).to(device)
 
     with torch.no_grad():
-        out = model(**inputs, output_hidden_states=True)
+        outputs = model(**inputs, output_hidden_states=True)
 
-    layer_means = []
-    for idx in BEST_LAYER_INDICES:
-        hidden = out.hidden_states[idx + 1]   # skip CNN output
-        layer_means.append(hidden.mean(dim=1).squeeze(0))
+    layer_embeddings = []
+    for layer_idx in layer_indices:
+        # hidden_states[0]  = CNN output
+        # hidden_states[1]  = after transformer layer 0
+        # hidden_states[24] = after transformer layer 23
+        hidden = outputs.hidden_states[layer_idx + 1]
+        mean_pooled = hidden.mean(dim=1).squeeze(0)          # [1024]
+        layer_embeddings.append(mean_pooled)
 
-    # 🔑 AVERAGE ACROSS LAYERS
-    avg_embedding = torch.stack(layer_means).mean(dim=0)
+    # Average across chosen layers
+    final_emb = torch.stack(layer_embeddings).mean(dim=0)
+    return final_emb.cpu().numpy().astype(np.float32)
 
-    return avg_embedding.cpu().numpy().astype(np.float32)  # (1024,)
+
+def extract_features_from_window(audio_chunk: torch.Tensor, processor, model,
+                                selected_layers: range) -> tuple[np.ndarray, np.ndarray]:
+    """Extract both feature types from one 2-second window"""
+    last_emb   = extract_mean_last_layer(audio_chunk, processor, model)
+    select_emb = extract_mean_selected_layers(audio_chunk, processor, model, selected_layers)
+    return last_emb, select_emb
 
 
-# ------------------------------------------------
-# Story processing
-# ------------------------------------------------
+def extract_story_features(waveform: torch.Tensor, tr_times: list[float],
+                          processor, model, selected_layers: range) -> tuple[np.ndarray, np.ndarray]:
+    """Process entire story – one embedding vector per TR"""
+    last_features   = []
+    select_features = []
 
-def process_story(waveform, tr_times, processor, model):
-    last_layer_feats = []
-    multi_layer_feats = []
+    for tr_start_sec in tr_times:
+        start_sample = int(tr_start_sec * SAMPLING_RATE)
+        end_sample   = start_sample + WINDOW_SAMPLES
 
-    for tr in tr_times:
-        start = int(tr * SAMPLING_RATE)
-        end = start + WINDOW_SAMPLES
-
-        if end <= waveform.shape[1]:
-            win = waveform[:, start:end]
+        if end_sample <= waveform.shape[1]:
+            chunk = waveform[:, start_sample:end_sample]
         else:
-            win = torch.nn.functional.pad(
-                waveform[:, start:], (0, WINDOW_SAMPLES - waveform.shape[1] + start)
+            # pad if story ends before full window
+            to_pad = WINDOW_SAMPLES - (waveform.shape[1] - start_sample)
+            chunk = torch.nn.functional.pad(
+                waveform[:, start_sample:], (0, to_pad)
             )
 
-        win = win.to(device)
+        chunk = chunk.to(device)
 
-        last_layer_feats.append(mean_last_layer(win, processor, model))
-        multi_layer_feats.append(mean_layers_18_to_23(win, processor, model))
+        last_emb, select_emb = extract_features_from_window(
+            chunk, processor, model, selected_layers
+        )
 
-    return np.stack(last_layer_feats), np.stack(multi_layer_feats)
+        last_features.append(last_emb)
+        select_features.append(select_emb)
 
+    return np.stack(last_features), np.stack(select_features)
 
-# ------------------------------------------------
-# MAIN
-# ------------------------------------------------
 
 def main():
     model, processor = load_model_and_processor()
 
+    # Load timing info
     with open("ds003020/derivative/respdict.json") as f:
         respdict = json.load(f)
 
     trfiles = load_simulated_trfiles(respdict, tr=2.0, start_time=10.0, pad=5)
 
+    # Discover stories from TextGrids (assuming naming convention)
     textgrid_dir = "ds003020/derivative/TextGrids"
-    audio_dir = "stimuli_16k"
-    stories = sorted(f[:-9] for f in os.listdir(textgrid_dir) if f.endswith(".TextGrid"))
+    audio_dir    = "stimuli_16k"
+
+    stories = sorted(
+        f[:-9] for f in os.listdir(textgrid_dir) if f.endswith(".TextGrid")
+    )
+
+    os.makedirs(OUT_LAST_LAYER, exist_ok=True)
+    os.makedirs(OUT_SELECTED,   exist_ok=True)
 
     for story in stories:
-        logging.info(f"Processing {story}")
+        logging.info(f"Processing story: {story}")
 
-        waveform, sr = torchaudio.load(join(audio_dir, f"{story}.wav"))
+        audio_path = join(audio_dir, f"{story}.wav")
+        waveform, sr = torchaudio.load(audio_path)
+
+        # mono + resample if needed
         if waveform.shape[0] > 1:
             waveform = waveform.mean(dim=0, keepdim=True)
         if sr != SAMPLING_RATE:
             waveform = torchaudio.transforms.Resample(sr, SAMPLING_RATE)(waveform)
 
-        tr_times = trfiles[story][0].get_reltriggertimes() + trfiles[story][0].soundstarttime
+        # Get TR onsets
+        if story not in trfiles:
+            logging.warning(f"Skipping {story} – no TR timing info")
+            continue
 
-        last_feats, multi_feats = process_story(waveform, tr_times, processor, model)
+        tr_info = trfiles[story][0]
+        tr_times = tr_info.get_reltriggertimes() + tr_info.soundstarttime
 
-        with h5py.File(join(OUT_LAST, f"{story}.hf5"), "w") as f:
+        # Extract features
+        last_feats, selected_feats = extract_story_features(
+            waveform, tr_times, processor, model, LAYER_RANGE_TO_AVERAGE
+        )
+
+        # Save
+        with h5py.File(join(OUT_LAST_LAYER, f"{story}.h5"), "w") as f:
             f.create_dataset("data", data=last_feats)
 
-        with h5py.File(join(OUT_18_23, f"{story}.hf5"), "w") as f:
-            f.create_dataset("data", data=multi_feats)
+        with h5py.File(join(OUT_SELECTED, f"{story}.h5"), "w") as f:
+            f.create_dataset("data", data=selected_feats)
 
-        logging.info(f"Saved {story}: last {last_feats.shape}, layers18–23 {multi_feats.shape}")
+        logging.info(
+            f"Saved {story} | "
+            f"last: {last_feats.shape} | "
+            f"{layer_str}: {selected_feats.shape}"
+        )
 
-    logging.info("DONE")
+    logging.info("All stories processed. Done.")
 
 
 if __name__ == "__main__":
