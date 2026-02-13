@@ -50,8 +50,9 @@ def train_model(
         layers_str = f"{layers_str}_{pca_str}"
 
     subfolder_name = f"{model_id}_{layers_str}"
-
-    output_dir = os.path.join(output_dir, subfolder_name)
+    
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    output_dir = os.path.join(SCRIPT_DIR, output_dir, subfolder_name)
     metrics_dir = os.path.join(output_dir, "metrics")
     os.makedirs(metrics_dir, exist_ok=True)
 

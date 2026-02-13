@@ -16,8 +16,8 @@ def get_response(stories, subject):
 
 
 def load_encoding_scores(subject):
-    subject_dir = os.path.join(REPO_DIR, "encoding/results/opensmile", subject)
-    scores_path = os.path.join(subject_dir, "corrs.npy")
+    subject_dir = os.path.join(REPO_DIR, "encoding/results/opensmile_all_stories", subject)
+    scores_path = os.path.join(subject_dir, "fold_corrs.npy")
     scores = np.load(scores_path)
     return scores
 
