@@ -1,6 +1,7 @@
 import os
 import json
 import torch
+from utils.config import MAIN_DIR
 from transformers import (
     AutoConfig,
     AutoFeatureExtractor,
@@ -51,8 +52,7 @@ def train_model(
 
     subfolder_name = f"{model_id}_{layers_str}"
     
-    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-    output_dir = os.path.join(SCRIPT_DIR, output_dir, subfolder_name)
+    output_dir = os.path.join(MAIN_DIR, output_dir, subfolder_name)
     metrics_dir = os.path.join(output_dir, "metrics")
     os.makedirs(metrics_dir, exist_ok=True)
 

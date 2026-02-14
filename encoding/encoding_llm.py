@@ -155,10 +155,6 @@ def main():
 
     # Define alphas (grid to search)
     alphas = np.logspace(args.alpha_min, args.alpha_max, args.num_alphas)
-
-    # nboots / nsplits defaults if None
-
-
         
     for subject in subjects:
         logging.info(f"Processing subject: {subject}")
