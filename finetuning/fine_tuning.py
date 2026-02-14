@@ -177,5 +177,5 @@ if __name__ == "__main__":
         num_epochs=args.num_epochs,
         patience=args.patience,
         save_total_limit=args.save_total_limit,
-        resume_from_checkpoint=args.resume_from_checkpoint,
+        resume_from_checkpoint=resume_from_checkpoint,
     )
