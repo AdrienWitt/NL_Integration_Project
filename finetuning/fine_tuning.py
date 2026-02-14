@@ -6,7 +6,7 @@ from transformers import AutoFeatureExtractor, Wav2Vec2FeatureExtractor
 
 from utils.prosody_dataset import ProsodyDataset
 from utils.training import train_model
-from utils.config import STIMULI_DIR, PROSODY_DIR
+from utils.config import STIMULI_DIR, PROSODY_DIR, MAIN_DIR
 
 
 if __name__ == "__main__":
@@ -159,7 +159,9 @@ if __name__ == "__main__":
 
     print(f"Train set size: {len(train_dataset)} windows")
     print(f"Val   set size: {len(val_dataset)} windows")
-
+    
+    resume_from_checkpoint = os.path.join(MAIN_DIR, args.resume_from_checkpoint)
+    
     # ────────────────────────────────────────────────────────────────
     # Launch training
     # ────────────────────────────────────────────────────────────────
