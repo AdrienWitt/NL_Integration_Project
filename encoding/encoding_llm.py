@@ -164,6 +164,7 @@ def main():
         if args.json_name == "all_stories.json":
             stories = load_stories(subject, json_path)
             test_story = ["wheretheressmoke"]
+            stories = [s for s in stories if s not in test_story]
         else:
             stories, test_story = load_train_test(subject, json_path)
             #stories = stories[0:3]
@@ -183,11 +184,11 @@ def main():
         Y_train = get_response(stories, f"{subject}")
         logging.info(f"Y_train shape: {Y_train.shape}")
         
-        X_test, _ = preprocess_features(
-            test_story, text_feat, audio_feat, args.modality,
-            args.trim, args.ndelays, args.use_pca, args.n_comps
-        )
-        logging.info(f"X_test shape: {X_test.shape}")
+        # X_test, _ = preprocess_features(
+        #     test_story, text_feat, audio_feat, args.modality,
+        #     args.trim, args.ndelays, args.use_pca, args.n_comps
+        # )
+        # logging.info(f"X_test shape: {X_test.shape}")
 
         Y_test = get_response(test_story, f"{subject}")
         logging.info(f"Y_test shape: {Y_test.shape}")

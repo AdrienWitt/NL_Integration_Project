@@ -28,3 +28,26 @@ def load_trfiles(respdict_path: str = RESPDICT_PATH, tr: float = 2.0, pad: int =
         respdict = json.load(f)
 
     return load_simulated_trfiles(respdict, tr=tr, pad=pad, start_time=start_time)
+
+def make_delayed(stim, delays, circpad=False):
+    """Creates non-interpolated concatenated delayed versions of [stim] with the given [delays] 
+    (in samples).
+    
+    If [circpad], instead of being padded with zeros, [stim] will be circularly shifted.
+    """
+    nt,ndim = stim.shape
+    dstims = []
+    for di,d in enumerate(delays):
+        dstim = np.zeros((nt, ndim))
+        if d<0: ## negative delay
+            dstim[:d,:] = stim[-d:,:]
+            if circpad:
+                dstim[d:,:] = stim[:-d,:]
+        elif d>0:
+            dstim[d:,:] = stim[:-d,:]
+            if circpad:
+                dstim[:d,:] = stim[-d:,:]
+        else: ## d==0
+            dstim = stim.copy()
+        dstims.append(dstim)
+    return np.hstack(dstims)
