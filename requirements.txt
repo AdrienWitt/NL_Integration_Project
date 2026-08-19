@@ -1,0 +1,26 @@
+# Core numerics
+numpy>=1.24
+scipy>=1.11
+pandas>=2.0
+scikit-learn>=1.3
+h5py>=3.8
+joblib>=1.3
+statsmodels>=0.14
+
+# Encoding models
+himalaya>=0.4.6          # banded ridge (primary backend)
+
+# Fine-tuning
+torch>=2.0
+torchaudio>=2.0
+transformers>=4.40
+tensorboard>=2.13
+
+# Feature extraction
+opensmile>=2.5           # eGeMAPSv02 functionals
+librosa>=0.10
+
+# Brain-space handling and plotting
+nibabel>=5.1
+nilearn>=0.10
+matplotlib>=3.7

@@ -1,0 +1,51 @@
+{
+    "dataset_info": {
+        "num_participants": 7,
+        "participants": [
+            "UTS01",
+            "UTS02",
+            "UTS03",
+            "UTS05",
+            "UTS06",
+            "UTS07",
+            "UTS08"
+        ],
+        "train_stories_count": 26
+    },
+    "train": {
+        "stories": [
+            "adollshouse",
+            "adventuresinsayingyes",
+            "alternateithicatom",
+            "avatar",
+            "buck",
+            "exorcism",
+            "eyespy",
+            "fromboyhoodtofatherhood",
+            "hangtime",
+            "haveyoumethimyet",
+            "howtodraw",
+            "inamoment",
+            "itsabox",
+            "legacy",
+            "life",
+            "myfirstdaywiththeyankees",
+            "naked",
+            "odetostepfather",
+            "sloth",
+            "souls",
+            "stagefright",
+            "swimmingwithastronauts",
+            "thatthingonmyarm",
+            "theclosetthatateeverything",
+            "tildeath",
+            "undertheinfluence"
+        ]
+    },
+    "test": {
+        "stories": [
+            "wheretheressmoke"
+        ],
+        "note": "repeated story (use individual_repeats if available)"
+    }
+}

@@ -1,0 +1,40 @@
+# Data — large, and moved here from NL_Project rather than tracked
+data/ds003020/
+data/stimuli_16k/
+data/features/
+data/derivative/preprocessed_data/
+data/derivative/masks/
+data/derivative/exemple_data/
+
+# Keep the small story lists that define the analyses
+!data/splits/
+!data/derivative/*.json
+
+# Outputs
+results/
+runs/
+logs/
+*.log
+
+# Model artifacts
+*.pt
+*.pth
+*.safetensors
+*.ckpt
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Removed code kept for reference, not part of the project
+trash/

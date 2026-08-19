@@ -1,0 +1,1425 @@
+{
+    "dataset_info": {
+        "num_participants": 9,
+        "participants": [
+            "UTS01",
+            "UTS02",
+            "UTS03",
+            "UTS04",
+            "UTS05",
+            "UTS06",
+            "UTS07",
+            "UTS08",
+            "UTS09"
+        ],
+        "total_unique_stories": 84
+    },
+    "participants": {
+        "UTS01": [
+            "adollshouse",
+            "adventuresinsayingyes",
+            "afatherscover",
+            "againstthewind",
+            "alternateithicatom",
+            "avatar",
+            "backsideofthestorm",
+            "becomingindian",
+            "beneaththemushroomcloud",
+            "birthofanation",
+            "bluehope",
+            "breakingupintheageofgoogle",
+            "buck",
+            "catfishingstrangerstofindmyself",
+            "cautioneating",
+            "christmas1940",
+            "cocoonoflove",
+            "comingofageondeathrow",
+            "exorcism",
+            "eyespy",
+            "firetestforlove",
+            "food",
+            "forgettingfear",
+            "fromboyhoodtofatherhood",
+            "gangstersandcookies",
+            "goingthelibertyway",
+            "goldiethegoldfish",
+            "golfclubbing",
+            "gpsformylostidentity",
+            "hangtime",
+            "haveyoumethimyet",
+            "howtodraw",
+            "ifthishaircouldtalk",
+            "inamoment",
+            "itsabox",
+            "jugglingandjesus",
+            "kiksuya",
+            "leavingbaghdad",
+            "legacy",
+            "life",
+            "lifeanddeathontheoregontrail",
+            "lifereimagined",
+            "listo",
+            "mayorofthefreaks",
+            "metsmagic",
+            "mybackseatviewofagreatromance",
+            "myfathershands",
+            "myfirstdaywiththeyankees",
+            "naked",
+            "notontheusualtour",
+            "odetostepfather",
+            "onlyonewaytofindout",
+            "penpal",
+            "quietfire",
+            "reachingoutbetweenthebars",
+            "shoppinginchina",
+            "singlewomanseekingmanwich",
+            "sloth",
+            "souls",
+            "stagefright",
+            "stumblinginthedark",
+            "superheroesjustforeachother",
+            "sweetaspie",
+            "swimmingwithastronauts",
+            "thatthingonmyarm",
+            "theadvancedbeginner",
+            "theclosetthatateeverything",
+            "thecurse",
+            "thefreedomridersandme",
+            "theinterview",
+            "thepostmanalwayscalls",
+            "theshower",
+            "thetiniestbouquet",
+            "thetriangleshirtwaistconnection",
+            "threemonths",
+            "thumbsup",
+            "tildeath",
+            "treasureisland",
+            "undertheinfluence",
+            "vixenandtheussr",
+            "waitingtogo",
+            "whenmothersbullyback",
+            "wheretheressmoke",
+            "wildwomenanddancingqueens"
+        ],
+        "UTS02": [
+            "adollshouse",
+            "adventuresinsayingyes",
+            "afatherscover",
+            "againstthewind",
+            "alternateithicatom",
+            "avatar",
+            "backsideofthestorm",
+            "becomingindian",
+            "beneaththemushroomcloud",
+            "birthofanation",
+            "bluehope",
+            "breakingupintheageofgoogle",
+            "buck",
+            "catfishingstrangerstofindmyself",
+            "cautioneating",
+            "christmas1940",
+            "cocoonoflove",
+            "comingofageondeathrow",
+            "exorcism",
+            "eyespy",
+            "firetestforlove",
+            "food",
+            "forgettingfear",
+            "fromboyhoodtofatherhood",
+            "gangstersandcookies",
+            "goingthelibertyway",
+            "goldiethegoldfish",
+            "golfclubbing",
+            "gpsformylostidentity",
+            "hangtime",
+            "haveyoumethimyet",
+            "howtodraw",
+            "ifthishaircouldtalk",
+            "inamoment",
+            "itsabox",
+            "jugglingandjesus",
+            "kiksuya",
+            "leavingbaghdad",
+            "legacy",
+            "life",
+            "lifeanddeathontheoregontrail",
+            "lifereimagined",
+            "listo",
+            "mayorofthefreaks",
+            "metsmagic",
+            "mybackseatviewofagreatromance",
+            "myfathershands",
+            "myfirstdaywiththeyankees",
+            "naked",
+            "notontheusualtour",
+            "odetostepfather",
+            "onlyonewaytofindout",
+            "penpal",
+            "quietfire",
+            "reachingoutbetweenthebars",
+            "shoppinginchina",
+            "singlewomanseekingmanwich",
+            "sloth",
+            "souls",
+            "stagefright",
+            "stumblinginthedark",
+            "superheroesjustforeachother",
+            "sweetaspie",
+            "swimmingwithastronauts",
+            "thatthingonmyarm",
+            "theadvancedbeginner",
+            "theclosetthatateeverything",
+            "thecurse",
+            "thefreedomridersandme",
+            "theinterview",
+            "thepostmanalwayscalls",
+            "theshower",
+            "thetiniestbouquet",
+            "thetriangleshirtwaistconnection",
+            "threemonths",
+            "thumbsup",
+            "tildeath",
+            "treasureisland",
+            "undertheinfluence",
+            "vixenandtheussr",
+            "waitingtogo",
+            "whenmothersbullyback",
+            "wheretheressmoke",
+            "wildwomenanddancingqueens"
+        ],
+        "UTS03": [
+            "adollshouse",
+            "adventuresinsayingyes",
+            "afatherscover",
+            "againstthewind",
+            "alternateithicatom",
+            "avatar",
+            "backsideofthestorm",
+            "becomingindian",
+            "beneaththemushroomcloud",
+            "birthofanation",
+            "bluehope",
+            "breakingupintheageofgoogle",
+            "buck",
+            "catfishingstrangerstofindmyself",
+            "cautioneating",
+            "christmas1940",
+            "cocoonoflove",
+            "comingofageondeathrow",
+            "exorcism",
+            "eyespy",
+            "firetestforlove",
+            "food",
+            "forgettingfear",
+            "fromboyhoodtofatherhood",
+            "gangstersandcookies",
+            "goingthelibertyway",
+            "goldiethegoldfish",
+            "golfclubbing",
+            "gpsformylostidentity",
+            "hangtime",
+            "haveyoumethimyet",
+            "howtodraw",
+            "ifthishaircouldtalk",
+            "inamoment",
+            "itsabox",
+            "jugglingandjesus",
+            "kiksuya",
+            "leavingbaghdad",
+            "legacy",
+            "life",
+            "lifeanddeathontheoregontrail",
+            "lifereimagined",
+            "listo",
+            "mayorofthefreaks",
+            "metsmagic",
+            "mybackseatviewofagreatromance",
+            "myfathershands",
+            "myfirstdaywiththeyankees",
+            "naked",
+            "notontheusualtour",
+            "odetostepfather",
+            "onlyonewaytofindout",
+            "penpal",
+            "quietfire",
+            "reachingoutbetweenthebars",
+            "shoppinginchina",
+            "singlewomanseekingmanwich",
+            "sloth",
+            "souls",
+            "stagefright",
+            "stumblinginthedark",
+            "superheroesjustforeachother",
+            "sweetaspie",
+            "swimmingwithastronauts",
+            "thatthingonmyarm",
+            "theadvancedbeginner",
+            "theclosetthatateeverything",
+            "thecurse",
+            "thefreedomridersandme",
+            "theinterview",
+            "thepostmanalwayscalls",
+            "theshower",
+            "thetiniestbouquet",
+            "thetriangleshirtwaistconnection",
+            "threemonths",
+            "thumbsup",
+            "tildeath",
+            "treasureisland",
+            "undertheinfluence",
+            "vixenandtheussr",
+            "waitingtogo",
+            "whenmothersbullyback",
+            "wheretheressmoke",
+            "wildwomenanddancingqueens"
+        ],
+        "UTS04": [
+            "adollshouse",
+            "adventuresinsayingyes",
+            "alternateithicatom",
+            "avatar",
+            "buck",
+            "exorcism",
+            "eyespy",
+            "fromboyhoodtofatherhood",
+            "hangtime",
+            "haveyoumethimyet",
+            "howtodraw",
+            "inamoment",
+            "itsabox",
+            "legacy",
+            "myfirstdaywiththeyankees",
+            "naked",
+            "odetostepfather",
+            "sloth",
+            "souls",
+            "stagefright",
+            "swimmingwithastronauts",
+            "thatthingonmyarm",
+            "theclosetthatateeverything",
+            "tildeath",
+            "undertheinfluence",
+            "wheretheressmoke"
+        ],
+        "UTS05": [
+            "adollshouse",
+            "adventuresinsayingyes",
+            "alternateithicatom",
+            "avatar",
+            "buck",
+            "exorcism",
+            "eyespy",
+            "fromboyhoodtofatherhood",
+            "hangtime",
+            "haveyoumethimyet",
+            "howtodraw",
+            "inamoment",
+            "itsabox",
+            "legacy",
+            "life",
+            "myfirstdaywiththeyankees",
+            "naked",
+            "odetostepfather",
+            "sloth",
+            "souls",
+            "stagefright",
+            "swimmingwithastronauts",
+            "thatthingonmyarm",
+            "theclosetthatateeverything",
+            "tildeath",
+            "undertheinfluence",
+            "wheretheressmoke"
+        ],
+        "UTS06": [
+            "adollshouse",
+            "adventuresinsayingyes",
+            "alternateithicatom",
+            "avatar",
+            "buck",
+            "exorcism",
+            "eyespy",
+            "fromboyhoodtofatherhood",
+            "hangtime",
+            "haveyoumethimyet",
+            "howtodraw",
+            "inamoment",
+            "itsabox",
+            "legacy",
+            "life",
+            "myfirstdaywiththeyankees",
+            "naked",
+            "odetostepfather",
+            "sloth",
+            "souls",
+            "stagefright",
+            "swimmingwithastronauts",
+            "thatthingonmyarm",
+            "theclosetthatateeverything",
+            "tildeath",
+            "undertheinfluence",
+            "wheretheressmoke"
+        ],
+        "UTS07": [
+            "adollshouse",
+            "adventuresinsayingyes",
+            "alternateithicatom",
+            "avatar",
+            "buck",
+            "exorcism",
+            "eyespy",
+            "fromboyhoodtofatherhood",
+            "hangtime",
+            "haveyoumethimyet",
+            "howtodraw",
+            "inamoment",
+            "itsabox",
+            "legacy",
+            "life",
+            "myfirstdaywiththeyankees",
+            "naked",
+            "odetostepfather",
+            "sloth",
+            "souls",
+            "stagefright",
+            "swimmingwithastronauts",
+            "thatthingonmyarm",
+            "theclosetthatateeverything",
+            "tildeath",
+            "undertheinfluence",
+            "wheretheressmoke"
+        ],
+        "UTS08": [
+            "adollshouse",
+            "adventuresinsayingyes",
+            "alternateithicatom",
+            "avatar",
+            "buck",
+            "exorcism",
+            "eyespy",
+            "fromboyhoodtofatherhood",
+            "hangtime",
+            "haveyoumethimyet",
+            "howtodraw",
+            "inamoment",
+            "itsabox",
+            "legacy",
+            "life",
+            "myfirstdaywiththeyankees",
+            "naked",
+            "odetostepfather",
+            "sloth",
+            "souls",
+            "stagefright",
+            "swimmingwithastronauts",
+            "thatthingonmyarm",
+            "theclosetthatateeverything",
+            "tildeath",
+            "undertheinfluence",
+            "wheretheressmoke"
+        ],
+        "UTS09": [
+            "adollshouse",
+            "adventuresinsayingyes",
+            "againstthewind",
+            "alternateithicatom",
+            "avatar",
+            "backsideofthestorm",
+            "becomingindian",
+            "bluehope",
+            "breakingupintheageofgoogle",
+            "buck",
+            "catfishingstrangerstofindmyself",
+            "christmas1940",
+            "exorcism",
+            "eyespy",
+            "forgettingfear",
+            "goingthelibertyway",
+            "gpsformylostidentity",
+            "hangtime",
+            "haveyoumethimyet",
+            "howtodraw",
+            "ifthishaircouldtalk",
+            "inamoment",
+            "itsabox",
+            "kiksuya",
+            "legacy",
+            "life",
+            "lifeanddeathontheoregontrail",
+            "lifereimagined",
+            "myfirstdaywiththeyankees",
+            "naked",
+            "odetostepfather",
+            "onlyonewaytofindout",
+            "penpal",
+            "shoppinginchina",
+            "singlewomanseekingmanwich",
+            "sloth",
+            "souls",
+            "stagefright",
+            "stumblinginthedark",
+            "superheroesjustforeachother",
+            "sweetaspie",
+            "swimmingwithastronauts",
+            "thatthingonmyarm",
+            "theclosetthatateeverything",
+            "thefreedomridersandme",
+            "thepostmanalwayscalls",
+            "thetiniestbouquet",
+            "thumbsup",
+            "tildeath",
+            "treasureisland",
+            "undertheinfluence",
+            "waitingtogo",
+            "whenmothersbullyback",
+            "wheretheressmoke"
+        ]
+    },
+    "story_statistics": {
+        "adollshouse": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "adventuresinsayingyes": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "afatherscover": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "againstthewind": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "alternateithicatom": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "avatar": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "backsideofthestorm": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "becomingindian": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "beneaththemushroomcloud": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "birthofanation": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "bluehope": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "breakingupintheageofgoogle": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "buck": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "catfishingstrangerstofindmyself": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "cautioneating": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "christmas1940": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "cocoonoflove": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "comingofageondeathrow": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "exorcism": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "eyespy": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "firetestforlove": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "food": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "forgettingfear": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "fromboyhoodtofatherhood": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08"
+            ],
+            "count": 8
+        },
+        "gangstersandcookies": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "goingthelibertyway": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "goldiethegoldfish": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "golfclubbing": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "gpsformylostidentity": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "hangtime": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "haveyoumethimyet": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "howtodraw": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "ifthishaircouldtalk": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "inamoment": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "itsabox": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "jugglingandjesus": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "kiksuya": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "leavingbaghdad": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "legacy": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "life": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 8
+        },
+        "lifeanddeathontheoregontrail": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "lifereimagined": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "listo": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "mayorofthefreaks": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "metsmagic": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "mybackseatviewofagreatromance": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "myfathershands": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "myfirstdaywiththeyankees": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "naked": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "notontheusualtour": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "odetostepfather": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "onlyonewaytofindout": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "penpal": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "quietfire": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "reachingoutbetweenthebars": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "shoppinginchina": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "singlewomanseekingmanwich": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "sloth": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "souls": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "stagefright": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "stumblinginthedark": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "superheroesjustforeachother": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "sweetaspie": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "swimmingwithastronauts": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "thatthingonmyarm": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "theadvancedbeginner": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "theclosetthatateeverything": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "thecurse": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "thefreedomridersandme": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "theinterview": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "thepostmanalwayscalls": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "theshower": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "thetiniestbouquet": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "thetriangleshirtwaistconnection": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "threemonths": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "thumbsup": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "tildeath": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "treasureisland": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "undertheinfluence": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "vixenandtheussr": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        },
+        "waitingtogo": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "whenmothersbullyback": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS09"
+            ],
+            "count": 4
+        },
+        "wheretheressmoke": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03",
+                "UTS04",
+                "UTS05",
+                "UTS06",
+                "UTS07",
+                "UTS08",
+                "UTS09"
+            ],
+            "count": 9
+        },
+        "wildwomenanddancingqueens": {
+            "participants": [
+                "UTS01",
+                "UTS02",
+                "UTS03"
+            ],
+            "count": 3
+        }
+    },
+    "all_stories": [
+        "adollshouse",
+        "adventuresinsayingyes",
+        "afatherscover",
+        "againstthewind",
+        "alternateithicatom",
+        "avatar",
+        "backsideofthestorm",
+        "becomingindian",
+        "beneaththemushroomcloud",
+        "birthofanation",
+        "bluehope",
+        "breakingupintheageofgoogle",
+        "buck",
+        "catfishingstrangerstofindmyself",
+        "cautioneating",
+        "christmas1940",
+        "cocoonoflove",
+        "comingofageondeathrow",
+        "exorcism",
+        "eyespy",
+        "firetestforlove",
+        "food",
+        "forgettingfear",
+        "fromboyhoodtofatherhood",
+        "gangstersandcookies",
+        "goingthelibertyway",
+        "goldiethegoldfish",
+        "golfclubbing",
+        "gpsformylostidentity",
+        "hangtime",
+        "haveyoumethimyet",
+        "howtodraw",
+        "ifthishaircouldtalk",
+        "inamoment",
+        "itsabox",
+        "jugglingandjesus",
+        "kiksuya",
+        "leavingbaghdad",
+        "legacy",
+        "life",
+        "lifeanddeathontheoregontrail",
+        "lifereimagined",
+        "listo",
+        "mayorofthefreaks",
+        "metsmagic",
+        "mybackseatviewofagreatromance",
+        "myfathershands",
+        "myfirstdaywiththeyankees",
+        "naked",
+        "notontheusualtour",
+        "odetostepfather",
+        "onlyonewaytofindout",
+        "penpal",
+        "quietfire",
+        "reachingoutbetweenthebars",
+        "shoppinginchina",
+        "singlewomanseekingmanwich",
+        "sloth",
+        "souls",
+        "stagefright",
+        "stumblinginthedark",
+        "superheroesjustforeachother",
+        "sweetaspie",
+        "swimmingwithastronauts",
+        "thatthingonmyarm",
+        "theadvancedbeginner",
+        "theclosetthatateeverything",
+        "thecurse",
+        "thefreedomridersandme",
+        "theinterview",
+        "thepostmanalwayscalls",
+        "theshower",
+        "thetiniestbouquet",
+        "thetriangleshirtwaistconnection",
+        "threemonths",
+        "thumbsup",
+        "tildeath",
+        "treasureisland",
+        "undertheinfluence",
+        "vixenandtheussr",
+        "waitingtogo",
+        "whenmothersbullyback",
+        "wheretheressmoke",
+        "wildwomenanddancingqueens"
+    ]
+}
