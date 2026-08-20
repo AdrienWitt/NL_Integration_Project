@@ -40,6 +40,20 @@ class _SpeechRegressorBase(PreTrainedModel):
                 )
         self.base_model_name = base_model_name
 
+        # LayerDrop randomly skips whole transformer layers during training.
+        # Under DDP that is fatal: the skipped layer's 16 parameters receive no
+        # gradient, and the reducer aborts with "Expected to have finished
+        # reduction in the prior iteration". It also makes every forward
+        # stochastic in *which* layers ran, which is noise in a comparison whose
+        # entire point is contrasting backbones. Both checkpoints ship 0.1.
+        config.layerdrop = 0.0
+
+        # SpecAugment masks input time steps. The target here is the eGeMAPS
+        # functionals of that exact window, so masking removes the very signal
+        # the label describes — and an unmasked batch leaves masked_spec_embed
+        # without a gradient, which trips the same DDP check.
+        config.apply_spec_augment = False
+
         self.encoder = AutoModel.from_pretrained(base_model_name, config=config)
         if truncate_layers is not None:
             self.truncate_encoder(truncate_layers)
@@ -136,6 +150,15 @@ class _SpeechRegressorBase(PreTrainedModel):
             if "feature_extractor" in name or "feature_projection" in name:
                 for p in module.parameters():
                     p.requires_grad = False
+
+        # masked_spec_embed is only ever read when SpecAugment masks something,
+        # and we disable SpecAugment. Left trainable it would sit in the DDP
+        # reduction never receiving a gradient, which aborts the step exactly
+        # the way a LayerDrop-skipped layer does.
+        spec_embed = getattr(self.encoder, "masked_spec_embed", None)
+        if spec_embed is not None and not getattr(
+                self.encoder.config, "apply_spec_augment", False):
+            spec_embed.requires_grad = False
 
         layers = self._transformer_layers()
         if layers is None:
