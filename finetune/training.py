@@ -301,5 +301,5 @@ def train_model(
 
     print(f"\nSaved fine-tuned model to {final_dir}")
     print(f"  Point extract/wav2vec.py at this directory with "
-          f"--model-path {final_dir}")
+          f"--model {final_dir}")
     return info
