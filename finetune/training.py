@@ -247,20 +247,29 @@ def train_model(
 
     train_result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
+    # Order matters under DDP. Every collective must be reached by every rank,
+    # and every plain file write must happen on exactly one rank. Doing the
+    # writes first deadlocked: ranks 1..N raced past save_model (a no-op for
+    # them) into evaluate() and sat in an ALLGATHER for the full 30-minute NCCL
+    # timeout while rank 0 was still writing, and the four ranks writing the
+    # same paths concurrently left a 0-byte feature_scalers.joblib behind.
     final_dir = os.path.join(output_dir, "final_model")
-    trainer.save_model(final_dir)
-    processor.save_pretrained(final_dir)
+    trainer.save_model(final_dir)      # internally rank-guarded by the Trainer
+    final_metrics = trainer.evaluate()  # collective: all ranks, before any I/O
 
-    if getattr(train_dataset, "scalers", None):
-        # Needed to un-standardise predictions, and to score any later
-        # evaluation on the same scale the model was trained on. joblib, not
-        # torch.save: these are sklearn estimators, and torch.load defaults to
-        # weights_only=True since torch 2.6, which refuses to unpickle them.
-        import joblib
-        joblib.dump(train_dataset.scalers,
-                    os.path.join(final_dir, "feature_scalers.joblib"))
+    is_main = trainer.is_world_process_zero()
+    if is_main:
+        processor.save_pretrained(final_dir)
 
-    final_metrics = trainer.evaluate()
+        if getattr(train_dataset, "scalers", None):
+            # Needed to un-standardise predictions, and to score any later
+            # evaluation on the same scale the model was trained on. joblib,
+            # not torch.save: these are sklearn estimators, and torch.load
+            # defaults to weights_only=True since torch 2.6, which refuses to
+            # unpickle them.
+            import joblib
+            joblib.dump(train_dataset.scalers,
+                        os.path.join(final_dir, "feature_scalers.joblib"))
 
     info = {
         "run_name": name,
@@ -292,12 +301,19 @@ def train_model(
         "gpus": [torch.cuda.get_device_name(i)
                  for i in range(torch.cuda.device_count())],
     }
-    with open(os.path.join(final_dir, "training_info.json"), "w",
-              encoding="utf-8") as f:
-        json.dump(info, f, indent=2, default=str)
-    with open(os.path.join(metrics_dir, "final_metrics.json"), "w",
-              encoding="utf-8") as f:
-        json.dump(final_metrics, f, indent=2, default=str)
+    if is_main:
+        with open(os.path.join(final_dir, "training_info.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump(info, f, indent=2, default=str)
+        with open(os.path.join(metrics_dir, "final_metrics.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump(final_metrics, f, indent=2, default=str)
+
+    # Without this the ranks exit with a live process group and NCCL warns
+    # about leaked resources.
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        torch.distributed.barrier()
+        torch.distributed.destroy_process_group()
 
     print(f"\nSaved fine-tuned model to {final_dir}")
     print(f"  Point extract/wav2vec.py at this directory with "
