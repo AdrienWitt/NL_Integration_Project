@@ -1,26 +1,57 @@
-# Core numerics
+# Python 3.10+
+#
+# Install:  pip install -r requirements.txt
+#
+# The Hugging Face checkpoints are NOT pip packages — see "Models" at the
+# bottom. On an HPC cluster, download them on the login node before
+# submitting, because compute nodes usually have no internet access.
+
+# --- Core numerics --------------------------------------------------------
 numpy>=1.24
 scipy>=1.11
-pandas>=2.0
-scikit-learn>=1.3
-h5py>=3.8
-joblib>=1.3
-statsmodels>=0.14
+pandas>=2.0              # metrics history CSV, stats tables
+scikit-learn>=1.3        # StandardScaler, regression metrics
+h5py>=3.8                # feature .hf5 files
+joblib>=1.3              # persists the fitted target scalers
+statsmodels>=0.14        # FDR correction in stats/permutation.py
 
-# Encoding models
-himalaya>=0.4.6          # banded ridge (primary backend)
-
-# Fine-tuning
+# --- Fine-tuning (stage 1) ------------------------------------------------
 torch>=2.0
-torchaudio>=2.0
-transformers>=4.40
-tensorboard>=2.13
+torchaudio>=2.0          # waveform loading + resampling
+transformers>=4.40       # Trainer, wav2vec2/HuBERT/WavLM
+tensorboard>=2.13        # training_args report_to=["tensorboard"]
 
-# Feature extraction
-opensmile>=2.5           # eGeMAPSv02 functionals
-librosa>=0.10
+# --- Audio features -------------------------------------------------------
+opensmile>=2.5           # eGeMAPSv02 functionals (the fine-tuning targets)
+librosa>=0.10            # audio loading/resampling in prep/
+soundfile>=0.12          # wav writing in prep/make_16k_stimuli.py
 
-# Brain-space handling and plotting
-nibabel>=5.1
-nilearn>=0.10
+# --- Encoding models (stage 2) -------------------------------------------
+himalaya>=0.4.6          # banded ridge, the primary backend
+
+# --- Plotting -------------------------------------------------------------
 matplotlib>=3.7
+
+# --------------------------------------------------------------------------
+# Models (downloaded by transformers, cached under $HF_HOME)
+#
+#   facebook/wav2vec2-large-robust                          ~1.3 GB  arm A
+#   audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim   ~1.2 GB  arm B
+#   gpt2                                                    ~0.5 GB  semantic band
+#
+# Optional alternative backbones (finetune.run_finetune --list-models):
+#   facebook/hubert-large-ll60k, microsoft/wavlm-large
+#
+# Pre-fetch on a machine with internet:
+#
+#   export HF_HOME=$HOME/.cache/huggingface
+#   python - <<'PY'
+#   from transformers import AutoModel, AutoFeatureExtractor, AutoTokenizer
+#   for m in ["facebook/wav2vec2-large-robust",
+#             "audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim"]:
+#       AutoModel.from_pretrained(m); AutoFeatureExtractor.from_pretrained(m)
+#   AutoModel.from_pretrained("gpt2"); AutoTokenizer.from_pretrained("gpt2")
+#   PY
+#
+# Then set HF_HUB_OFFLINE=1 in the job script so nothing tries to reach out.
+# --------------------------------------------------------------------------
