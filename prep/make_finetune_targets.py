@@ -139,7 +139,7 @@ def main(argv=None) -> None:
     for story in usable:
         safe = "".join(c if c.isalnum() or c in " _-" else "_"
                        for c in story).replace(" ", "_").strip("_")
-        out_path = avg_dir / f"{safe}_prosody+brain-pca-avg.json"
+        out_path = avg_dir / f"{safe}_prosody.json"
         if out_path.exists() and not args.overwrite:
             log.info(f"  {story}: exists, skipping (use --overwrite)")
             continue

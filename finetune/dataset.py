@@ -5,8 +5,7 @@ One sample = one TR: the `WINDOW_SIZE_SEC` of audio starting at that TR's
 onset, labelled with the eGeMAPS functionals of that same window.
 
 Targets come from the per-story JSONs `prep/make_finetune_targets.py` writes,
-so this class never touches the fMRI files. Older JSONs also carry a
-``brain_targets`` block from the removed multi-task path; it is ignored.
+so this class never touches the fMRI files.
 
 Scaling
 -------
@@ -39,10 +38,8 @@ from config import (EGEMAPS_N_FUNCTIONALS, SAMPLING_RATE, TR, TR_PAD,
                     WINDOW_SIZE_SEC)
 from common.tr_alignment import load_trfiles, tr_onsets
 
-#: Filename suffix written by prep/make_finetune_targets.py. The "+brain-pca"
-#: is historical — the JSONs on disk still carry that name and an unused
-#: brain_targets block; only the audio half is read.
-TARGET_SUFFIX = "_prosody+brain-pca-avg.json"
+#: Filename suffix written by prep/make_finetune_targets.py.
+TARGET_SUFFIX = "_prosody.json"
 
 
 class ProsodyDataset(Dataset):

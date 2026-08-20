@@ -59,10 +59,10 @@ RESPDICT_PATH = _env("RESPDICT_PATH", DERIVATIVE_DIR / "respdict.json")
 
 FEATURES_DIR = _env("FEATURES_DIR", DATA_DIR / "features")
 
-#: TR-aligned eGeMAPS windows + subject-averaged brain PCA, for fine-tuning.
+#: TR-aligned eGeMAPS windows, one JSON per story, for fine-tuning.
 PROSODY_DIR         = FEATURES_DIR / "prosody" / "opensmile"
 FINETUNE_TARGET_DIR = _env("FINETUNE_TARGET_DIR",
-                           FEATURES_DIR / "prosody" / "brain_targets_finetuning")
+                           FEATURES_DIR / "prosody" / "finetune_targets")
 
 # --------------------------------------------------------------------------
 # Splits

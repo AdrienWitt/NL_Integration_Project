@@ -125,8 +125,10 @@ empirical — sweep it with `--layers` and different `--out-name`s.
   byte-identical through `AutoModel` and the fine-tuning wrapper.
 - **Nothing has been run on real data yet.** No git commit has been made.
 - **Fine-tuning is otherwise unblocked**: all 84 target JSONs already exist under
-  `data/features/prosody/brain_targets_finetuning/averaged/` with the 88 audio
-  features (the filename and its unused `brain_targets` block are historical).
+  `data/features/prosody/finetune_targets/averaged/` as `<story>_prosody.json`.
+  Renamed 2026-08-20 from `brain_targets_finetuning/*_prosody+brain-pca-avg.json`
+  and stripped of the dead `brain_targets` block; the audio features are
+  bit-identical, and the originals are in `trash/brain_pca_multitask/`.
   Split is 71 train / 12 val / `wheretheressmoke` held out; 23,853 train and
   3,944 val windows. Only the dehydrated wavs stand in the way.
 - The fine-tuning stack was reviewed and fixed on 2026-08-19: `--model <hf id>`
