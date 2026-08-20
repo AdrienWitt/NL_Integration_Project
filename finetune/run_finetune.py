@@ -125,6 +125,10 @@ def parse_args(argv=None) -> argparse.Namespace:
                             "feature's mean; eval_mean_r cannot be gamed that "
                             "way and is the better choice if that shows up.")
     train.add_argument("--save-total-limit", type=int, default=3)
+    train.add_argument("--dataloader-workers", type=int, default=4,
+                       help="DataLoader workers PER PROCESS. Under torchrun "
+                            "this is multiplied by the number of GPUs, so keep "
+                            "workers * gpus <= --cpus-per-task.")
     train.add_argument("--seed", type=int, default=42)
     train.add_argument("--resume-from-checkpoint", default=None)
     train.add_argument("--torch-compile", action="store_true")
@@ -245,6 +249,7 @@ def main(argv=None) -> None:
         num_epochs=args.num_epochs,
         patience=args.patience,
         metric_for_best=args.metric_for_best,
+        dataloader_workers=args.dataloader_workers,
         save_total_limit=args.save_total_limit,
         resume_from_checkpoint=args.resume_from_checkpoint,
         torch_compile=args.torch_compile,
