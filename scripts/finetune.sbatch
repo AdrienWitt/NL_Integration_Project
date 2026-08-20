@@ -1,7 +1,7 @@
 #!/bin/sh
 #SBATCH --job-name=ft_prosody
-#SBATCH --output=ft_prosody_%j.out
-#SBATCH --error=ft_prosody_%j.err
+#SBATCH --output=ft_prosody_out
+#SBATCH --error=ft_prosody_err
 #SBATCH --partition=shared-gpu
 #SBATCH --time=12:00:00
 #SBATCH --ntasks=1

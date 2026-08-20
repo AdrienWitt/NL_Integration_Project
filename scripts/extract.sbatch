@@ -1,7 +1,7 @@
 #!/bin/sh
 #SBATCH --job-name=extract
-#SBATCH --output=logs/ex_%x_%j.out
-#SBATCH --error=logs/ex_%x_%j.err
+#SBATCH --output=extract_out
+#SBATCH --error=extract_err
 #SBATCH --partition=shared-gpu
 #SBATCH --time=02:00:00
 #SBATCH --ntasks=1
