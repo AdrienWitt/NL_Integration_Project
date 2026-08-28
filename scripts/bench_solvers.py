@@ -119,7 +119,31 @@ def main():
                             solver_params=dict(n_targets_batch=200))
             return score_of(model, False)
 
-        timed("MultipleKernelRidgeCV", run_dual)
+        # The real sweep does not use the params above: default_solver_params
+        # adds diagonalize_method="svd" and n_targets_batch_refit=200. The
+        # first calibration run spent 420 s where this benchmark spent 9 s at
+        # identical shapes, and those two settings are the whole difference —
+        # so time them explicitly rather than guess which one costs.
+        def run_dual_with(diag, refit):
+            per_band = make_pipeline(
+                StandardScaler(with_mean=True, with_std=False),
+                Kernelizer(kernel="linear"))
+            kern = ColumnKernelizer([("audio", per_band, slice(0, n_features))])
+            params = dict(alphas=alphas, n_iter=1, n_targets_batch=200,
+                          n_alphas_batch=5)
+            if diag is not None:
+                params["diagonalize_method"] = diag
+            if refit is not None:
+                params["n_targets_batch_refit"] = refit
+            model = MultipleKernelRidgeCV(
+                kernels="precomputed", solver="random_search",
+                solver_params=params, cv=splits)
+            return score_of(make_pipeline(kern, model), True)
+
+        timed("dual (bench params)", run_dual)
+        timed("dual +diag=svd", lambda: run_dual_with("svd", None))
+        timed("dual +refit=200", lambda: run_dual_with(None, 200))
+        timed("dual (sweep params)", lambda: run_dual_with("svd", 200))
         timed("GroupRidgeCV (primal)", run_primal_grouped)
         timed("RidgeCV (primal, svd)", run_primal_svd)
         print()
