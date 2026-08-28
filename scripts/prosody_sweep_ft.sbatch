@@ -62,12 +62,24 @@
 # Measured on the first real run (20 stories, UTS01): host MaxRSS 7.7 GB,
 # 6,897 training TRs, EV>0.1 in 1,776 of 81,126 voxels.
 #
-# ONE GPU, not several. himalaya's torch_cuda backend runs on a single device
-# and has no multi-GPU path, so --gres=gpu:2 would reserve a second card and
-# leave it idle. Parallelism here is across subjects, via the job array — which
-# is also why %N in --array is the knob that decides how much of the queue this
-# occupies. There are ~7 usable A100 80GB cards in shared-gpu, so %3 is polite
-# and %7 is the ceiling before you are simply waiting on yourself.
+# On GPUs and parallelism
+# -----------------------
+# himalaya's torch_cuda backend sends every array to plain "cuda" — device 0 —
+# with no sharding and no DataParallel. It cannot use two cards. Raising
+# --gres to gpu:2 therefore does nothing on its own; a second card would sit
+# idle for the whole job.
+#
+# Two GPUs only help if two *processes* use them, which is what the store split
+# further down does when it sees a second card. That halves the wall clock for
+# a single subject, and is worth asking for when you are running one subject
+# and want the answer sooner.
+#
+# The better axis is across subjects, via the job array — no code involved, no
+# requirement that both cards be on one node, and it scales to nine rather than
+# two. %N in --array decides how much of the queue this occupies; there are ~7
+# usable A100 80GB cards in shared-gpu, so %3 is polite and %7 is the ceiling
+# before you are simply waiting on yourself. Asking for gpu:2 *and* a wide
+# array competes with itself for the same small pool.
 #
 # Drop VramPerGpu to 20G to also match the 40 GB A100s and the RTX cards if the
 # 80 GB queue is long; the 40-story sweep fits there.
@@ -160,11 +172,42 @@ run_sweep () {   # store, configs
 # robust is 24 layers frozen to 12; emotion is a 12-layer pruned backbone
 # frozen to 6, so "layer 11" is its top layer, not a mid-network one.
 # ---------------------------------------------------------------------------
-if [ -n "$CFG_FT_ROBUST" ]; then
-    run_sweep perlayer_ft_robust  "$CFG_FT_ROBUST"
-fi
-if [ -n "$CFG_FT_EMOTION" ]; then
-    run_sweep perlayer_ft_emotion "$CFG_FT_EMOTION"
+# The two stores are independent — separate features, separate output
+# directories, and the ~20 s of shared setup (responses, EV mask, folds) is
+# recomputed per process at negligible cost. So with a second GPU on the node
+# they run side by side instead of one after the other.
+#
+# himalaya cannot itself use two GPUs (see the note at --gres above), so the
+# split has to happen at the process level: one process per card, pinned with
+# CUDA_VISIBLE_DEVICES. Their logs are separated too, because two processes
+# writing to one stream interleave into something unreadable.
+NGPU=$(nvidia-smi -L 2>/dev/null | wc -l)
+echo "=== $NGPU GPU(s) visible ==="
+
+if [ "$NGPU" -ge 2 ] && [ -n "$CFG_FT_ROBUST" ] && [ -n "$CFG_FT_EMOTION" ]; then
+    echo "=== running both stores concurrently, one per GPU ==="
+    ( CUDA_VISIBLE_DEVICES=0 run_sweep perlayer_ft_robust  "$CFG_FT_ROBUST" ) \
+        > "sweep_${SUBJ}_ft_robust.log"  2>&1 &
+    pid_robust=$!
+    ( CUDA_VISIBLE_DEVICES=1 run_sweep perlayer_ft_emotion "$CFG_FT_EMOTION" ) \
+        > "sweep_${SUBJ}_ft_emotion.log" 2>&1 &
+    pid_emotion=$!
+
+    # Wait on each pid separately and keep both exit codes. A bare `wait`
+    # returns 0 whatever the children did, which under `set -e` would let a
+    # failed sweep pass for a successful job.
+    rc=0
+    wait $pid_robust  || rc=$?
+    wait $pid_emotion || rc=$?
+    cat "sweep_${SUBJ}_ft_robust.log" "sweep_${SUBJ}_ft_emotion.log"
+    [ "$rc" -eq 0 ] || exit "$rc"
+else
+    if [ -n "$CFG_FT_ROBUST" ]; then
+        run_sweep perlayer_ft_robust  "$CFG_FT_ROBUST"
+    fi
+    if [ -n "$CFG_FT_EMOTION" ]; then
+        run_sweep perlayer_ft_emotion "$CFG_FT_EMOTION"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
