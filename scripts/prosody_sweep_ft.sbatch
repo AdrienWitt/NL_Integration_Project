@@ -76,7 +76,21 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 # Training stories the sweep sees. A sweep needs the *ranking* of layers, not a
 # publishable number, and kernel ridge is cubic in TRs, so 40 stories costs a
 # fraction of what all 83 would. Lower this first if the job runs long.
-MAXSTORIES=40
+#
+# These three are env-overridable so a calibration run needs no edit to the
+# file — one configuration on few stories tells you what a fit costs before you
+# spend a 12 h slot on thirteen of them:
+#
+#   sbatch --time=01:00:00 \
+#          --export=ALL,MAXSTORIES=20,CFG_FT_ROBUST=20,CFG_FT_EMOTION= \
+#          scripts/prosody_sweep_ft.sbatch
+#
+# An empty config list skips that store entirely. The skip uses `if`, not
+# `[ ... ] && run_sweep`: under `set -e` a false test there returns non-zero
+# for the whole line and kills the job.
+MAXSTORIES=${MAXSTORIES:-40}
+CFG_FT_ROBUST=${CFG_FT_ROBUST-"12 14 16 18 20 22 23"}
+CFG_FT_EMOTION=${CFG_FT_EMOTION-"6 7 8 9 10 11"}
 
 # Stop starting new blocks once the wall clock is nearly gone. Each run_sweep
 # writes its own sweep.csv on completion, so a block that never starts costs
@@ -120,8 +134,12 @@ run_sweep () {   # store, configs
 # robust is 24 layers frozen to 12; emotion is a 12-layer pruned backbone
 # frozen to 6, so "layer 11" is its top layer, not a mid-network one.
 # ---------------------------------------------------------------------------
-run_sweep perlayer_ft_robust    "12 14 16 18 20 22 23"
-run_sweep perlayer_ft_emotion   "6 7 8 9 10 11"
+if [ -n "$CFG_FT_ROBUST" ]; then
+    run_sweep perlayer_ft_robust  "$CFG_FT_ROBUST"
+fi
+if [ -n "$CFG_FT_EMOTION" ]; then
+    run_sweep perlayer_ft_emotion "$CFG_FT_EMOTION"
+fi
 
 # ---------------------------------------------------------------------------
 # STAGE 2 — the frozen baselines. Uncomment and resubmit.
