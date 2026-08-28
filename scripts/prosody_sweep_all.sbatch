@@ -66,7 +66,24 @@ set -e
 # logs/ must exist BEFORE submission: SLURM opens the --output file itself,
 # before this script runs, and a missing directory fails the task silently
 # from the user's point of view. The mkdir below only covers a later rerun.
-#   mkdir -p logs && sbatch scripts/prosody_sweep_all.sbatch
+#
+# On Baobab, make logs/ a symlink to scratch rather than a real directory in
+# $HOME. /home is a BeeGFS volume sitting at 97% full, and under an array this
+# wide it starts refusing the steady trickle of log writes:
+#
+#     echo: write error: Remote I/O error          (Errno 121)
+#     --- Logging error ---
+#
+# That is not a compute failure. Tasks hit by it had already finished their
+# fits and written sweep.csv; SLURM marked them FAILED because the script's
+# closing echo could not reach the log. Scratch has 209 TB free and does not
+# do this.
+#
+#   mkdir -p /srv/beegfs/scratch/users/$USER/prosody_sweep_logs
+#   ln -sfn /srv/beegfs/scratch/users/$USER/prosody_sweep_logs logs
+#   sbatch scripts/prosody_sweep_all.sbatch
+#
+# (the scratch path is /srv/beegfs/scratch/users/<initial>/<user> on Baobab)
 mkdir -p logs
 
 module load GCCcore/10.3.0 Python/3.9.5
