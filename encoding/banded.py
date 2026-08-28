@@ -178,6 +178,7 @@ def fit_banded_cv(
     solver: str = "random_search",
     solver_params: Optional[dict] = None,
     compute_splits: bool = True,
+    inner_n_splits: Optional[int] = None,
     logger=None,
 ) -> BandedResult:
     """Nested CV: hyperparameters are chosen inside each outer training set.
@@ -187,6 +188,13 @@ def fit_banded_cv(
     the band weights that are used to predict it. This is slower than picking
     alphas once on all stories, and it is the reason the CV correlations here
     can be trusted as out-of-sample.
+
+    `inner_n_splits` bounds that inner loop. It matters far more than it looks:
+    the total number of ridge fits is ``len(outer_splits) * inner_n_splits``,
+    and leaving the inner loop at its default of leave-one-story-out means 32
+    inner fits per outer fold on a 40-story sweep — 160 fits per configuration
+    where 25 would rank the layers just as well. Leave it None for a final,
+    single-configuration model where the extra folds are worth the hours.
     """
     from .cv import story_folds
 
@@ -198,7 +206,8 @@ def fit_banded_cv(
             logger.info(f"    outer fold {fold}/{len(outer_splits)} "
                         f"(held-out story index {held})")
 
-        inner_splits = story_folds(story_ids[train_idx])
+        inner_splits = story_folds(story_ids[train_idx],
+                                   n_splits=inner_n_splits)
 
         result = fit_banded(
             X_train=X[train_idx], Y_train=Y[train_idx],

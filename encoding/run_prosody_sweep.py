@@ -207,13 +207,14 @@ def build_parser() -> argparse.ArgumentParser:
     model.add_argument("--alpha-max", type=float, default=12.0)
     model.add_argument("--num-alphas", type=int, default=13)
     model.add_argument("--n-splits", type=int, default=5,
-                       help="CV folds. The default is 5, not leave-one-story-"
-                            "out: fit_banded_cv refits inside every outer "
-                            "fold, so 83 folds means 83 nested fits per "
-                            "configuration. A sweep needs the ranking of "
-                            "layers, and 5 folds gives that at a sixteenth of "
-                            "the cost. Pass None-like values only for a final "
-                            "single-configuration fit.")
+                       help="CV folds, applied to BOTH the outer loop and the "
+                            "inner one that chooses alphas. fit_banded_cv "
+                            "refits inside every outer fold, so the total is "
+                            "n_splits^2 ridge fits per configuration: 25 at "
+                            "the default. Leaving the inner loop at leave-one-"
+                            "story-out instead would make it n_splits * "
+                            "n_stories -- 160 fits on a 40-story sweep, for a "
+                            "layer ranking that 25 gives just as well.")
     model.add_argument("--min-ev", type=float, default=0.1,
                        help="fit only voxels with explainable variance above "
                             "this (needs the repeated story for EV)")
@@ -380,10 +381,16 @@ def run_subject(subject: str, args, src_dir: Path, configs: List[str],
                 solver=args.solver, solver_params=solver_params,
             )
         else:
+            # --n-splits bounds the inner loop as well as the outer one.
+            # Without that it caps only the outer folds while the inner CV
+            # stays leave-one-story-out, so the fit count is n_splits * n_
+            # stories rather than n_splits^2 — the cost the flag claims to
+            # control is mostly in the loop it was not reaching.
             result = fit_banded_cv(
                 X=design.X, Y=Y_train_fit, bands=design.bands,
                 story_ids=design.story_ids, outer_splits=splits, alphas=alphas,
-                solver=args.solver, solver_params=solver_params, logger=None,
+                solver=args.solver, solver_params=solver_params,
+                inner_n_splits=args.n_splits, logger=None,
             )
 
         # With a covariate, the prosody answer is the audio band's split score,
