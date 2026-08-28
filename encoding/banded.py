@@ -137,7 +137,29 @@ def fit_banded(
     Y_train = np.asarray(Y_train, dtype=np.float32)
     Y_test = np.asarray(Y_test, dtype=np.float32)
 
-    pipeline.fit(X_train, Y_train)
+    # eigh is ~30x faster than svd (see `default_solver_params`) but it does not
+    # always converge here, and the reason is structural rather than unlucky: a
+    # linear kernel built from p features has rank at most p, so with p=4096
+    # columns and n=9,461 training TRs the Gram matrix carries ~5,000 zero
+    # eigenvalues. "Too many repeated eigenvalues" is precisely what LAPACK
+    # then reports. It bit four subjects out of nine — the ones with fewer
+    # stories, where the shortfall is worst.
+    #
+    # So: take eigh when it works, fall back to svd when it does not, per fit.
+    # Paying svd's cost only on the fits that need it keeps the speed on the
+    # ~80% that don't. (The primal formulation would sidestep this entirely,
+    # since X^T X is 4096x4096 and full rank — worth revisiting if the fallback
+    # starts firing on most fits rather than a minority.)
+    try:
+        pipeline.fit(X_train, Y_train)
+    except RuntimeError as exc:
+        if "eigenvalues decomposition failed" not in str(exc):
+            raise
+        retry_params = dict(solver_params)
+        retry_params["diagonalize_method"] = "svd"
+        pipeline, model = _build_pipeline(bands, splits, alphas, solver,
+                                          retry_params)
+        pipeline.fit(X_train, Y_train)
 
     Y_pred = pipeline.predict(X_test)
     corrs = backend.to_numpy(correlation_score(Y_test, Y_pred))
