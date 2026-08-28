@@ -234,7 +234,8 @@ def fit_banded_cv(
 def default_solver_params(n_iter: int = 20, n_targets_batch: int = 200,
                           n_alphas_batch: int = 5,
                           n_targets_batch_refit: int = 200,
-                          diagonalize_method: str = "eigh") -> dict:
+                          diagonalize_method: str = "eigh",
+                          progress_bar: bool = False) -> dict:
     """Solver settings for `random_search`; batch sizes bound GPU memory.
 
     `diagonalize_method` decides how the kernel is factorised once per CV fold
@@ -251,6 +252,19 @@ def default_solver_params(n_iter: int = 20, n_targets_batch: int = 200,
     matrix — symmetric positive semi-definite by construction — which is
     exactly what `eigh` is for, and it is himalaya's own default. `svd` is the
     fallback for kernels that are not, and we never build one.
+
+    `progress_bar` is off because himalaya's bar redraws a line on stdout
+    thousands of times per fit. Under SLURM stdout is a file on the shared
+    BeeGFS filesystem, and with an array of 36 tasks writing at that rate it
+    fails outright:
+
+        OSError: [Errno 121] Remote I/O error
+          ... himalaya/progress_bar.py line 120, in update
+              sys.stdout.write(bar)
+
+    Half the first full-array run died that way, not one of them from the
+    regression itself. The bar also drowns the log lines that say what the
+    model actually scored.
     """
     return dict(
         n_iter=n_iter,
@@ -258,4 +272,5 @@ def default_solver_params(n_iter: int = 20, n_targets_batch: int = 200,
         n_alphas_batch=n_alphas_batch,
         n_targets_batch_refit=n_targets_batch_refit,
         diagonalize_method=diagonalize_method,
+        progress_bar=progress_bar,
     )
