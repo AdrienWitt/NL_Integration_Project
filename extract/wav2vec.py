@@ -102,7 +102,8 @@ def load_encoder(model_path: str, strict: bool = False):
 
 @torch.no_grad()
 def embed_window(window: np.ndarray, processor, model, device,
-                 layers: Optional[List[int]], max_length: int) -> np.ndarray:
+                 layers: Optional[List[int]], max_length: int,
+                 per_layer: bool = False) -> np.ndarray:
     inputs = processor(
         window, sampling_rate=SAMPLING_RATE, return_tensors="pt",
         padding="max_length", max_length=max_length, truncation=True,
@@ -115,7 +116,13 @@ def embed_window(window: np.ndarray, processor, model, device,
     outputs = model(**inputs, output_hidden_states=True)
     # hidden_states[0] is the CNN output; transformer layer i is at i + 1.
     pooled = [outputs.hidden_states[i + 1].mean(dim=1).squeeze(0) for i in layers]
-    return torch.stack(pooled).mean(dim=0).cpu().numpy()
+    stacked = torch.stack(pooled)
+    # The forward pass computes every layer whether or not we keep them, so
+    # storing one row per layer costs disk only — and it makes every layer
+    # range a cheap offline choice instead of another pass over the audio.
+    if per_layer:
+        return stacked.cpu().numpy()
+    return stacked.mean(dim=0).cpu().numpy()
 
 
 def load_waveform(path: Path) -> torch.Tensor:
@@ -128,7 +135,8 @@ def load_waveform(path: Path) -> torch.Tensor:
 
 
 def extract_story(waveform: torch.Tensor, onsets: np.ndarray, processor, model,
-                  device, layers: Optional[List[int]]) -> np.ndarray:
+                  device, layers: Optional[List[int]],
+                  per_layer: bool = False) -> np.ndarray:
     window_samples = int(WINDOW_SIZE_SEC * SAMPLING_RATE)
     vectors = []
     for onset in onsets:
@@ -143,7 +151,7 @@ def extract_story(waveform: torch.Tensor, onsets: np.ndarray, processor, model,
             chunk = torch.nn.functional.pad(waveform[:, start:], (0, pad))
         vectors.append(
             embed_window(chunk.squeeze(0).numpy(), processor, model, device,
-                         layers, window_samples)
+                         layers, window_samples, per_layer)
         )
     return np.stack(vectors).astype(np.float32)
 
@@ -170,6 +178,11 @@ def main(argv=None) -> None:
                         "from the model and layer choice)")
     p.add_argument("--stories", default=None,
                    help="comma-separated subset; default is every wav found")
+    p.add_argument("--per-layer", action="store_true",
+                   help="store one vector per requested layer, shape "
+                        "(n_TRs, n_layers, hidden), instead of averaging them. "
+                        "Use extract.build_band to materialise any range from "
+                        "the result. Requires an explicit --layers.")
     p.add_argument("--device", default=None, choices=["cuda", "cpu"])
     p.add_argument("--overwrite", action="store_true")
     args = p.parse_args(argv)
@@ -227,13 +240,20 @@ def main(argv=None) -> None:
     processor_name = args.processor or base_name
     processor = AutoFeatureExtractor.from_pretrained(processor_name)
 
+    if args.per_layer and layers is None:
+        raise SystemExit(
+            "--per-layer needs explicit layer indices; '--layers last' returns "
+            "a single vector and there is nothing to keep per layer."
+        )
+
     if args.out_name:
         out_name = args.out_name
     else:
         stem = (spec.key if spec.key in REGISTRY
                 else Path(model_path).name).replace("-", "_")
         suffix = "last" if layers is None else f"layers{layers[0]}to{layers[-1]}"
-        out_name = f"wav2vec_{stem}_{suffix}"
+        prefix = "perlayer" if args.per_layer else "wav2vec"
+        out_name = f"{prefix}_{stem}_{suffix}"
     out_dir = Path(FEATURES_DIR) / out_name
     ensure_dirs(out_dir)
 
@@ -271,10 +291,16 @@ def main(argv=None) -> None:
 
         waveform = load_waveform(wav_path)
         onsets = tr_onsets(story, trfiles)
-        features = extract_story(waveform, onsets, processor, model, device, layers)
+        features = extract_story(waveform, onsets, processor, model, device,
+                                 layers, args.per_layer)
 
         with h5py.File(out_path, "w") as f:
-            f.create_dataset("data", data=features)
+            dset = f.create_dataset("data", data=features)
+            if args.per_layer:
+                # Which stack index is which transformer layer. Without this the
+                # axis is unlabelled and a range built from it is a guess.
+                dset.attrs["layers"] = np.asarray(layers, dtype=np.int32)
+                dset.attrs["base_model"] = str(base_name)
         log.info(f"  {story}: {features.shape} -> {out_path.name}")
         done += 1
 

@@ -21,11 +21,19 @@ Banded ridge, held-out story, all subjects, prosody = eGeMAPS::
         --text-features gpt2_mean --audio-features opensmile \\
         --backend banded --eval holdout --min-ev 0.1
 
-Same, but with the fine-tuned wav2vec2 features and both backends::
+Same, but with fine-tuned wav2vec2 features and both backends. The audio band
+is materialised from a per-layer store first, so the layer choice is explicit
+and reproducible (see `extract.build_band`)::
+
+    python -m extract.build_band --source perlayer_ft_robust \\
+        --layers 18-23 --out-name ft_robust_18to23
 
     python -m encoding.run_encoding --subjects UTS01,UTS02 \\
-        --text-features gpt2_mean --audio-features wav2vec_mean_layers18to23 \\
+        --text-features gpt2_mean --audio-features ft_robust_18to23 \\
         --backend both --eval holdout
+
+To choose that layer range in the first place rather than assume it, sweep it
+with `encoding.run_prosody_sweep` on the training stories.
 """
 
 import argparse

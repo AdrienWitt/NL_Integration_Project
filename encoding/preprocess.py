@@ -184,16 +184,27 @@ def trim_response(resp: np.ndarray, n_feature_trs: int, trim: int) -> np.ndarray
 
     Features are sampled on a grid of ``respdict[story] - TR_PAD`` onsets
     (`load_simulated_trfiles` simulates ``resps - pad`` TRs) and are then cut
-    to ``[TR_PAD + trim : -trim]``. A stored response is on one of two grids:
+    to ``[TR_PAD + trim : -trim]``. A stored response is on one of three grids:
 
     * the same pad-shortened grid  -> ``offset == 0``
     * the raw acquisition grid     -> ``offset == TR_PAD``, the extra rows
       being the padding TRs at the start
+    * **already trimmed** to the final grid before it was stored ->
+      ``offset == -(TR_PAD + 2 * trim)``, so there is nothing left to cut
 
-    Both are handled by anchoring the two grids at their common end and
-    applying the identical cut. Any other offset means features and responses
-    were not generated from the same `respdict`, which is a data problem and
-    is raised rather than silently patched over.
+    The first two are handled by anchoring the two grids at their common end
+    and applying the identical cut; the third is returned untouched. Any other
+    offset means features and responses were not generated from the same
+    `respdict`, which is a data problem and is raised rather than silently
+    patched over.
+
+    The third case is what the LeBel `derivative/preprocessed_data/*.hf5`
+    files actually are — confirmed on UTS01 (2026-08-24), consistently across
+    stories: ``adollshouse`` has ``respdict 261 -> 256 feature TRs -> 241
+    stored response TRs``, and ``256 - TR_PAD - 2*5 == 241`` exactly. Trimming
+    such a response a second time would drop 15 more TRs from a matrix that is
+    already aligned, shifting responses against features by 10 TRs (20 s)
+    while leaving the shapes plausible enough to go unnoticed.
 
     Parameters
     ----------
@@ -208,13 +219,22 @@ def trim_response(resp: np.ndarray, n_feature_trs: int, trim: int) -> np.ndarray
     (n_TRs_trimmed, n_voxels) array
     """
     offset = resp.shape[0] - n_feature_trs
+
+    # Already on the final trimmed grid: nothing to cut, and cutting anyway
+    # would silently shift responses against features. Only meaningful for
+    # trim > 0, since trim <= 0 leaves the features uncut (see trim_story).
+    if trim > 0 and offset == -(TR_PAD + 2 * trim):
+        return resp.copy()
+
     if offset not in (0, TR_PAD):
         raise ValueError(
             f"Cannot align response of {resp.shape[0]} TRs to a feature grid "
-            f"of {n_feature_trs} TRs: offset {offset} is neither 0 (response "
-            f"already on the padded grid) nor {TR_PAD} (raw acquisition "
-            f"grid). Features and responses likely come from different "
-            f"respdict.json versions."
+            f"of {n_feature_trs} TRs: offset {offset} is none of 0 (response "
+            f"already on the padded grid), {TR_PAD} (raw acquisition grid) or "
+            f"{-(TR_PAD + 2 * trim)} (response pre-trimmed with trim={trim}). "
+            f"Features and responses likely come from different "
+            f"respdict.json versions, or --trim does not match how the "
+            f"responses were stored."
         )
     if trim <= 0:
         return resp[offset:].copy()
@@ -230,7 +250,11 @@ def trim_response(resp: np.ndarray, n_feature_trs: int, trim: int) -> np.ndarray
 
 
 def response_offset(resp_trs: int, n_feature_trs: int) -> int:
-    """Grid offset between a raw response and its feature array (0 or TR_PAD)."""
+    """Grid offset between a response and its feature array.
+
+    0 or TR_PAD for an untrimmed response; negative when the stored response
+    was already trimmed (see `trim_response`).
+    """
     return resp_trs - n_feature_trs
 
 

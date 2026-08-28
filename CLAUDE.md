@@ -93,12 +93,19 @@ empirical — sweep it with `--layers` and different `--out-name`s.
   `AudioEncoderForProsody` whose weights nest under `encoder.`.
   Loading that directory straight into `Wav2Vec2Model` silently drops them and
   substitutes random weights. `extract/wav2vec.py` detects and unwraps.
-- **Feature/response TR alignment is checked, not assumed.** Features sit on a
-  `respdict − TR_PAD` grid (verified: 261 → 256); stored responses may be on
-  that grid or the raw one. `preprocess.trim_response` anchors both at their
-  common end, logs the offset it found, and raises otherwise. Still unconfirmed
-  on real data because the `.hf5` responses are OneDrive-dehydrated —
-  **check the logged offset on the first real encoding run.**
+- **Feature/response TR alignment — RESOLVED 2026-08-24.** The logged offset on
+  the first real encoding run is **−15**, consistently across stories, and the
+  stored responses are on a *third* grid the code did not know about: already
+  trimmed to the final grid before storage. `adollshouse` is
+  `respdict 261 → 256 feature TRs → 241 stored response TRs`, and
+  `256 − TR_PAD − 2·trim == 241` exactly with `trim=5`.
+  `preprocess.trim_response` accepted only offsets `0` and `TR_PAD`, so it
+  raised on every story; it now recognises `offset == −(TR_PAD + 2·trim)` and
+  returns such a response untouched. The near-miss matters more than the crash:
+  cutting an already-cut response would drop 15 further TRs and shift responses
+  against features by 10 TRs (20 s) while leaving the shapes plausible.
+  Verified end-to-end on UTS01 — features and responses land on identical TR
+  counts for every story, responses are NaN-free and already z-scored.
 - **The fine-tuning half of that alignment is confirmed** (2026-08-19): across
   all 83 split stories, `tr_onsets(story)[TR_PAD + 5 : ...]` matches the target
   `n_TRs` exactly — 83 aligned, 0 mismatches, 0 missing TR timing. A wrong
@@ -123,7 +130,20 @@ empirical — sweep it with `--layers` and different `--out-name`s.
   voxels driven by both).
 - The emotion checkpoint was verified to load with real pretrained weights,
   byte-identical through `AutoModel` and the fine-tuning wrapper.
-- **Nothing has been run on real data yet.** No git commit has been made.
+- **Stage 1 is done on real data (2026-08-24).** Two arms fine-tuned on the
+  cluster and pulled back to `results/finetune/`:
+  `wav2vec2_robust_frozen_12_lr3e-05_seed42` (best epoch 23, `eval_mean_r`
+  0.6622) and `emotion_frozen_6_lr3e-05_seed42` (best epoch 29, 0.6534). Both
+  verified to load with real fine-tuned weights: frozen bottom half is
+  byte-identical to the pretrained base, trained top half differs by 3–10%.
+- **Five audio feature bands extracted**, 84 stories each, identical TR grids
+  (29,348 TRs): `opensmile` (88d), `base_robust_12to17`, `ft_robust_18to23`,
+  `base_emotion_6to11`, `ft_emotion_6to11` (1024d each). Note the robust pair
+  is extracted at *different* depths, so a base-vs-ft difference there is
+  confounded with layer range; the emotion pair is matched at 6-11.
+- **Encoding smoke test passed** (UTS01, 6 stories, banded/holdout, 7.2 min).
+- **Only UTS01 has response data locally**; `SUBJECTS` lists nine. The other
+  eight are ~19 GB each and are not on this machine in any form.
 - **Fine-tuning is otherwise unblocked**: all 84 target JSONs already exist under
   `data/features/prosody/finetune_targets/averaged/` as `<story>_prosody.json`.
   Renamed 2026-08-20 from `brain_targets_finetuning/*_prosody+brain-pca-avg.json`
@@ -150,6 +170,49 @@ empirical — sweep it with `--layers` and different `--out-name`s.
   the loudness percentiles from the original signal. Not a bug.
 - Data was **moved** here out of `../NL_Project`, which is now code-only and
   whose scripts will fail on missing data. That was intentional.
+
+## Open questions — noted 2026-08-28, not acted on
+
+From a multimodal encoding pipeline the user read (the description matches
+Meta's TRIBE / Algonauts 2025 setup): timed text embeddings from
+**Llama-3.2-3B** with k=1024 words of preceding context, per-layer, summed into
+2 Hz bins; audio from **Wav2Vec-BERT-2.0** over 60 s chunks, resampled 50 Hz to
+2 Hz, per-layer, 1024d.
+
+**Llama for the semantic band — yes, eventually.** GPT-2 small is a weak
+language model by current standards, and the case for upgrading is not
+speculative on *this* dataset: Antonello et al. 2023 ("Scaling laws for
+language encoding models in fMRI") ran the LLaMA/OPT families on ds003020 and
+found encoding performance scales with model quality well past GPT-2. Two
+things to check before copying the recipe: the quoted `Dtext = 2048` is
+Llama-3.2-**1B**'s hidden size (3B is 3072), so the paper's own numbers do not
+line up with the model it names; and k=1024 words of context is far longer
+than a GPT-2 window, so part of any gain is context length, not model size.
+Consequence for us: a stronger semantic band makes `delta` and `preference`
+*harder* for audio, which is the conservative direction — good science, but
+every prosody number moves when it lands. This is exactly why the current sweep
+excludes the semantic band entirely.
+
+**Wav2Vec-BERT-2.0 for the audio band — no, not in these arms.** It is a
+stronger speech encoder (SeamlessM4T's, 4.5M hours), but the whole point of
+`wav2vec2-large-robust` here is that it is the exact base audEERING fine-tuned
+from, so it doubles as the matched control for the emotion arm. Swapping the
+backbone breaks that pairing and leaves "emotion pretraining vs better speech
+model" confounded. Worth a separate arm once the current comparison is settled;
+not a drop-in.
+
+**Two details worth stealing now, both cheap and backbone-independent:**
+- *Audio context window.* They feed 60 s chunks; we mean-pool a 2 s window per
+  TR. The 2 s matches the eGeMAPS target windows, which was right for
+  fine-tuning, but for *extraction* a longer window gives the transformer real
+  context. Testable with the existing code.
+- *Causal/bidirectional asymmetry.* Their note that audio embeddings see the
+  future while text embeddings do not applies to us too: our audio band is a
+  bidirectional transformer over its window, our GPT-2 band is causal. That is
+  a genuine confound in `preference = r_text - r_audio` — the audio band gets
+  information the semantic band is structurally denied. Worth stating in the
+  paper at minimum, and worth a causal-masked control if a reviewer asks.
+
 
 ## Conventions
 
