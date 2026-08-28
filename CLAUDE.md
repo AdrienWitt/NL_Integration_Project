@@ -171,6 +171,82 @@ empirical — sweep it with `--layers` and different `--out-name`s.
 - Data was **moved** here out of `../NL_Project`, which is now code-only and
   whose scripts will fail on missing data. That was intentional.
 
+## Stage-2 result: the layer sweep is done (2026-08-28)
+
+Full prosodic layer sweep run on the cluster: 9 subjects x 4 stores = 36 GPU
+tasks, 40 training stories each, 5-fold nested CV, `--min-ev 0.1`, held-out
+story never touched. All 36 complete. Summarise with
+`python scripts/summarise_sweep.py`.
+
+**Fine-tuning on eGeMAPS hurt, and the damage scales with how far each layer
+moved.** Emotion model, paired per subject at matched depths:
+
+    layer   base      ft      ft-base   subjects worse
+    L6      0.0192    0.0191  -0.0000   5/9   <- freeze boundary, same weights
+    L9      0.0200    0.0186  -0.0015   8/9
+    L11     0.0204    0.0151  -0.0053   8/9
+
+That mirrors the weight divergence measured before any brain data was involved
+(corr(ft, base) +0.91 at L6, +0.12 at L11). The frozen base *rises* to its top
+layer (0.0192 -> 0.0204); the fine-tuned one falls away. The control predicted
+in the design notes won, so **carry the frozen base forward, not the fine-tuned
+checkpoint**: `base_emotion` L9-L11 and `base_robust` L15-L18.
+
+The robust pair is a much weaker case (±0.001, inconsistent sign) — its base
+top layers were already degraded, so there was less to spoil. Do not
+over-generalise from it.
+
+Every learned layer beats openSMILE, by +0.0017 to +0.0059. Best mean is
+`base_emotion` L11; most consistent is `base_robust` L18 (9/9 subjects).
+Note `base_emotion` is still climbing at its final layer — the stack ran out
+before the profile did.
+
+Scale: mean r ~0.02 over the 1,776 of 81,126 voxels that pass EV>0.1; best
+voxel ~0.09. Real and consistent, but differences between small numbers.
+
+Published summary with the profile charts:
+https://claude.ai/code/artifact/1b2b34ce-2eb3-447f-9809-35d5bbd4f39d
+
+## Solver settings that cost real time (2026-08-28)
+
+Measured on an A100 80GB at the sweep's shapes, n=13,329, p=352, 1,776 targets,
+5 folds (`scripts/bench_solvers.py`); **all variants score identically**, so
+these are pure cost:
+
+    eigh                     9.1 s
+    svd                    385.8 s      <- what default_solver_params used
+    GroupRidgeCV (primal)    1.0 s
+    RidgeCV (primal, svd)    0.6 s
+
+- **`diagonalize_method="svd"` was costing 42x.** Now `eigh`, with an automatic
+  per-fit fallback to `svd`, because eigh genuinely does fail on some subjects:
+  a linear kernel from p features has rank <= p, so p=4096 against n=9,461 TRs
+  leaves ~5,000 zero eigenvalues and LAPACK will not converge. It hit the four
+  subjects with 27 stories rather than 84.
+- **`--n-splits` reached only the outer loop.** The inner CV called
+  `story_folds()` with no `n_splits`, i.e. leave-one-story-out, so a 40-story
+  sweep ran 5 x 32 = 160 fits per configuration instead of 25. Fixed via
+  `fit_banded_cv(inner_n_splits=...)`; `run_encoding` still leaves it unbounded,
+  which is right for a final single-configuration model.
+- **Primal vs dual is not the win the Gallant tutorials imply here.** At p=4096
+  the dual is *faster* than primal on GPU, because its n x n eigendecomposition
+  is amortised over the whole alpha grid and is nearly p-independent. Only the
+  88-d openSMILE band is in the regime where primal pays. But the dual is
+  inherently rank-deficient at p < n, which is what forces the svd fallback —
+  worth revisiting if that fallback starts firing on most fits.
+
+## Running an array this wide: two traps
+
+- **himalaya's progress bar kills array jobs.** It redraws stdout thousands of
+  times per fit; under SLURM stdout is a file, and 36 concurrent tasks got
+  `OSError: [Errno 121] Remote I/O error`. `default_solver_params` now passes
+  `progress_bar=False`.
+- **`/home` is a BeeGFS volume at 97% full and refuses log writes at that rate.**
+  Symlink `logs/` to scratch before submitting. The failures are worse than
+  cosmetic: tasks that had already written `sweep.csv` were marked FAILED
+  because the closing `echo` could not reach the log, so "rerun the failures"
+  redoes finished work. **Check the output files, not the SLURM exit states.**
+
 ## Open questions — noted 2026-08-28, not acted on
 
 From a multimodal encoding pipeline the user read (the description matches
