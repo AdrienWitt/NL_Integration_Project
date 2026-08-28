@@ -68,6 +68,22 @@ NSUBJ=${#SUBJECTS[@]}
 BAND=${BANDS[$((SLURM_ARRAY_TASK_ID / NSUBJ))]}
 SUBJ=${SUBJECTS[$((SLURM_ARRAY_TASK_ID % NSUBJ))]}
 
+# Which story list each subject trains on. The default, all_stories.json, gives
+# every subject everything they heard -- 83 training stories for UTS01-03 but
+# only 25 for UTS04, a 3.2x spread. That is the right choice for the band
+# contrast, which is entirely within subject: same subject, same stories, same
+# folds, so training-set size cancels exactly.
+#
+# It is the wrong choice for anything cross-subject. A group mean over these
+# would be part prosody and part "UTS01 heard three times more data", so any
+# group-level number needs common_stories_25.json instead, where all nine sit
+# on the same 24-25 stories. Run both; they answer different questions.
+#
+#   STORIES_JSON=common_stories_25.json TAG_SUFFIX=_c25 \
+#       sbatch scripts/encoding_holdout.sbatch
+STORIES_JSON=${STORIES_JSON:-all_stories.json}
+TAG_SUFFIX=${TAG_SUFFIX:-}
+
 RESP="data/ds003020/derivative/preprocessed_data/$SUBJ"
 if [ ! -d "$RESP" ]; then
     echo "ERROR: no responses for $SUBJ at $RESP"
@@ -75,7 +91,8 @@ if [ ! -d "$RESP" ]; then
 fi
 
 echo "=== task $SLURM_ARRAY_TASK_ID : $SUBJ / $BAND ==="
-echo "    stories available: $(ls "$RESP"/*.hf5 2>/dev/null | wc -l)"
+echo "    story list: $STORIES_JSON"
+echo "    stories on disk: $(ls "$RESP"/*.hf5 2>/dev/null | wc -l)"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
 # --models audio only. The semantic band is a moving target (GPT-2 layer choice
@@ -85,6 +102,7 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 # models are asked for; the fit itself never sees those columns.
 python -m encoding.run_encoding \
     --subjects "$SUBJ" \
+    --stories-json "$STORIES_JSON" \
     --text-features gpt2_mean \
     --audio-features "$BAND" \
     --models audio \
@@ -92,7 +110,7 @@ python -m encoding.run_encoding \
     --eval holdout \
     --n-splits 5 \
     --min-ev 0.1 \
-    --tag "$SUBJ" \
+    --tag "${SUBJ}${TAG_SUFFIX}" \
     --himalaya-backend torch_cuda
 
 echo "=== task $SLURM_ARRAY_TASK_ID done in $((SECONDS / 60)) min ==="
