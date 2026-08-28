@@ -233,12 +233,29 @@ def fit_banded_cv(
 
 def default_solver_params(n_iter: int = 20, n_targets_batch: int = 200,
                           n_alphas_batch: int = 5,
-                          n_targets_batch_refit: int = 200) -> dict:
-    """Solver settings for `random_search`; batch sizes bound GPU memory."""
+                          n_targets_batch_refit: int = 200,
+                          diagonalize_method: str = "eigh") -> dict:
+    """Solver settings for `random_search`; batch sizes bound GPU memory.
+
+    `diagonalize_method` decides how the kernel is factorised once per CV fold
+    and then reused across the whole alpha grid — it is the single most
+    expensive thing in a fit, and the difference between the two options is not
+    subtle. Measured on an A100 80GB at the sweep's real shapes
+    (n=13,329, p=352, 1,776 targets, 5 folds, `scripts/bench_solvers.py`):
+
+        eigh   9.1 s
+        svd    > 280 s
+
+    This file used to pass ``"svd"``, which is why a configuration that should
+    cost seconds was costing half an hour. The kernel here is a linear Gram
+    matrix — symmetric positive semi-definite by construction — which is
+    exactly what `eigh` is for, and it is himalaya's own default. `svd` is the
+    fallback for kernels that are not, and we never build one.
+    """
     return dict(
         n_iter=n_iter,
         n_targets_batch=n_targets_batch,
         n_alphas_batch=n_alphas_batch,
         n_targets_batch_refit=n_targets_batch_refit,
-        diagonalize_method="svd",
+        diagonalize_method=diagonalize_method,
     )

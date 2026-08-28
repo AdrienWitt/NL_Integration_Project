@@ -3,12 +3,12 @@
 #SBATCH --output=logs/sweep_all_%a_out
 #SBATCH --error=logs/sweep_all_%a_err
 #SBATCH --partition=shared-gpu
-#SBATCH --time=04:00:00
+#SBATCH --time=02:00:00
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1,VramPerGpu:24G
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
-#SBATCH --array=0-35%18
+#SBATCH --array=0-35
 #
 # ===========================================================================
 # The full prosodic layer sweep: 9 subjects x 4 stores, one GPU each.
@@ -51,9 +51,15 @@
 #    cohort before it spends a single card on a control. Reverse the two lines
 #    marked below if you would rather have complete results per subject.
 #
-# %18 is a starting throttle, not a limit -- it leaves room for other users on
-# a shared partition. Raise it to %36 to take everything at once if the queue
-# is quiet, or lower it if you are being a bad neighbour.
+# No %N throttle: all 36 tasks are released at once. GPUs on this partition are
+# usually plentiful and 24G reaches ~129 cards, so 36 tasks land immediately
+# and the whole sweep is one task's wall clock, not thirty-six. Add %N back
+# only if you are told you are crowding the partition.
+#
+# --time=02:00:00 is deliberately tight. With diagonalize_method="eigh" a
+# configuration costs seconds, so a task is minutes; a short request also
+# schedules ahead of long ones. If a task ever hits this wall, something is
+# wrong with the fit, not with the budget.
 
 set -e
 
