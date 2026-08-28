@@ -99,7 +99,7 @@ def main():
             model = MultipleKernelRidgeCV(
                 kernels="precomputed", solver="random_search",
                 solver_params=dict(alphas=alphas, n_iter=1, n_targets_batch=200,
-                                   n_alphas_batch=5),
+                                   n_alphas_batch=5, progress_bar=False),
                 cv=splits)
             return score_of(make_pipeline(kern, model), True)
 
@@ -109,7 +109,7 @@ def main():
                 groups=np.zeros(n_features, dtype=int),
                 solver="random_search",
                 solver_params=dict(alphas=alphas, n_iter=1, n_targets_batch=200,
-                                   n_alphas_batch=5),
+                                   n_alphas_batch=5, progress_bar=False),
                 cv=splits)
             return score_of(model, False)
 
@@ -130,7 +130,7 @@ def main():
                 Kernelizer(kernel="linear"))
             kern = ColumnKernelizer([("audio", per_band, slice(0, n_features))])
             params = dict(alphas=alphas, n_iter=1, n_targets_batch=200,
-                          n_alphas_batch=5)
+                          n_alphas_batch=5, progress_bar=False)
             if diag is not None:
                 params["diagonalize_method"] = diag
             if refit is not None:
