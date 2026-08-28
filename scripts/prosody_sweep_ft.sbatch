@@ -5,9 +5,9 @@
 #SBATCH --partition=shared-gpu
 #SBATCH --time=12:00:00
 #SBATCH --ntasks=1
-#SBATCH --gres=gpu:1,VramPerGpu:20G
+#SBATCH --gres=gpu:1,VramPerGpu:80G
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=48G
+#SBATCH --mem=64G
 #SBATCH --array=0-0
 #
 # ===========================================================================
@@ -39,12 +39,38 @@
 #
 # Sizing
 # ------
-# --mem=48G is generous. Responses are masked to the explainable-variance
-# voxels as each story is read, so the response matrix is ~0.4 GB rather than
-# the 18 GB it would be at all 81k voxels; measured peak is nearer 12 GB.
-# The binding constraint is GPU memory: himalaya's torch_cuda backend holds an
-# (n_TRs, n_TRs) kernel, ~0.7 GB at 40 stories. Drop VramPerGpu to 11G to also
-# match the RTX 2080 Ti / P100 nodes if the A100 queue is long.
+# --mem=64G is host RAM and is generous. Responses are masked to the
+# explainable-variance voxels as each story is read, so the response matrix is
+# under 1 GB rather than the 18 GB it would be at all 81k voxels; the peak is
+# the held-out story's 10 repeats at full voxel space.
+#
+# GPU memory is the interesting constraint, because it sets how many training
+# stories a fit can hold. himalaya's torch_cuda backend builds an
+# (n_TRs, n_TRs) kernel and the solver keeps several working copies of it:
+#
+#   40 stories ~ 14k TRs -> kernel  0.8 GB, working set well under 20 GB
+#   all 83     ~ 29k TRs -> kernel  3.4 GB, working set 20-35 GB
+#
+# VramPerGpu:80G matches the A100 80GB nodes (gpu027/029/045/053) and the H100
+# NVL at 94 GB. Note what it does and does not buy: it removes memory as a
+# reason the 40-story sweep would thrash, and it is a precondition for ever
+# running all 83 — but not a sufficient one. Kernel ridge is cubic in TRs, so
+# 83 stories is ~8x the compute of 40, and the first calibration run suggests
+# that does not fit a 12 h slot for thirteen configurations. MAXSTORIES=40 is
+# the working default for that reason, not a memory one.
+#
+# Measured on the first real run (20 stories, UTS01): host MaxRSS 7.7 GB,
+# 6,897 training TRs, EV>0.1 in 1,776 of 81,126 voxels.
+#
+# ONE GPU, not several. himalaya's torch_cuda backend runs on a single device
+# and has no multi-GPU path, so --gres=gpu:2 would reserve a second card and
+# leave it idle. Parallelism here is across subjects, via the job array — which
+# is also why %N in --array is the knob that decides how much of the queue this
+# occupies. There are ~7 usable A100 80GB cards in shared-gpu, so %3 is polite
+# and %7 is the ceiling before you are simply waiting on yourself.
+#
+# Drop VramPerGpu to 20G to also match the 40 GB A100s and the RTX cards if the
+# 80 GB queue is long; the 40-story sweep fits there.
 
 set -e
 
