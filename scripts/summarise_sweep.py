@@ -36,6 +36,14 @@ import statistics as st
 from config import ENCODING_OUT
 
 
+def config_sort_key(cfg: str):
+    """Order '0','1',...,'23','12-17','15-18' — layers first, ranges after."""
+    if "-" in cfg:
+        start, stop = cfg.split("-")
+        return (1, int(start), int(stop))
+    return (0, int(cfg), 0)
+
+
 def load(root):
     d = collections.defaultdict(dict)
     for path in glob.glob(os.path.join(root, "*", "sweep.csv")):
@@ -81,8 +89,12 @@ def main():
     out = {}
     for store in stores:
         have = [s for s in subs if (store, s) in data]
+        # Configs are either a single layer ("18") or an averaged range
+        # ("15-18"), so int() alone raises. Single layers sort numerically
+        # first, ranges after them by their start, which keeps the profile
+        # readable as a depth axis with the composites gathered at the end.
         cfgs = sorted((c for c in data[(store, have[0])] if c != "opensmile"),
-                      key=int)
+                      key=config_sort_key)
         print(f"\n{store}  (Δr vs own openSMILE, n={len(have)})")
         rows = []
         for c in cfgs:
@@ -114,9 +126,10 @@ def main():
                     if not cell or "opensmile" not in cell:
                         continue
                     base = cell["opensmile"]
-                    for c, v in sorted(cell.items(),
-                                       key=lambda kv: (kv[0] == "opensmile",
-                                                       kv[0])):
+                    for c, v in sorted(
+                            cell.items(),
+                            key=lambda kv: ((2, 0, 0) if kv[0] == "opensmile"
+                                            else config_sort_key(kv[0]))):
                         w.writerow([store, sub, c, f"{v:.6f}",
                                     f"{base:.6f}", f"{v - base:.6f}"])
         print(f"\nwrote {args.tidy}")
