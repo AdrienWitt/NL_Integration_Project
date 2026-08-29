@@ -50,6 +50,23 @@
 set -e
 mkdir -p logs
 
+# Log to node-local disk, copy once at exit.
+#
+# BeeGFS on this cluster intermittently returns Errno 121 (Remote I/O error) on
+# the steady trickle of writes a long job makes -- on /home at 97% full, and on
+# scratch too. Under `set -e` a failed `echo` is fatal, so the first run of this
+# array lost 18 of 36 tasks to a banner line, each of them mid-sweep with the
+# holdout half never started. Nothing was wrong with the computation.
+#
+# Redirecting the whole script to $TMPDIR removes every incremental write to the
+# shared filesystem; the copy at exit is one write, and it is allowed to fail
+# without taking the job with it. Results still land on BeeGFS, but those are a
+# handful of large writes rather than thousands of small ones, and they have
+# been reliable throughout.
+LOG="${TMPDIR:-/tmp}/swc_${SLURM_ARRAY_TASK_ID}.log"
+trap 'cp -f "$LOG" "logs/swc_${SLURM_ARRAY_TASK_ID}_full.log" 2>/dev/null || true' EXIT
+exec > "$LOG" 2>&1
+
 module load GCCcore/10.3.0 Python/3.9.5
 . envs/py39/bin/activate
 
