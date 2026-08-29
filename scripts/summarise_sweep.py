@@ -102,7 +102,7 @@ def main():
                     for s in have]
             m, se = st.mean(diff), st.stdev(diff) / len(diff) ** 0.5
             npos = sum(x > 0 for x in diff)
-            rows.append({"layer": int(c), "delta": round(m, 5),
+            rows.append({"layer": c, "delta": round(m, 5),
                          "se": round(se, 5), "n_positive": npos,
                          "abs_r": round(st.mean(data[(store, s)][c]
                                                 for s in have), 5)})
