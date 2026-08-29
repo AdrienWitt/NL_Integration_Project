@@ -6,6 +6,7 @@
 #SBATCH --time=12:00:00
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1,VramPerGpu:40G
+#SBATCH --constraint="COMPUTE_CAPABILITY_7_5|COMPUTE_CAPABILITY_8_0|COMPUTE_CAPABILITY_8_6|COMPUTE_CAPABILITY_8_9|COMPUTE_CAPABILITY_9_0"
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=96G
 #SBATCH --array=0-44
@@ -40,10 +41,21 @@
 # nested loop: --eval holdout selects alphas by CV inside the training set and
 # then scores once on the held-out story.
 #
-# Memory follows the same jump: the kernel is (29k x 29k) float32 = 3.4 GB, and
-# the solver keeps several working copies, so VramPerGpu:40G rather than the
-# sweep's 24G. --mem=96G covers the host side, where the full-voxel response of
-# the held-out story's 10 repeats is the peak.
+# Memory follows the same jump, and 40G is NOT enough for the 83-story subjects:
+# at n=27,797 training TRs himalaya asked for 14.4 GB on top of 33.2 GB already
+# held and died on a 40 GB A100. UTS01-UTS03 need VramPerGpu:80G; every other
+# subject fits in 40G because they heard a third as many stories. Override on
+# the command line for those three rather than sending all 45 tasks to the nine
+# 80 GB cards.
+#
+# --mem=96G covers the host side, where the full-voxel response of the held-out
+# story's 10 repeats is the peak.
+#
+# The --constraint above is not about capacity. torch 2.6+cu124 ships no sm_120
+# kernels, so a task landing on an RTX PRO 4500 Blackwell dies with "no kernel
+# image is available for execution on the device" -- the card is too new for
+# the wheel, not too old. Four c25 tasks were lost to it. The whitelist names
+# the architectures this build actually has kernels for.
 
 set -e
 
@@ -56,6 +68,12 @@ module load GCCcore/10.3.0 Python/3.9.5
 export PYTHONUNBUFFERED=1
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"
+
+# himalaya allocates the kernel, its eigenvectors and a per-alpha working copy
+# in quick succession, which fragments the pool badly enough to fail an
+# allocation while enough total memory is free. Costs nothing when it is not
+# needed.
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 SUBJECTS=(UTS01 UTS02 UTS03 UTS04 UTS05 UTS06 UTS07 UTS08 UTS09)
 BANDS=(base_emotion_L11 base_emotion_9to11
