@@ -171,41 +171,85 @@ empirical — sweep it with `--layers` and different `--out-name`s.
 - Data was **moved** here out of `../NL_Project`, which is now code-only and
   whose scripts will fail on missing data. That was intentional.
 
-## Stage-2 result: the layer sweep is done (2026-08-28)
+## Stage-2 result: every layer, common stories (2026-08-29)
 
-Full prosodic layer sweep run on the cluster: 9 subjects x 4 stores = 36 GPU
-tasks, 40 training stories each, 5-fold nested CV, `--min-ev 0.1`, held-out
-story never touched. All 36 complete. Summarise with
-`python scripts/summarise_sweep.py`.
+Supersedes the 2026-08-28 coarse sweep (every third layer, per-subject story
+lists, 40-story cap). That one was directionally right about the emotion model
+and wrong or blind about everything else, so read this section, not it.
 
-**Fine-tuning on eGeMAPS hurt, and the damage scales with how far each layer
-moved.** Emotion model, paired per subject at matched depths:
+Design: 9 subjects x 4 stores = 36 GPU tasks, **all nine on the same 24 training
+stories** (`common_stories_all9.json`, the true intersection), every stored layer
+plus averaged ranges, `--min-ev 0.1`, both `--eval cv` and `--eval holdout`.
+Summarise with `python scripts/summarise_sweep.py --eval cv --tidy out.csv`.
 
-    layer   base      ft      ft-base   subjects worse
-    L6      0.0192    0.0191  -0.0000   5/9   <- freeze boundary, same weights
-    L9      0.0200    0.0186  -0.0015   8/9
-    L11     0.0204    0.0151  -0.0053   8/9
+**Choose on cv, report on holdout.** The held-out story is 291 TRs; its standard
+errors run 0.0015-0.0058 against 0.0003-0.0014 cross-validated. It cannot
+resolve a 0.005 effect, and it shows the emotion damage below as noise. Picking
+the best row out of a holdout sweep is also selection on the test set.
 
-That mirrors the weight divergence measured before any brain data was involved
-(corr(ft, base) +0.91 at L6, +0.12 at L11). The frozen base *rises* to its top
-layer (0.0192 -> 0.0204); the fine-tuned one falls away. The control predicted
-in the design notes won, so **carry the frozen base forward, not the fine-tuned
-checkpoint**: `base_emotion` L9-L11 and `base_robust` L15-L18.
+**Fine-tuning cut both ways** (cv, paired per subject, Δ = ft − base):
 
-The robust pair is a much weaker case (±0.001, inconsistent sign) — its base
-top layers were already degraded, so there was less to spoil. Do not
-over-generalise from it.
+    emotion  L6  -0.0001  4/9 worse   <- freeze boundary, identical weights
+             L8  -0.0024  7/9   *
+             L10 -0.0047  8/9   *
+             L11 -0.0066  8/9   *
+    robust   L17 -0.0012  7/9   *
+             L20 +0.0042  0/9   *     <- ft BETTER in every subject
+             L21 +0.0037  0/9   *
+             L22 +0.0024  2/9   *
 
-Every learned layer beats openSMILE, by +0.0017 to +0.0059. Best mean is
-`base_emotion` L11; most consistent is `base_robust` L18 (9/9 subjects).
-Note `base_emotion` is still climbing at its final layer — the stack ran out
-before the profile did.
+One reading fits both: the eGeMAPS objective pulls top layers toward acoustics.
+Where they already carried brain-relevant prosody (emotion pretraining) that is
+a loss; where they had specialised away from acoustics entirely (top of a
+self-supervised speech stack) it is a partial recovery. Neither beats the frozen
+emotion model.
 
-Scale: mean r ~0.02 over the 1,776 of 81,126 voxels that pass EV>0.1; best
-voxel ~0.09. Real and consistent, but differences between small numbers.
+**Two things the coarse sweep got wrong:**
+- `base_emotion` does **not** keep climbing to the top of the stack. It rises to
+  L10 (+0.0103) and plateaus at L11 (+0.0102). The peak is real, not truncation.
+- `base_robust` has a **cliff, not a slope**: ~+0.007 through L19, then +0.0025
+  at L20. Sampling L18 then L21 bracketed it without locating it.
 
-Published summary with the profile charts:
+**Averaged ranges never beat the best single layer.** emotion 9-11 +0.0098 vs
+L10 +0.0103; robust 15-18 +0.0077 vs L17 +0.0080. Do not pay 4x the columns.
+
+**Carry `base_emotion` L10 forward** — best layer of any model on cv, above
+openSMILE in 9/9 subjects, and no fine-tuned checkpoint needed. L11 is
+statistically indistinguishable.
+
+Scale: openSMILE ~0.011 mean over the 1,776 of 81,126 voxels passing EV>0.1;
+the best layer adds ~0.010. Consistent across all nine subjects, still small.
+
+Published summary (both evaluations, every layer):
 https://claude.ai/code/artifact/1b2b34ce-2eb3-447f-9809-35d5bbd4f39d
+
+## Story lists: use the derived intersection, not the shipped file
+
+`data/derivative/common_stories_25.json` is unusable. Its participant keys are
+`sub-UTS01` where `stories_for_subject` looks up `UTS01`, so it raises KeyError
+on every subject — a 45-task array once reported COMPLETED while doing nothing.
+Its list is also not the intersection: it holds `life` (UTS04 never heard it)
+and `fromboyhoodtofatherhood` (UTS09 never heard it) while omitting `legacy` and
+`thatthingonmyarm`, which all nine did.
+
+`python scripts/make_common_stories.py` derives the truth from `all_stories.json`
+and writes `common_stories_all9.json`: **25 stories shared by all nine,
+`wheretheressmoke` among them, so 24 training stories.**
+
+Per-subject lists (26-84 stories) are right for within-subject contrasts, where
+training-set size cancels, and wrong for anything averaged across subjects.
+They are also what made the all-stories run OOM: UTS01-03 at 27,797 training TRs
+need >48 GB of VRAM, and even 80 GB was marginal.
+
+**OpenNeuro v4.0.0 (2026-08-13) adds nothing here.** Checked: story counts per
+subject are identical to ours and the 9-way intersection is the same 25. It adds
+a 10th subject, UTS10, with 52 stories — but UTS10 **never heard
+`wheretheressmoke`**, so there is no held-out story and no explainable-variance
+ceiling for them, and including them would cut the intersection to 23.
+
+Note an imbalance the common-story set does *not* fix: UTS01-03 have 10 repeats
+of the held-out story, the other six have 5, so the EV mask and the holdout
+noise floor are estimated about twice as precisely for those three.
 
 ## Solver settings that cost real time (2026-08-28)
 
