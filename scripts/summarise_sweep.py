@@ -55,6 +55,9 @@ def main():
     p.add_argument("--eval", default="cv", choices=["cv", "holdout"])
     p.add_argument("--root", default=None)
     p.add_argument("--json", default=None, help="also write the profile here")
+    p.add_argument("--tidy", default=None,
+                   help="write one long CSV with every store/subject/layer row "
+                        "— the single file to open in R or pandas")
     args = p.parse_args()
 
     root = args.root or os.path.join(ENCODING_OUT, "prosody_sweep", args.eval)
@@ -94,6 +97,29 @@ def main():
             print(f"  L{c:<3} {m:+.4f} ± {se:.4f}   {npos}/{len(have)} subjects"
                   f"   {'#' * max(0, round(m * 2000))}")
         out[store] = rows
+
+    if args.tidy:
+        # One row per (store, subject, layer). The per-task sweep.csv files are
+        # already one-row-per-layer; this only concatenates them and carries the
+        # subject's own openSMILE score alongside, so the paired difference can
+        # be recomputed downstream without re-reading 36 files.
+        import csv as _csv
+        with open(args.tidy, "w", newline="", encoding="utf-8") as fh:
+            w = _csv.writer(fh)
+            w.writerow(["store", "subject", "config", "mean_r",
+                        "opensmile_r", "delta_vs_opensmile"])
+            for store in stores:
+                for sub in subs:
+                    cell = data.get((store, sub))
+                    if not cell or "opensmile" not in cell:
+                        continue
+                    base = cell["opensmile"]
+                    for c, v in sorted(cell.items(),
+                                       key=lambda kv: (kv[0] == "opensmile",
+                                                       kv[0])):
+                        w.writerow([store, sub, c, f"{v:.6f}",
+                                    f"{base:.6f}", f"{v - base:.6f}"])
+        print(f"\nwrote {args.tidy}")
 
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
