@@ -50,6 +50,22 @@ FMRI_DIR = _env("FMRI_DIR", DERIVATIVE_DIR / "preprocessed_data")
 #: Optional fsaverage-projected responses: <FSAVERAGE_DIR>/<subject>/<story>.npy
 FSAVERAGE_DIR = _env("FSAVERAGE_DIR", DERIVATIVE_DIR / "fsaverage_brain")
 
+#: pycortex filestore: per-subject surfaces and the volume -> surface
+#: transform. Only useful if <PYCORTEX_DB>/<subject>/transforms/<xfm>/ is
+#: populated; a bare directory tree projects nothing.
+PYCORTEX_DB = _env("PYCORTEX_DB", DERIVATIVE_DIR / "pycortex-db")
+
+#: FreeSurfer SUBJECTS_DIR. Needs each subject *and* `fsaverage` — the
+#: surface-to-surface matrix is estimated by running `mri_surf2surf` between
+#: the two, so both must be resolvable from this one directory.
+FREESURFER_DIR = _env("FREESURFER_DIR", DERIVATIVE_DIR / "freesurfer")
+
+#: FreeSurfer licence file; `mri_surf2surf` refuses to start without it.
+FS_LICENSE = _env("FS_LICENSE", PROJECT_DIR / "license.txt")
+
+#: subject -> pycortex transform name. Falls back to "<subject>_auto".
+SUBJECT_XFMS = _env("SUBJECT_XFMS", DERIVATIVE_DIR / "subject_xfms.json")
+
 TEXTGRID_DIR  = _env("TEXTGRID_DIR", DERIVATIVE_DIR / "TextGrids")
 RESPDICT_PATH = _env("RESPDICT_PATH", DERIVATIVE_DIR / "respdict.json")
 
@@ -130,6 +146,9 @@ def describe() -> str:
         ("STIMULI_16K_DIR",     STIMULI_16K_DIR),
         ("FMRI_DIR",            FMRI_DIR),
         ("FSAVERAGE_DIR",       FSAVERAGE_DIR),
+        ("PYCORTEX_DB",         PYCORTEX_DB),
+        ("FREESURFER_DIR",      FREESURFER_DIR),
+        ("FS_LICENSE",          FS_LICENSE),
         ("TEXTGRID_DIR",        TEXTGRID_DIR),
         ("RESPDICT_PATH",       RESPDICT_PATH),
         ("FEATURES_DIR",        FEATURES_DIR),
