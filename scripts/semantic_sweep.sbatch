@@ -67,7 +67,8 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 SUBJECTS=(UTS01 UTS02 UTS03 UTS04 UTS05 UTS06 UTS07 UTS08 UTS09)
 SUBJ=${SUBJECTS[$SLURM_ARRAY_TASK_ID]}
 
-SOURCES="gpt2_k0 gpt2_k1 gpt2_k4 gpt2_k16 gpt2_k64 gpt2_k256"
+SOURCES=${SOURCES:-"gpt2_k0 gpt2_k1 gpt2_k4 gpt2_k16 gpt2_k64 gpt2_k256"}
+TAGSUF=${TAGSUF:-}
 
 RESP="data/ds003020/derivative/preprocessed_data/$SUBJ"
 if [ ! -d "$RESP" ]; then
@@ -93,7 +94,7 @@ run_eval () {   # eval mode
         --sources "$SOURCES" \
         --stories-json common_stories_all9.json \
         --baseline-features gpt2_mean \
-        --tag "$SUBJ" \
+        --tag "${SUBJ}${TAGSUF}" \
         --eval "$1" \
         --n-splits 5 \
         --min-ev 0.1 \
