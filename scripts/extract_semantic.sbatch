@@ -12,7 +12,7 @@
 #
 # Override the grid to add points or re-extract one at a different stride:
 #   sbatch --array=0-2 --export=ALL,KS="32 128 64",STRIDES="0.1 0.1 0.001",\
-#          SUFFIX="  s1" scripts/extract_semantic.sbatch
+#          OUTNAMES="gpt2_k32 gpt2_k128 gpt2_k64_s1" scripts/extract_semantic.sbatch
 #
 # ===========================================================================
 # The semantic context-length bands: one store per k, all 84 stories.
@@ -59,16 +59,20 @@ export DATA_DIR=$PROJECT/data
 export HF_HOME=$HOME/.cache/huggingface
 export HF_HUB_OFFLINE=1
 
-# KS / STRIDES / SUFFIX are space-separated and index-aligned with the array.
-# SUFFIX entries may be empty, so it is split on a delimiter rather than
-# whitespace -- an empty field is a real value here, not padding.
+# KS / STRIDES / OUTNAMES are space-separated and index-aligned with the array.
+#
+# Never a comma-delimited list here: `sbatch --export` splits its own value on
+# commas, so an embedded one is silently eaten. A SUFFIX=",,_s1" became empty,
+# the task wrote to the already-complete gpt2_k64, reported "nothing to do"
+# and exited COMPLETED -- a green job that produced no output. Full output
+# names, space-separated, have no empty fields to encode.
 read -r -a KS_A <<< "${KS:-0 1 4 16 64 256}"
 read -r -a ST_A <<< "${STRIDES:-}"
-IFS=',' read -r -a SF_A <<< "${SUFFIX:-}"
+read -r -a ON_A <<< "${OUTNAMES:-}"
 
 K=${KS_A[$SLURM_ARRAY_TASK_ID]}
 STRIDE=${ST_A[$SLURM_ARRAY_TASK_ID]:-0.1}
-SFX=${SF_A[$SLURM_ARRAY_TASK_ID]:-}
+OUT=${ON_A[$SLURM_ARRAY_TASK_ID]:-gpt2_k${K}}
 
 echo "=== task $SLURM_ARRAY_TASK_ID : context-words $K, stride-frac $STRIDE ==="
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
@@ -78,6 +82,6 @@ python -m extract.context_lm \
     --context-words "$K" \
     --stride-frac "$STRIDE" \
     --layers last \
-    --out-name "gpt2_k${K}${SFX}"
+    --out-name "$OUT"
 
 echo "=== task $SLURM_ARRAY_TASK_ID done in $((SECONDS / 60)) min ==="
