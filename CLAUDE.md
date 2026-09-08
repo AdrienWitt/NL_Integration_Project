@@ -439,6 +439,44 @@ p-value as `max(p_audio|text, p_text|audio)`, then FDR across voxels on that.
 Each component p comes from its own DS null, each of which models the correct
 H0 by construction. Nothing about the header's definition changes.
 
+## The final joint model: which bands, and one mismatch to fix first
+
+The joint model takes the best-performing prosody band and the best-performing
+semantic band, each chosen on **cv** over its own sweep. As of 2026-09-08 that is:
+
+    prosody    perlayer_base_emotion  layer 10     +0.0103 over openSMILE, 9/9
+    semantic   perlayer_gpt2_k16      layer 8      +0.0397 over gpt2_mean, 9/9
+
+**The prosody choice does not match what the 45 held-out runs actually used.**
+Those ran `base_emotion_L11` and `base_robust_L18`, because
+`encoding_holdout.sbatch` was written against the *coarse* sweep, which sampled
+every third layer and never tested L10 or L17. The corrected all-layer sweep
+then found L10 (+0.0103 vs L11 +0.0102) and L17 (+0.0080 vs L18 +0.0078).
+Numerically this is nothing — L10 and L11 are statistically indistinguishable.
+As a *selection rule* it is not nothing: "we took the best layer on cv" has to
+name L10, or the sweep table in the paper contradicts the methods section.
+Decide one of:
+  (a) use L10 and say so — costs one extraction, matches the stated rule;
+  (b) keep L11 and state plainly that L10/L11 are within noise and L11 was
+      already extracted. Defensible, but must be written down, not silent.
+
+**There is no flat `base_emotion_L10` store**, only `base_emotion_L11`,
+`base_emotion_9to11`, `base_robust_L18`, `base_robust_15to18`. Rather than
+extract another flat store per layer, give `run_encoding` the `store:layer`
+source syntax `run_semantic_sweep` already has (`perlayer_base_emotion:10`,
+`perlayer_gpt2_k16:8`). One mechanism, no duplicated stores, and it removes the
+class of error that produced this mismatch.
+
+**Selection budgets are unequal, and that biases `preference` on cv.** The
+audio band was chosen over ~96 configurations (4 stores x ~24 layers); the text
+band over ~19 (13 layers at k=16, 7 context lengths at L12). Taking a max over
+more candidates carries more winner's curse, so the *cross-validated* audio
+score is the more optimistic of the two and `preference = r_text − r_audio` is
+biased toward audio if read off cv. The held-out story is unaffected, because
+neither selection touched it — one more reason to report `preference` on
+holdout only, and to say in the methods how many configurations each band was
+selected over.
+
 ## Story lists: use the derived intersection, not the shipped file
 
 `data/derivative/common_stories_25.json` is unusable. Its participant keys are
