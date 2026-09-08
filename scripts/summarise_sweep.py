@@ -74,6 +74,13 @@ def load(root):
         name = os.path.basename(os.path.dirname(path))
         store, _, subject = name.partition("__")
         store = store.replace("perlayer_", "")
+        # `--tag "${SUBJ}${TAGSUF}"` puts the run's tag after the subject, so
+        # "semantic__UTS01_layers" is subject UTS01 of the *layers* run. Left
+        # in the subject field, two runs of one sweep merge into a single
+        # store holding 24 "subjects" and two incompatible config lists.
+        m = re.fullmatch(r"(UTS\d+)_(.+)", subject)
+        if m:
+            store, subject = f"{store}_{m.group(2)}", m.group(1)
         with open(path, encoding="utf-8") as fh:
             for row in csv.DictReader(fh):
                 d[(store, subject or row["subject"])][row["config"]] = \
@@ -133,21 +140,32 @@ def main():
         # ("15-18"), so int() alone raises. Single layers sort numerically
         # first, ranges after them by their start, which keeps the profile
         # readable as a depth axis with the composites gathered at the end.
-        cfgs = sorted((c for c in data[(store, have[0])]
-                       if c != args.baseline), key=config_sort_key)
+        #
+        # The union over subjects, not the first subject's list: a sweep read
+        # while it is still running has subjects that stopped at different
+        # configurations, and indexing every subject by subject one's list
+        # raises on the first configuration the others have not reached.
+        cfgs = sorted({c for s in have for c in data[(store, s)]
+                       if c != args.baseline}, key=config_sort_key)
         print(f"\n{store}  (Δr vs own {args.baseline}, n={len(have)})")
         rows = []
         for c in cfgs:
+            have_c = [s for s in have if c in data[(store, s)]]
+            if len(have_c) < 2:
+                print(f"  {config_display(c):<24} (only {len(have_c)} subject"
+                      f"{'' if len(have_c) == 1 else 's'} so far, skipped)")
+                continue
             diff = [data[(store, s)][c] - data[(store, s)][args.baseline]
-                    for s in have]
+                    for s in have_c]
             m, se = st.mean(diff), st.stdev(diff) / len(diff) ** 0.5
             npos = sum(x > 0 for x in diff)
             rows.append({"layer": c, "delta": round(m, 5),
                          "se": round(se, 5), "n_positive": npos,
+                         "n": len(have_c),
                          "abs_r": round(st.mean(data[(store, s)][c]
-                                                for s in have), 5)})
+                                                for s in have_c), 5)})
             print(f"  {config_display(c):<24} {m:+.4f} ± {se:.4f}   "
-                  f"{npos}/{len(have)} subjects"
+                  f"{npos}/{len(have_c)} subjects"
                   f"   {'#' * max(0, round(m * 2000))}")
         out[store] = rows
 
