@@ -330,6 +330,98 @@ This needs new per-layer extractions at those k (only k=16 has one), so it is
 `gpt2_mean` is deliberately absent from SOURCES: the sbatch always passes it
 as `--baseline-features`, and naming it in both scores the same band twice.
 
+## Inference: what the irony project did, and what carries over (2026-09-08)
+
+`../Clean_Irony/permutation_test.py` and `diagnostic_permutations.py` are the
+methods reference for this project's statistics. Read them before writing
+anything new here. Verified against the source, not remembered:
+
+**Draper–Stoneman conditional nulls.** `--shuffle_block {both,text,audio}`:
+`both` shuffles every feature block and gives the null for "r > 0"; `audio`
+shuffles the audio columns while text stays aligned and gives the null for
+`Δr_audio|text`; `text` mirrors it. Block modes force
+`include_mod=['text_audio']` — only the *combined* model is refit, because the
+whole point is that the joint model keeps its full dimensionality and can
+still overfit with the shuffled block's columns. That is what makes the null
+absorb the nesting bias.
+
+**The statistic is a conditional contribution, not a max.**
+
+    observed  Δr_audio|text = r_joint − r_text
+    null_i    Δr_audio|text = r_joint(audio shuffled)_i − r_text
+
+`r_text` is the same observed constant on both sides, so the p-value reduces
+to `P(r_joint_shuffled ≥ r_joint)`; subtracting it only keeps the effect size
+on an interpretable scale. **Integration is then the *conjunction* of the two
+conditional contributions** — audio adds beyond text AND text adds beyond
+audio — never a test of `r_joint − max(...)` against zero.
+
+**Alphas are fixed, not re-searched.** `optimize_alpha=False` with
+`valphas=_subset_valphas(...)` loads the per-voxel alphas from the observed
+fit, so a permutation refits weights only. Without this the alpha search runs
+inside every permutation and the whole thing is unaffordable.
+
+**Derived columns are rebuilt after shuffling.** `_rebuild_interactions`
+recomputes `semantic_* x prosody_*` as the product of its *shuffled* parents,
+so the interaction follows the permuted design instead of silently keeping
+the aligned one.
+
+**Null calibration was checked, not assumed.** `diagnostic_permutations.py`
+produces, per test: p-value histogram (calibration), observed-vs-null
+separation, QQ plot of −log10 p, example per-voxel nulls, effect sizes split
+by significance, and null-std vs observed r (homogeneity). FDR is
+`statsmodels.fdrcorrection` at α=0.05. Reproduce this figure here; it is the
+supplementary that answers the reviewer question before it is asked.
+
+### What must change when porting it
+
+- **Shuffle blocks of TIME, not rows.** Irony shuffles trials within
+  participant, which is exchangeable in an event-related design. This is
+  continuous naturalistic listening with an HRF and heavy temporal
+  autocorrelation: a free row shuffle destroys that autocorrelation, narrows
+  the null and makes the test **anticonservative**. Use the existing
+  `block_permutation_index` with blocklen ≥ HRF width (10 TRs = 20 s).
+- **Shuffle the raw features, then rebuild the FIR delays** — not the delayed
+  design matrix, or alignment leaks across block boundaries through the delay
+  copies.
+- **Two levels here, one there.** Irony pools every participant into one ridge
+  (`participant_ids`, shuffle within participant), so the permutation *is* the
+  inference. This project fits one model per subject, so within-subject
+  permutation and the group claim are separate questions.
+
+### Why not a group test in the Caucheteux & King style
+
+They had hundreds of subjects; a group-level nonparametric test there has both
+resolution and random-effects validity. Here n=9, and that closes the route:
+
+    exact sign-flip / signed-rank / sign test: 2^9 = 512 arrangements
+      -> smallest attainable one-sided p = 1/512 = 0.00195
+
+BH at that floor needs ≥69 voxels pegged at the minimum p before it rejects
+anything inside the EV>0.1 mask, and **≥3,169 whole-brain** — more than the
+~1,776 voxels that carry explainable signal at all. Whole-brain group FDR at
+n=9 is arithmetically impossible, not merely expensive. Consequences:
+
+- Primary inference is **within subject**, where there are 8,683 training TRs.
+- For a group map, use **max-statistic sign-flip FWE** (PALM/randomise style),
+  which needs no per-voxel p below 1/512 because the threshold is on the null
+  of the max: the 95th percentile sits at rank 486/512, 26 values in the tail.
+  Coarse but valid.
+- Otherwise state the group claim as consistency — "significant in k of 9" —
+  which is what the sweeps already support (9/9 for L8, 9/9 for context; a
+  sign test on 9/9 is exactly p = 0.00195).
+
+### Consequence for the "settled" delta definition
+
+`delta = r_joint − max(r_text, r_audio)` should probably be **retired in favour
+of the two conditional contributions plus their conjunction**. Two reasons:
+`max` of two noisy estimates is biased upward, so delta is biased downward by
+an amount that varies with each voxel's noise; and there is no permutation
+scheme that gives `max` a clean null, whereas each conditional contribution
+has one by construction. Keep delta as a descriptive map if useful, but do not
+make it the tested statistic. Not yet acted on — this reverses a decision in
+the header of this file, so decide it deliberately.
+
 ## Story lists: use the derived intersection, not the shipped file
 
 `data/derivative/common_stories_25.json` is unusable. Its participant keys are
