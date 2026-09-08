@@ -12,10 +12,29 @@
 #SBATCH --array=0-8
 #
 # ===========================================================================
-# Semantic context-length sweep: nine subjects, one GPU each, both evals.
+# Semantic sweep: nine subjects, one GPU each, both evals.
 # ===========================================================================
 #
+# Context length (the default grid):
 #   sbatch --dependency=afterok:<extract_jobid> scripts/semantic_sweep.sbatch
+#
+# Depth at the chosen k, off the 3-D per-layer store. Twice the configurations
+# of the context grid, hence the longer wall clock:
+#   sbatch --time=08:00:00 --export=ALL,LAYER_STORE=perlayer_gpt2_k16,\
+#          TAGSUF=_layers scripts/semantic_sweep.sbatch
+#
+# Why depth is worth a sweep of its own
+# -------------------------------------
+# The context grid ran at --layers last, which on a causal LM is the layer
+# least likely to be the best one: the top of the stack is optimised to emit
+# next-token logits and rotates back toward the unembedding matrix, away from
+# the abstract middle. So the +0.031 that context bought is measured at a
+# probable trough, and the profile here says how much of the stack that cost.
+#
+# Where the peak sits is itself the result, not just an argmax to consume. A
+# peak near the bottom would mean the band is closer to word identity than to
+# meaning, and `preference = r_text - r_audio` would have to be described that
+# way in the paper.
 #
 # One task per subject, because every configuration for a subject shares that
 # subject's responses, EV mask and CV folds -- loading those is the slowest
@@ -70,14 +89,37 @@ SUBJ=${SUBJECTS[$SLURM_ARRAY_TASK_ID]}
 SOURCES=${SOURCES:-"gpt2_k0 gpt2_k1 gpt2_k4 gpt2_k16 gpt2_k64 gpt2_k256"}
 TAGSUF=${TAGSUF:-}
 
+# A depth sweep composes its own source list: thirteen "store:layer" tokens
+# written by hand invite the typo that silently drops a layer out of the
+# middle of the profile.
+if [ -n "${LAYER_STORE:-}" ]; then
+    SOURCES=""
+    for L in ${LAYER_LIST:-0 1 2 3 4 5 6 7 8 9 10 11 12}; do
+        SOURCES="$SOURCES ${LAYER_STORE}:${L}"
+    done
+    SOURCES="${SOURCES# }"
+
+    # The flat store the per-layer one was built alongside, if it is there.
+    # perlayer_gpt2_k16:12 must reproduce gpt2_k16 exactly -- same layer, same
+    # passes -- so scoring both puts a free consistency check in the table. If
+    # those two rows disagree, the per-layer read is wrong and nothing else in
+    # the profile can be trusted.
+    FLAT="${LAYER_STORE#perlayer_}"
+    if [ -d "data/features/$FLAT" ]; then
+        SOURCES="$FLAT $SOURCES"
+    fi
+fi
+
 RESP="data/ds003020/derivative/preprocessed_data/$SUBJ"
 if [ ! -d "$RESP" ]; then
     echo "ERROR: no responses for $SUBJ at $RESP"
     exit 1
 fi
 for S in $SOURCES; do
-    if [ ! -d "data/features/$S" ]; then
-        echo "ERROR: missing feature store data/features/$S"
+    # A source may carry a layer selection -- "perlayer_gpt2_k16:8" -- and only
+    # the part before the colon is a directory.
+    if [ ! -d "data/features/${S%%:*}" ]; then
+        echo "ERROR: missing feature store data/features/${S%%:*}"
         echo "       run scripts/extract_semantic.sbatch first"
         exit 1
     fi

@@ -121,6 +121,16 @@ empirical — sweep it with `--layers` and different `--out-name`s.
   leaks and inflates metrics.
 - `--min-ev 0.1` restricts fitting to voxels with real signal and cuts runtime a
   lot; results are scattered back to full voxel space.
+- **The two per-layer store conventions differ by one.** `extract.wav2vec
+  --per-layer` writes index *i* meaning transformer block *i*;
+  `extract.context_lm --per-layer` writes `hidden_states` indices, so 0 is the
+  *embedding* layer and block *i* is at *i + 1* — the same numbering
+  `--layers` already took on the text side. Both label the axis in the `layers`
+  attribute; read that rather than assuming. A 13-entry GPT-2 store is 12
+  blocks plus embeddings, not 13 blocks.
+- **`scripts/make_common_stories.py` needs `PYTHONPATH=.`** — it is a script,
+  not a package module, so `python scripts/make_common_stories.py` alone dies
+  on `No module named 'config'`.
 
 ## State as of 2026-08-19
 
@@ -223,6 +233,68 @@ the best layer adds ~0.010. Consistent across all nine subjects, still small.
 Published summary (both evaluations, every layer):
 https://claude.ai/code/artifact/1b2b34ce-2eb3-447f-9809-35d5bbd4f39d
 
+## Stage-2 result: semantic context length (2026-09-01)
+
+9 subjects x 7 configurations x both evals, all nine on `common_stories_all9`,
+`--min-ev 0.1`, GPT-2 small at `--layers last`. Complete; read with
+`python scripts/summarise_sweep.py --root results/encoding/semantic_sweep/cv
+--baseline gpt2_mean`.
+
+Mean r over the EV>0.1 voxels, averaged over the nine subjects:
+
+    config       cv       Δ        holdout   Δ
+    gpt2_mean   0.1346    —        0.2683    —
+    gpt2_k0     0.1417   +0.0070   0.2823   +0.0140
+    gpt2_k1     0.1500   +0.0153   0.2995   +0.0312
+    gpt2_k4     0.1596   +0.0249   0.3150   +0.0468
+    gpt2_k16    0.1657   +0.0310   0.3271   +0.0588   <- best on cv
+    gpt2_k64    0.1587   +0.0241   0.3233   +0.0550
+    gpt2_k256   0.1654   +0.0308   0.3312   +0.0629
+
+**Context helps in 9/9 subjects, and it is the biggest effect in the project
+so far** — +0.031 cv against the ~+0.010 the best audio layer buys over
+openSMILE. k=16 and k=256 are indistinguishable; the dip at k=64 is noise.
+Choosing on cv: **k=16**, same score for a sixteenth of the context.
+
+## Depth is swept too, at k=16 — the context grid ran at the worst layer
+
+The whole context sweep used `--layers last`, which on a *causal* LM is the
+layer least likely to win. Depth in GPT-2 is an hourglass, not a ladder: the
+top of the stack is optimised to emit next-token logits and rotates back
+toward the unembedding matrix, away from the abstract middle (logit lens,
+nostalgebraist 2020; tuned lens, Belrose et al. 2023). Mid-to-late layers are
+what the encoding literature finds best — Toneva & Wehbe 2019, Schrimpf et al.
+2021, Caucheteux & King 2022, and Antonello, Vaidya & Huth 2023 on *this*
+dataset. So "the last layer is the most semantic one" is not a reason to keep
+it, and the +0.031 above is measured at a probable trough.
+
+Do not resolve this by argument, and do not resolve it by picking the
+conceptually pleasing layer either. **A weak semantic band is not the
+conservative choice here**: `delta` and `preference` are both differences
+against the text band, so variance GPT-2 fails to capture is variance the
+audio band can absorb as a proxy. Handicapping the text band biases both
+headline statistics in the direction that flatters prosody. The audio layer
+was chosen empirically on cv over a whole-stack sweep; the text layer gets the
+same treatment or `preference` is partly a statement about selection rules.
+
+**Where the peak sits is part of the result.** A peak near the bottom of the
+stack would mean the band is closer to word identity than to meaning, and
+`preference = r_text − r_audio` would have to be described that way. Report
+the profile, not just the argmax.
+
+Run it:
+
+    # one task, not thirteen: a forward pass computes every hidden state
+    sbatch --array=0-0 --export=ALL,KS="16",LAYERS="0-12",PER_LAYER=1,\
+           OUTNAMES="perlayer_gpt2_k16" scripts/extract_semantic.sbatch
+    sbatch --time=08:00:00 --dependency=afterok:<jobid> \
+           --export=ALL,LAYER_STORE=perlayer_gpt2_k16,TAGSUF=_layers \
+           scripts/semantic_sweep.sbatch
+
+Then re-check k at the winning layer (k=4/16/256) before freezing the band —
+depth and context can interact, and the k sweep was run at the one layer least
+likely to show it.
+
 ## Story lists: use the derived intersection, not the shipped file
 
 `data/derivative/common_stories_25.json` is unusable. Its participant keys are
@@ -322,10 +394,12 @@ model" confounded. Worth a separate arm once the current comparison is settled;
 not a drop-in.
 
 **Two details worth stealing now, both cheap and backbone-independent:**
+- *Text context length.* DONE, 2026-09-01 — see the context-length section
+  above. k=16 words, +0.031 in 9/9 subjects, the largest effect measured here.
 - *Audio context window.* They feed 60 s chunks; we mean-pool a 2 s window per
   TR. The 2 s matches the eGeMAPS target windows, which was right for
   fine-tuning, but for *extraction* a longer window gives the transformer real
-  context. Testable with the existing code.
+  context. Testable with the existing code. Still open.
 - *Causal/bidirectional asymmetry.* Their note that audio embeddings see the
   future while text embeddings do not applies to us too: our audio band is a
   bidirectional transformer over its window, our GPT-2 band is causal. That is

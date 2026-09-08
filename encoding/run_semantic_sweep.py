@@ -7,13 +7,27 @@ reports a score per store. The stores are the `extract.context_lm` bands —
 `gpt2_k0`, `gpt2_k1`, `gpt2_k4`, ... — which differ only in how many preceding
 words each word was embedded with.
 
-Why this is not the prosody sweep
----------------------------------
-`run_prosody_sweep` sweeps *layers inside one* 3-D per-layer store. Context
-length cannot be stored that way: each k needs its own forward pass, so it is
-one 2-D store per configuration. Everything else is deliberately identical —
-the same responses, EV mask, folds and alphas across configurations, computed
-once — because that is what makes the rows comparable.
+Context length, and depth
+-------------------------
+Context length cannot be swept the way `run_prosody_sweep` sweeps layers: each
+k needs its own forward pass, so it is one 2-D store per k. *Depth* at a fixed
+k can be, and should be — one pass computes every hidden state — so a source
+may also name a layer inside a 3-D per-layer store from
+`extract.context_lm --per-layer`::
+
+    --sources "gpt2_mean perlayer_gpt2_k16:8 perlayer_gpt2_k16:9"
+
+Both kinds mix freely in one run, which is the point: the responses, EV mask,
+folds and alphas are computed once and shared by every configuration, so the
+rows are comparable to each other rather than to a re-run.
+
+Depth is not a free choice on a causal LM. The last layer is not the most
+semantic one — it is optimised to emit next-token logits, so it rotates back
+toward the unembedding matrix and away from the abstract middle. Sweeping it
+is how you find where meaning actually lives, and where the peak *sits* is
+part of the result: a peak near the bottom would mean the band is closer to
+word identity than to semantics, and `preference = r_text − r_audio` would
+have to be described accordingly.
 
 Why context length is a result, not a hyperparameter
 ----------------------------------------------------
@@ -57,6 +71,11 @@ from .banded import (default_solver_params, fit_banded, fit_banded_cv,
                      set_himalaya_backend)
 from .cv import explainable_variance, story_folds
 from .preprocess import build_design, prepare_responses, trim_response
+# The per-layer store is the prosody sweep's format exactly, so read it with
+# the prosody sweep's readers rather than a second implementation that could
+# drift from it.
+from .run_prosody_sweep import (band_from_store, config_label, load_store,
+                                parse_config, store_layers)
 
 log = logging.getLogger("semantic_sweep")
 
@@ -71,7 +90,12 @@ def build_parser() -> argparse.ArgumentParser:
                       help="comma-separated, or 'all'")
     data.add_argument("--sources", required=True,
                       help="space-separated text feature stores under "
-                           "FEATURES_DIR, e.g. \"gpt2_k0 gpt2_k16 gpt2_k256\"")
+                           "FEATURES_DIR, e.g. \"gpt2_k0 gpt2_k16 gpt2_k256\". "
+                           "A store may carry a layer selection after a colon "
+                           "-- 'perlayer_gpt2_k16:8' for one layer, "
+                           "'perlayer_gpt2_k16:8-10' for a range, averaged -- "
+                           "which reads that layer out of a 3-D per-layer "
+                           "store built by extract.context_lm --per-layer")
     data.add_argument("--stories-json", default="all_stories.json")
     data.add_argument("--held-out-story", default=HELD_OUT_STORY)
     data.add_argument("--baseline-features", default=None,
@@ -115,6 +139,18 @@ def resolve_subjects(spec: str) -> List[str]:
     return [s.strip() for s in spec.split(",") if s.strip()]
 
 
+def parse_sources(tokens: Sequence[str]) -> List[tuple]:
+    """'gpt2_k16' -> ('gpt2_k16', None); 'perlayer_gpt2_k16:8' -> (store, '8')."""
+    out = []
+    for token in tokens:
+        store, sep, spec = token.partition(":")
+        if sep and not spec.strip():
+            raise SystemExit(f"source {token!r} ends in ':' with no layer "
+                             f"spec. Write 'store:8' or just 'store'.")
+        out.append((store.strip(), spec.strip() or None))
+    return out
+
+
 def run_subject(subject: str, args, sources: List[str],
                 out_root: Path) -> List[dict]:
     t0 = time.time()
@@ -140,10 +176,41 @@ def run_subject(subject: str, args, sources: List[str],
     log.info(f"[{subject}] {len(train_stories)} training stories; "
              f"held-out = {held_out or 'NONE'}")
 
-    # The TR grid comes from the first store; every other store must match it
-    # exactly, or the design and the responses are not describing the same
-    # seconds of the stimulus.
-    reference = load_features(sources[0], all_stories)
+    # Configurations: either a flat 2-D store, or a layer selection inside a
+    # 3-D per-layer one. A per-layer store is read once, for the union of the
+    # layers any configuration asks of it -- thirteen configurations off one
+    # store would otherwise re-read the same file thirteen times.
+    configs: List[tuple] = []                  # (label, store, layers | None)
+    available: Dict[str, List[int]] = {}
+    for store, spec in parse_sources(sources):
+        if spec is None:
+            configs.append((store, store, None))
+            continue
+        if store not in available:
+            available[store] = [int(x) for x in store_layers(
+                Path(FEATURES_DIR) / store, all_stories[0])]
+        layers = parse_config(spec, available[store])
+        configs.append((f"{store}_{config_label(spec, layers)}", store, layers))
+
+    needed: Dict[str, List[int]] = {}
+    layer_data: Dict[str, Dict[str, np.ndarray]] = {}
+    for store, avail in available.items():
+        needed[store] = sorted({i for _, st, ls in configs
+                                if st == store and ls for i in ls})
+        log.info(f"  per-layer store '{store}': layers {needed[store]} "
+                 f"of {avail}")
+        layer_data[store] = load_store(Path(FEATURES_DIR) / store,
+                                       all_stories, needed[store], avail)
+
+    def band_for(store: str, layers) -> Dict[str, np.ndarray]:
+        if layers is None:
+            return load_features(store, all_stories)
+        return band_from_store(layer_data[store], needed[store], layers)
+
+    # The TR grid comes from the first configuration; every other one must
+    # match it exactly, or the design and the responses are not describing the
+    # same seconds of the stimulus.
+    reference = band_for(configs[0][1], configs[0][2])
     n_trs = {s: arr.shape[0] for s, arr in reference.items()}
 
     audio_all = None
@@ -284,12 +351,12 @@ def run_subject(subject: str, args, sources: List[str],
                                load_features(args.baseline_features,
                                              all_stories)))
 
-    for source in sources:
-        # One store at a time: each is only ~40 MB over the common stories, and
-        # holding all of them would buy nothing since none is reused.
-        text = reference if source == sources[0] else load_features(
-            source, all_stories)
-        rows.append(score_band(source, text))
+    for i, (label, store, layers) in enumerate(configs):
+        # One flat store at a time: each is only ~40 MB over the common
+        # stories, and holding all of them would buy nothing since none is
+        # reused. The per-layer stores are already resident.
+        text = reference if i == 0 else band_for(store, layers)
+        rows.append(score_band(label, text))
 
     log.info(f"[{subject}] {len(rows)} configurations in "
              f"{(time.time() - t0) / 60:.1f} min")
@@ -305,7 +372,8 @@ def main(argv=None) -> None:
     sources = [s for s in args.sources.split() if s.strip()]
     if not sources:
         raise SystemExit("--sources is empty")
-    missing = [s for s in sources if not (Path(FEATURES_DIR) / s).is_dir()]
+    missing = [t for t in sources
+               if not (Path(FEATURES_DIR) / t.partition(":")[0]).is_dir()]
     if missing:
         raise SystemExit(f"No such feature store(s) under {FEATURES_DIR}: "
                          f"{missing}")

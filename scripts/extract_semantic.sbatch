@@ -14,6 +14,13 @@
 #   sbatch --array=0-2 --export=ALL,KS="32 128 64",STRIDES="0.1 0.1 0.001",\
 #          OUTNAMES="gpt2_k32 gpt2_k128 gpt2_k64_s1" scripts/extract_semantic.sbatch
 #
+# The depth sweep at the chosen k is ONE task, not thirteen: a forward pass
+# computes every hidden state, so --per-layer keeps them all from the passes
+# the k=16 extraction was already going to make. Thirteen separate tasks would
+# repeat the same 140k passes thirteen times for nothing.
+#   sbatch --array=0-0 --export=ALL,KS="16",LAYERS="0-12",PER_LAYER=1,\
+#          OUTNAMES="perlayer_gpt2_k16" scripts/extract_semantic.sbatch
+#
 # ===========================================================================
 # The semantic context-length bands: one store per k, all 84 stories.
 # ===========================================================================
@@ -69,19 +76,30 @@ export HF_HUB_OFFLINE=1
 read -r -a KS_A <<< "${KS:-0 1 4 16 64 256}"
 read -r -a ST_A <<< "${STRIDES:-}"
 read -r -a ON_A <<< "${OUTNAMES:-}"
+read -r -a LY_A <<< "${LAYERS:-}"
 
 K=${KS_A[$SLURM_ARRAY_TASK_ID]}
 STRIDE=${ST_A[$SLURM_ARRAY_TASK_ID]:-0.1}
 OUT=${ON_A[$SLURM_ARRAY_TASK_ID]:-gpt2_k${K}}
+LAYER=${LY_A[$SLURM_ARRAY_TASK_ID]:-last}
 
-echo "=== task $SLURM_ARRAY_TASK_ID : context-words $K, stride-frac $STRIDE ==="
+# `[ x ] && y` is the wrong shape under `set -e`: a false test makes the whole
+# line return 1 and kills the job before it starts.
+PER_LAYER_FLAG=""
+if [ "${PER_LAYER:-0}" = "1" ]; then
+    PER_LAYER_FLAG="--per-layer"
+fi
+
+echo "=== task $SLURM_ARRAY_TASK_ID : context-words $K, stride-frac $STRIDE, "\
+     "layers $LAYER ${PER_LAYER_FLAG:-(averaged)} ==="
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
 python -m extract.context_lm \
     --model gpt2 \
     --context-words "$K" \
     --stride-frac "$STRIDE" \
-    --layers last \
+    --layers "$LAYER" \
+    $PER_LAYER_FLAG \
     --out-name "$OUT"
 
 echo "=== task $SLURM_ARRAY_TASK_ID done in $((SECONDS / 60)) min ==="

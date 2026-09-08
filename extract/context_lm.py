@@ -39,6 +39,19 @@ Layers
 depth (`0.75`), which is how TRIBE specifies them and the only way to compare
 a 12-layer GPT-2 with a 28-layer Llama. Prefer a single layer: on the audio
 side, averaged ranges never beat the best single layer here.
+
+Indices are into `hidden_states`, so 0 is the embedding layer and transformer
+block *i* is at *i + 1*. That is not the convention `extract.wav2vec` uses,
+where the store's index *i* already means block *i*.
+
+`--per-layer` keeps each of them instead of averaging, as a 3-D
+`(n_TRs, n_layers, n_dim)` store that `run_semantic_sweep` reads back as
+`store:<layer>`. One forward pass computes every layer whether or not we keep
+it, so a layer sweep this way costs disk rather than another pass over the
+text -- the same trade `extract.wav2vec --per-layer` makes on the audio side::
+
+    python -m extract.context_lm --model gpt2 --context-words 16 \\
+        --layers 0-12 --per-layer --out-name perlayer_gpt2_k16
 """
 
 import argparse
@@ -109,8 +122,12 @@ def tokenize_words(words: List[str], tokenizer) -> List[Optional[List[int]]]:
 @torch.no_grad()
 def embed_story(words: List[str], tokenizer, model, device, layers: List[int],
                 context_words: int, budget: int, dim: int,
-                stride_frac: float = 0.1) -> np.ndarray:
+                stride_frac: float = 0.1,
+                per_layer: bool = False) -> np.ndarray:
     """One contextual vector per word, in the order given.
+
+    `(n_words, dim)`, the chosen layers averaged; or `(n_words, n_layers, dim)`
+    with `per_layer`, which keeps them apart.
 
     Words are emitted in blocks: one forward pass covers `context_words` words
     of context plus a block of new words, and only the new words are read out.
@@ -127,9 +144,10 @@ def embed_story(words: List[str], tokenizer, model, device, layers: List[int],
     """
     word_tokens = tokenize_words(words, tokenizer)
     real = [i for i, t in enumerate(word_tokens) if t is not None]
-    vectors = np.zeros((len(words), dim), dtype=np.float32)
+    n_out = len(layers) if per_layer else 1
+    vectors = np.zeros((len(words), n_out, dim), dtype=np.float32)
     if not real:
-        return vectors
+        return vectors if per_layer else vectors[:, 0]
 
     lengths = [len(word_tokens[i]) for i in real]
     bos = tokenizer.bos_token_id if tokenizer.bos_token_id is not None else None
@@ -164,20 +182,23 @@ def embed_story(words: List[str], tokenizer, model, device, layers: List[int],
 
         hidden = model(input_ids=torch.tensor([ids], device=device),
                        output_hidden_states=True).hidden_states
-        stack = torch.stack([hidden[layer][0] for layer in layers]).mean(0)
+        stack = torch.stack([hidden[layer][0] for layer in layers])
+        if not per_layer:
+            stack = stack.mean(0, keepdim=True)          # (n_out, seq, dim)
 
         for pos in range(i, j):
             start, stop = spans[pos - ctx_start]
-            stop = min(stop, stack.shape[0])
+            stop = min(stop, stack.shape[1])
             if stop <= start:
                 continue
-            vectors[real[pos]] = stack[start:stop].mean(0).float().cpu().numpy()
+            vectors[real[pos]] = (stack[:, start:stop].mean(1)
+                                  .float().cpu().numpy())
 
         n_pass += 1
         i = j
 
     log.debug(f"    {len(real)} words in {n_pass} forward passes")
-    return vectors
+    return vectors if per_layer else vectors[:, 0]
 
 
 def main(argv=None) -> None:
@@ -192,6 +213,12 @@ def main(argv=None) -> None:
     p.add_argument("--layers", default="last",
                    help="'last', '18', '18-23' (averaged), or a fraction of "
                         "depth such as 0.75")
+    p.add_argument("--per-layer", action="store_true",
+                   help="keep every layer in --layers separately, as a 3-D "
+                        "(n_TRs, n_layers, n_dim) store, instead of averaging "
+                        "them. One forward pass computes them all, so a layer "
+                        "sweep costs disk rather than another pass over the "
+                        "text; run_semantic_sweep reads it as 'store:<layer>'")
     p.add_argument("--out-name", default=None)
     p.add_argument("--stories", default=None)
     p.add_argument("--device", default=None, choices=["cuda", "cpu"])
@@ -229,6 +256,11 @@ def main(argv=None) -> None:
     if max(layers) > n_layers or min(layers) < 0:
         raise SystemExit(f"--layers {args.layers} -> {layers}, outside "
                          f"0..{n_layers} for {args.model}")
+    if args.per_layer and len(layers) < 2:
+        raise SystemExit(
+            f"--per-layer with --layers {args.layers} -> {layers}: a single "
+            f"layer has nothing to keep apart. Ask for a range, e.g. "
+            f"--layers 0-{n_layers}.")
 
     limit = getattr(cfg, "max_position_embeddings", None) or 1024
     budget = min(args.max_tokens or limit, limit, 4096)
@@ -244,8 +276,10 @@ def main(argv=None) -> None:
             f"further."
         )
 
-    out_dir = Path(FEATURES_DIR) / (
-        args.out_name or f"{Path(args.model).name}_k{args.context_words}")
+    default_name = f"{Path(args.model).name}_k{args.context_words}"
+    if args.per_layer:
+        default_name = f"perlayer_{default_name}"
+    out_dir = Path(FEATURES_DIR) / (args.out_name or default_name)
     ensure_dirs(out_dir)
 
     stories = ([s.strip() for s in args.stories.split(",") if s.strip()]
@@ -270,11 +304,26 @@ def main(argv=None) -> None:
         words = list(seq.data)
         vectors = embed_story(words, tokenizer, model, device, layers,
                               args.context_words, budget, dim,
-                              stride_frac=args.stride_frac)
-        downsampled = lanczosinterp2D(vectors, seq.data_times, seq.tr_times,
+                              stride_frac=args.stride_frac,
+                              per_layer=args.per_layer)
+        # Lanczos interpolation is over time only, so in per-layer mode the
+        # layer axis rides along as extra columns and is folded back after.
+        flat = vectors.reshape(len(words), -1)
+        downsampled = lanczosinterp2D(flat, seq.data_times, seq.tr_times,
                                       window=3).astype(np.float32)
+        if args.per_layer:
+            downsampled = downsampled.reshape(-1, len(layers), dim)
         with h5py.File(out_dir / f"{story}.hf5", "w") as f:
-            f.create_dataset("data", data=downsampled)
+            dset = f.create_dataset("data", data=downsampled)
+            if args.per_layer:
+                # Which stack index is which hidden state. Without this the
+                # middle axis is unlabelled and a layer read from it is a
+                # guess. NOTE these are hidden_states indices -- 0 is the
+                # embedding layer, block i is at i + 1 -- unlike the audio
+                # per-layer stores, where index i already means block i.
+                dset.attrs["layers"] = np.asarray(layers, dtype=np.int32)
+                dset.attrs["model"] = str(args.model)
+                dset.attrs["context_words"] = int(args.context_words)
         log.info(f"  {story}: {len(words)} words -> {downsampled.shape}")
 
     log.info("Done.")

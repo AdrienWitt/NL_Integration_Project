@@ -29,6 +29,7 @@ import argparse
 import collections
 import csv
 import glob
+import re
 import json
 import os
 import statistics as st
@@ -37,11 +38,34 @@ from config import ENCODING_OUT
 
 
 def config_sort_key(cfg: str):
-    """Order '0','1',...,'23','12-17','15-18' — layers first, ranges after."""
+    """Order '0','1',...,'23','12-17','15-18' — layers first, ranges after.
+
+    The semantic sweep labels configurations by name rather than by depth
+    ('gpt2_k16', 'perlayer_gpt2_k16_L8'), which no numeric key can order.
+    Those sort alphabetically, after everything numeric, instead of raising.
+    """
     if "-" in cfg:
-        start, stop = cfg.split("-")
-        return (1, int(start), int(stop))
-    return (0, int(cfg), 0)
+        try:
+            start, stop = cfg.split("-")
+            return (1, int(start), int(stop), "")
+        except ValueError:
+            return (2, 0, 0, cfg)
+    try:
+        return (0, int(cfg), 0, "")
+    except ValueError:
+        pass
+    # 'perlayer_gpt2_k16_L8' — a named store carrying a depth. Sorting those
+    # as text puts L10 between L1 and L2, which destroys the one thing a
+    # depth profile is read for.
+    m = re.fullmatch(r"(.*)_L(\d+)", cfg)
+    if m:
+        return (0, int(m.group(2)), 0, m.group(1))
+    return (2, 0, 0, cfg)
+
+
+def config_display(cfg: str) -> str:
+    """'8' -> 'L8'; a named configuration is already its own label."""
+    return f"L{cfg}" if cfg.lstrip("-").isdigit() else cfg
 
 
 def load(root):
@@ -61,7 +85,14 @@ def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--eval", default="cv", choices=["cv", "holdout"])
-    p.add_argument("--root", default=None)
+    p.add_argument("--root", default=None,
+                   help="default: results/encoding/prosody_sweep/<eval>. Point "
+                        "it at semantic_sweep/<eval> to read that one, with "
+                        "--baseline gpt2_mean")
+    p.add_argument("--baseline", default="opensmile",
+                   help="the configuration every other one is scored against, "
+                        "and which must appear in every cell. 'opensmile' for "
+                        "the prosody sweep, 'gpt2_mean' for the semantic one")
     p.add_argument("--json", default=None, help="also write the profile here")
     p.add_argument("--tidy", default=None,
                    help="write one long CSV with every store/subject/layer row "
@@ -78,10 +109,19 @@ def main():
     print(f"{len(data)} store-subject cells · {len(stores)} stores · "
           f"{len(subs)} subjects\n")
 
-    print("openSMILE reproducibility (same subject, independent jobs):")
+    missing = [k for k, cell in data.items() if args.baseline not in cell]
+    if missing:
+        raise SystemExit(
+            f"--baseline {args.baseline!r} is absent from {len(missing)} of "
+            f"{len(data)} cells, e.g. {missing[0]}. Every difference reported "
+            f"below is paired within a cell, so a cell without the baseline "
+            f"cannot contribute. Re-run those with --baseline-features "
+            f"{args.baseline}, or name the baseline this sweep actually used.")
+
+    print(f"{args.baseline} reproducibility (same subject, independent jobs):")
     for sub in subs:
-        vals = [data[(s, sub)]["opensmile"] for s in stores
-                if (s, sub) in data and "opensmile" in data[(s, sub)]]
+        vals = [data[(s, sub)][args.baseline] for s in stores
+                if (s, sub) in data and args.baseline in data[(s, sub)]]
         if len(vals) > 1:
             print(f"  {sub}  n={len(vals)}  r={st.mean(vals):.5f}  "
                   f"spread={max(vals) - min(vals):.1e}")
@@ -93,12 +133,12 @@ def main():
         # ("15-18"), so int() alone raises. Single layers sort numerically
         # first, ranges after them by their start, which keeps the profile
         # readable as a depth axis with the composites gathered at the end.
-        cfgs = sorted((c for c in data[(store, have[0])] if c != "opensmile"),
-                      key=config_sort_key)
-        print(f"\n{store}  (Δr vs own openSMILE, n={len(have)})")
+        cfgs = sorted((c for c in data[(store, have[0])]
+                       if c != args.baseline), key=config_sort_key)
+        print(f"\n{store}  (Δr vs own {args.baseline}, n={len(have)})")
         rows = []
         for c in cfgs:
-            diff = [data[(store, s)][c] - data[(store, s)]["opensmile"]
+            diff = [data[(store, s)][c] - data[(store, s)][args.baseline]
                     for s in have]
             m, se = st.mean(diff), st.stdev(diff) / len(diff) ** 0.5
             npos = sum(x > 0 for x in diff)
@@ -106,7 +146,8 @@ def main():
                          "se": round(se, 5), "n_positive": npos,
                          "abs_r": round(st.mean(data[(store, s)][c]
                                                 for s in have), 5)})
-            print(f"  L{c:<3} {m:+.4f} ± {se:.4f}   {npos}/{len(have)} subjects"
+            print(f"  {config_display(c):<24} {m:+.4f} ± {se:.4f}   "
+                  f"{npos}/{len(have)} subjects"
                   f"   {'#' * max(0, round(m * 2000))}")
         out[store] = rows
 
@@ -119,16 +160,16 @@ def main():
         with open(args.tidy, "w", newline="", encoding="utf-8") as fh:
             w = _csv.writer(fh)
             w.writerow(["store", "subject", "config", "mean_r",
-                        "opensmile_r", "delta_vs_opensmile"])
+                        f"{args.baseline}_r", f"delta_vs_{args.baseline}"])
             for store in stores:
                 for sub in subs:
                     cell = data.get((store, sub))
-                    if not cell or "opensmile" not in cell:
+                    if not cell or args.baseline not in cell:
                         continue
-                    base = cell["opensmile"]
+                    base = cell[args.baseline]
                     for c, v in sorted(
                             cell.items(),
-                            key=lambda kv: ((2, 0, 0) if kv[0] == "opensmile"
+                            key=lambda kv: ((3, 0, 0, "") if kv[0] == args.baseline
                                             else config_sort_key(kv[0]))):
                         w.writerow([store, sub, c, f"{v:.6f}",
                                     f"{base:.6f}", f"{v - base:.6f}"])
