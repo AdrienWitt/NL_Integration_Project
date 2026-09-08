@@ -267,28 +267,31 @@ al. 2023). So +0.031 was measured at a probable trough. It was.
 9 subjects x 13 hidden states x both evals, k=16, `common_stories_all9`,
 `--min-ev 0.1`. Mean r over the EV>0.1 voxels, averaged over subjects:
 
-    layer     cv      vs L12   n     holdout   vs L12
-    L0      0.1476   -0.0181  0/9    0.2827   -0.0320
-    L1      0.1523   -0.0134  0/9    0.2932   -0.0215
-    L2      0.1551   -0.0106  0/9    0.2959   -0.0188
-    L3      0.1587   -0.0070  1/9    0.3017   -0.0130
-    L4      0.1622   -0.0035  1/9    0.3086   -0.0061
-    L5      0.1658   +0.0002  4/9    0.3130   -0.0017
-    L6      0.1694   +0.0038  9/9    0.3175   +0.0028
-    L7      0.1727   +0.0071  9/9    0.3236   +0.0089
-    L8      0.1744   +0.0087  9/9    0.3274   +0.0127   <- peak, both evals
-    L9      0.1734   +0.0077  9/9    0.3235   +0.0088
-    L10     0.1713   +0.0057  9/9    0.3231   +0.0084
-    L11     0.1682   +0.0025  9/9    0.3202   +0.0055
-    L12     0.1657    —       0/9    0.3147    —        <- what the k sweep used
+    layer     cv      vs L12   n     holdout   vs L12   n
+    L0      0.1476   -0.0181  0/9    0.2914   -0.0357  0/9
+    L1      0.1523   -0.0134  0/9    0.3031   -0.0239  1/9
+    L2      0.1551   -0.0106  0/9    0.3049   -0.0222  1/9
+    L3      0.1587   -0.0070  1/9    0.3103   -0.0168  3/9
+    L4      0.1622   -0.0035  1/9    0.3178   -0.0093  3/9
+    L5      0.1658   +0.0002  4/9    0.3236   -0.0035  5/9
+    L6      0.1694   +0.0038  9/9    0.3281   +0.0011  5/9
+    L7      0.1727   +0.0071  9/9    0.3348   +0.0078  7/9
+    L8      0.1744   +0.0087  9/9    0.3394   +0.0123  8/9   <- peak, both evals
+    L9      0.1734   +0.0077  9/9    0.3363   +0.0092  8/9
+    L10     0.1713   +0.0057  9/9    0.3364   +0.0093  9/9
+    L11     0.1682   +0.0025  9/9    0.3328   +0.0058  8/9
+    L12     0.1657    —       0/9    0.3271    —       0/9   <- what the k sweep used
 
 **A clean inverted U peaking at L8 of 12 — two thirds of the way up.** The
 hourglass, measured. `--layers last` cost +0.0087 mean r, which is about what
 the *entire* audio-layer effect buys over openSMILE (~+0.010).
 
 **L8 is the argmax in all nine subjects independently** on cv — not a group
-mean with a soft peak, nine separate maxima at the same layer. Holdout, on 7
-subjects at the time of writing, agrees: L8 in five, L10 and L11 in one each.
+mean with a soft peak, nine separate maxima at the same layer. Holdout (all
+nine, complete) puts the peak at L8 in five subjects, L10 in two, L9 and L11
+in one each: the same shape, resolved less sharply, exactly as its ~4x larger
+standard errors predict. Read L8-L10 as a plateau there, and take the choice
+from cv as the rule says.
 
 **The peak is not near the bottom**, which settles the interpretive worry that
 motivated the sweep: at two thirds depth the band is not a lookup table, and
