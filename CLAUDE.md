@@ -256,44 +256,76 @@ so far** — +0.031 cv against the ~+0.010 the best audio layer buys over
 openSMILE. k=16 and k=256 are indistinguishable; the dip at k=64 is noise.
 Choosing on cv: **k=16**, same score for a sixteenth of the context.
 
-## Depth is swept too, at k=16 — the context grid ran at the worst layer
+## Stage-2 result: GPT-2 depth at k=16 (2026-09-08)
 
-The whole context sweep used `--layers last`, which on a *causal* LM is the
-layer least likely to win. Depth in GPT-2 is an hourglass, not a ladder: the
-top of the stack is optimised to emit next-token logits and rotates back
-toward the unembedding matrix, away from the abstract middle (logit lens,
-nostalgebraist 2020; tuned lens, Belrose et al. 2023). Mid-to-late layers are
-what the encoding literature finds best — Toneva & Wehbe 2019, Schrimpf et al.
-2021, Caucheteux & King 2022, and Antonello, Vaidya & Huth 2023 on *this*
-dataset. So "the last layer is the most semantic one" is not a reason to keep
-it, and the +0.031 above is measured at a probable trough.
+The context sweep above ran entirely at `--layers last`, which on a *causal*
+LM is the layer least likely to win: the top of the stack is optimised to emit
+next-token logits and rotates back toward the unembedding matrix, away from
+the abstract middle (logit lens, nostalgebraist 2020; tuned lens, Belrose et
+al. 2023). So +0.031 was measured at a probable trough. It was.
 
-Do not resolve this by argument, and do not resolve it by picking the
-conceptually pleasing layer either. **A weak semantic band is not the
-conservative choice here**: `delta` and `preference` are both differences
-against the text band, so variance GPT-2 fails to capture is variance the
-audio band can absorb as a proxy. Handicapping the text band biases both
-headline statistics in the direction that flatters prosody. The audio layer
-was chosen empirically on cv over a whole-stack sweep; the text layer gets the
-same treatment or `preference` is partly a statement about selection rules.
+9 subjects x 13 hidden states x both evals, k=16, `common_stories_all9`,
+`--min-ev 0.1`. Mean r over the EV>0.1 voxels, averaged over subjects:
 
-**Where the peak sits is part of the result.** A peak near the bottom of the
-stack would mean the band is closer to word identity than to meaning, and
-`preference = r_text − r_audio` would have to be described that way. Report
-the profile, not just the argmax.
+    layer     cv      vs L12   n     holdout   vs L12
+    L0      0.1476   -0.0181  0/9    0.2827   -0.0320
+    L1      0.1523   -0.0134  0/9    0.2932   -0.0215
+    L2      0.1551   -0.0106  0/9    0.2959   -0.0188
+    L3      0.1587   -0.0070  1/9    0.3017   -0.0130
+    L4      0.1622   -0.0035  1/9    0.3086   -0.0061
+    L5      0.1658   +0.0002  4/9    0.3130   -0.0017
+    L6      0.1694   +0.0038  9/9    0.3175   +0.0028
+    L7      0.1727   +0.0071  9/9    0.3236   +0.0089
+    L8      0.1744   +0.0087  9/9    0.3274   +0.0127   <- peak, both evals
+    L9      0.1734   +0.0077  9/9    0.3235   +0.0088
+    L10     0.1713   +0.0057  9/9    0.3231   +0.0084
+    L11     0.1682   +0.0025  9/9    0.3202   +0.0055
+    L12     0.1657    —       0/9    0.3147    —        <- what the k sweep used
 
-Run it:
+**A clean inverted U peaking at L8 of 12 — two thirds of the way up.** The
+hourglass, measured. `--layers last` cost +0.0087 mean r, which is about what
+the *entire* audio-layer effect buys over openSMILE (~+0.010).
 
-    # one task, not thirteen: a forward pass computes every hidden state
-    sbatch --array=0-0 --export=ALL,KS="16",LAYERS="0-12",PER_LAYER=1,\
-           OUTNAMES="perlayer_gpt2_k16" scripts/extract_semantic.sbatch
+**L8 is the argmax in all nine subjects independently** on cv — not a group
+mean with a soft peak, nine separate maxima at the same layer. Holdout, on 7
+subjects at the time of writing, agrees: L8 in five, L10 and L11 in one each.
+
+**The peak is not near the bottom**, which settles the interpretive worry that
+motivated the sweep: at two thirds depth the band is not a lookup table, and
+calling it semantic in `preference = r_text − r_audio` is defensible. Report
+the profile alongside the argmax anyway — the shape is the evidence.
+
+**Carry `perlayer_gpt2_k16:8` forward as the semantic band.** Against the
+original `gpt2_mean` it is +0.0397 cv (context +0.0310, depth another +0.0087),
+9/9 subjects.
+
+Consistency check, built into the run: `gpt2_k16` (the flat store the context
+sweep used) and `perlayer_gpt2_k16:12` are the same layer from the same
+forward passes, and their encoding scores agree to **0.00e+00 in every
+subject**. The per-layer path is verified end to end, not just at the feature
+level.
+
+Read it with:
+
+    python scripts/summarise_sweep.py --root results/encoding/semantic_sweep/cv \
+        --baseline gpt2_mean
+
+## Still open on the semantic band: k at L8
+
+Depth and context can interact, and the k sweep was run at L12, the one layer
+least likely to reveal it. Re-check k=4/16/256 at L8 before freezing the band.
+This needs new per-layer extractions at those k (only k=16 has one), so it is
+~20 min of GPU per k plus a sweep:
+
+    sbatch --array=0-1 --export=ALL,KS="4 256",LAYERS="0-12 0-12",PER_LAYER=1,\
+           OUTNAMES="perlayer_gpt2_k4 perlayer_gpt2_k256" \
+           scripts/extract_semantic.sbatch
     sbatch --time=08:00:00 --dependency=afterok:<jobid> \
-           --export=ALL,LAYER_STORE=perlayer_gpt2_k16,TAGSUF=_layers \
-           scripts/semantic_sweep.sbatch
+           --export=ALL,SOURCES="perlayer_gpt2_k4:8 perlayer_gpt2_k16:8 perlayer_gpt2_k256:8",\
+           TAGSUF=_kAtL8 scripts/semantic_sweep.sbatch
 
-Then re-check k at the winning layer (k=4/16/256) before freezing the band —
-depth and context can interact, and the k sweep was run at the one layer least
-likely to show it.
+`gpt2_mean` is deliberately absent from SOURCES: the sbatch always passes it
+as `--baseline-features`, and naming it in both scores the same band twice.
 
 ## Story lists: use the derived intersection, not the shipped file
 
