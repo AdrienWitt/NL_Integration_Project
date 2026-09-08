@@ -411,16 +411,33 @@ n=9 is arithmetically impossible, not merely expensive. Consequences:
   which is what the sweeps already support (9/9 for L8, 9/9 for context; a
   sign test on 9/9 is exactly p = 0.00195).
 
-### Consequence for the "settled" delta definition
+### Delta is NOT retired — the conjunction is how it gets tested
 
-`delta = r_joint − max(r_text, r_audio)` should probably be **retired in favour
-of the two conditional contributions plus their conjunction**. Two reasons:
-`max` of two noisy estimates is biased upward, so delta is biased downward by
-an amount that varies with each voxel's noise; and there is no permutation
-scheme that gives `max` a clean null, whereas each conditional contribution
-has one by construction. Keep delta as a descriptive map if useful, but do not
-make it the tested statistic. Not yet acted on — this reverses a decision in
-the header of this file, so decide it deliberately.
+`delta = r_joint − max(r_text, r_audio)` stays the quantity of interest. What
+cannot be done is permuting *every* block and recomputing the same formula:
+that null is "no encoding anywhere", under which all three correlations go to
+~0, while the observed delta is a difference of two *large* correlations
+carrying the nesting bias. Comparing them tests "is there any signal", so a
+purely unimodal voxel passes. The H0 that is wanted — "the joint model
+explains no more than the best single modality" — is not the H0 that shuffling
+everything produces.
+
+The Draper–Stoneman conditional nulls are how to model the right H0, and an
+exact identity makes the connection rigorous rather than approximate:
+
+    r_joint − max(r_text, r_audio) ≡ min(r_joint − r_text, r_joint − r_audio)
+    delta                          ≡ min(Δr_audio|text, Δr_text|audio)
+
+(verified numerically, exact to 0.0). So `delta > 0` **iff both conditional
+contributions are > 0**, and the conjunction of the two one-sided DS tests is
+an *intersection–union test* of `H0: delta ≤ 0` — valid at level α with **no
+multiplicity correction between the two tests** (Berger 1982). Conservative,
+which is the right direction here.
+
+Practically: report `delta` as the effect-size map, and take its per-voxel
+p-value as `max(p_audio|text, p_text|audio)`, then FDR across voxels on that.
+Each component p comes from its own DS null, each of which models the correct
+H0 by construction. Nothing about the header's definition changes.
 
 ## Story lists: use the derived intersection, not the shipped file
 
