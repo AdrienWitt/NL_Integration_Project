@@ -72,23 +72,33 @@ def set_himalaya_backend(name: str = "torch_cuda"):
     return set_backend(name, on_error="warn")
 
 
-def _build_pipeline(bands: Dict[str, slice], splits, alphas: np.ndarray,
-                    solver: str, solver_params: dict):
-    from himalaya.kernel_ridge import (ColumnKernelizer, Kernelizer,
-                                       MultipleKernelRidgeCV)
+def _band_kernelizer(bands: Dict[str, slice]):
+    """One linear kernel per band, centred but not rescaled.
+
+    The features were already z-scored per column in `preprocess.build_design`,
+    so rescaling here would undo the relative weighting the delays introduce.
+    Shared by every fitting path so that a permutation refit and the observed
+    fit cannot drift apart in their preprocessing.
+    """
+    from himalaya.kernel_ridge import ColumnKernelizer, Kernelizer
     from sklearn.pipeline import make_pipeline
     from sklearn.preprocessing import StandardScaler
 
-    # Centre each band but leave the scale alone: the features were already
-    # z-scored per column in preprocess.build_design, and rescaling here would
-    # undo the relative weighting the delays introduce.
     per_band = make_pipeline(
         StandardScaler(with_mean=True, with_std=False),
         Kernelizer(kernel="linear"),
     )
-    kernelizer = ColumnKernelizer(
+    return ColumnKernelizer(
         [(name, per_band, columns) for name, columns in bands.items()]
     )
+
+
+def _build_pipeline(bands: Dict[str, slice], splits, alphas: np.ndarray,
+                    solver: str, solver_params: dict):
+    from himalaya.kernel_ridge import MultipleKernelRidgeCV
+    from sklearn.pipeline import make_pipeline
+
+    kernelizer = _band_kernelizer(bands)
 
     params = dict(solver_params)
     params["alphas"] = alphas
@@ -188,6 +198,59 @@ def fit_banded(
         predictions=(backend.to_numpy(Y_pred).astype(np.float32)
                      if return_predictions else None),
     )
+
+
+def fit_banded_fixed(
+    X_train: np.ndarray,
+    Y_train: np.ndarray,
+    X_test: np.ndarray,
+    Y_test: np.ndarray,
+    bands: Dict[str, slice],
+    deltas: np.ndarray,
+    solver: str = "conjugate_gradient",
+    solver_params: Optional[dict] = None,
+) -> np.ndarray:
+    """Refit with the band weights held fixed; return test correlations.
+
+    This is the permutation workhorse. `deltas` is the `(n_bands, n_targets)`
+    log kernel-weight array a `MultipleKernelRidgeCV` already chose on the
+    *observed* data, and himalaya's own guidance for reusing them is
+    `WeightedKernelRidge(alpha=1, deltas=model.deltas_)` — alpha is redundant
+    once the deltas carry the scale, since the effective weights are
+    `exp(deltas) / alpha`.
+
+    Holding them fixed is not an optimisation, it is what makes the null
+    correct. Re-running the hyperparameter search on every shuffle would let
+    the model discover that the shuffled band is now useless and shrink it
+    away, and the null would then describe a *well-tuned* model on noise
+    rather than the same model the observed statistic came from. Fixing them
+    keeps the regularisation regime — and therefore the capacity to overfit
+    the shuffled band — identical on both sides of the comparison.
+
+    It is also the only affordable option: the alpha search is the expensive
+    part of a fit, and a thousand permutations of it per subject per direction
+    is not a computation anyone runs.
+    """
+    from himalaya.backend import get_backend
+    from himalaya.kernel_ridge import WeightedKernelRidge
+    from himalaya.scoring import correlation_score
+    from sklearn.pipeline import make_pipeline
+
+    backend = get_backend()
+    kernelizer = _band_kernelizer(bands)
+    model = WeightedKernelRidge(
+        alpha=1, deltas=deltas, kernels="precomputed",
+        solver=solver, solver_params=dict(solver_params or {}),
+    )
+    pipeline = make_pipeline(kernelizer, model)
+
+    pipeline.fit(np.asarray(X_train, dtype=np.float32),
+                 np.asarray(Y_train, dtype=np.float32))
+    Y_pred = pipeline.predict(np.asarray(X_test, dtype=np.float32))
+    corrs = backend.to_numpy(
+        correlation_score(np.asarray(Y_test, dtype=np.float32), Y_pred)
+    )
+    return np.asarray(corrs, dtype=np.float64)
 
 
 def fit_banded_cv(
