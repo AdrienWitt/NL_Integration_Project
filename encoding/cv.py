@@ -98,24 +98,54 @@ def explainable_variance(repeats: np.ndarray, bias_correction: bool = True,
     return ev
 
 
-def noise_ceiling(ev: np.ndarray) -> np.ndarray:
+def noise_ceiling(ev: np.ndarray, n_repeats: Optional[int] = None) -> np.ndarray:
     """Highest correlation an ideal model could reach, given EV.
 
-    `sqrt(EV)` is the ceiling on *r* (EV is a variance, r is not). Negative EV,
-    which bias correction can produce for pure-noise voxels, is clipped to 0.
+    `ev` (bias-corrected) estimates the *single-presentation* reliability rho.
+    `sqrt(rho)` is therefore the ceiling for predicting ONE presentation --
+    but the encoding models are scored against the **mean of `n_repeats`
+    presentations**, which is a cleaner target. Spearman-Brown gives that
+    target's reliability,
+
+        rho_mean = n * rho / (1 + (n - 1) * rho)
+
+    and the ceiling is its square root. Pass `n_repeats` to get it.
+
+    Why this matters here rather than being a detail: UTS01-03 have 10 repeats
+    of the held-out story and UTS04-09 have 5, so at the observed mean
+    rho = 0.158 the attainable ceilings are 0.808 and 0.696 -- a 16% advantage
+    to the first three, for a reason that is purely measurement. Returning
+    `sqrt(rho)` = 0.398 for both understates the ceiling roughly twofold AND
+    leaves that gap uncorrected, which is the opposite of what a normalisation
+    is for. `n_repeats=None` keeps the old single-presentation meaning, and is
+    only right if you are predicting a single presentation.
+
+    Negative EV, which bias correction can produce for pure-noise voxels, is
+    clipped to 0.
     """
-    return np.sqrt(np.clip(ev, 0.0, None))
+    rho = np.clip(ev, 0.0, None)
+    if n_repeats is not None:
+        if n_repeats < 1:
+            raise ValueError(f"n_repeats must be >= 1, got {n_repeats}")
+        rho = n_repeats * rho / (1.0 + (n_repeats - 1) * rho)
+    return np.sqrt(rho)
 
 
 def normalize_by_ceiling(corrs: np.ndarray, ev: np.ndarray,
-                         min_ev: float = 0.01) -> np.ndarray:
+                         min_ev: float = 0.01,
+                         n_repeats: Optional[int] = None) -> np.ndarray:
     """Express `corrs` as a fraction of the noise ceiling.
+
+    Pass `n_repeats` -- the number of presentations averaged into the target
+    the correlations were scored against. Without it the ceiling is the
+    single-presentation one, which is too small and, worse, identical for
+    subjects with different repeat counts; see `noise_ceiling`.
 
     Voxels whose ceiling is below `min_ev` are returned as NaN rather than
     divided by ~0, which would manufacture enormous normalised scores in
     exactly the voxels that carry no signal.
     """
-    ceiling = noise_ceiling(ev)
+    ceiling = noise_ceiling(ev, n_repeats=n_repeats)
     out = np.full_like(np.asarray(corrs, dtype=np.float64), np.nan)
     usable = ceiling > np.sqrt(min_ev)
     out[usable] = corrs[usable] / ceiling[usable]

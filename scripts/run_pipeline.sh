@@ -36,15 +36,15 @@ python -m prep.make_finetune_targets \
 # ---------------------------------------------------------------------------
 echo "== 4a. Fine-tune wav2vec2-large-robust (arm A) =="
 python -m finetune.run_finetune --model wav2vec2-robust \
-    --use-brain-pca --brain-weight 0.5 --num-epochs 15 --batch-size 8
+    --num-epochs 15 --batch-size 8
 
 echo "== 4b. Fine-tune the emotion model (arm B) =="
 python -m finetune.run_finetune --model emotion \
-    --use-brain-pca --brain-weight 0.5 --num-epochs 15 --batch-size 8
+    --num-epochs 15 --batch-size 8
 
 echo "== 4c. Depth-matched control (arm C, optional) =="
 python -m finetune.run_finetune --model wav2vec2-robust --truncate-layers 12 \
-    --use-brain-pca --brain-weight 0.5 \
+    \
     --num-epochs 15 --batch-size 8
 
 echo "== 5. Features from each fine-tuned encoder =="

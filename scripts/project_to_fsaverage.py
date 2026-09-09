@@ -13,12 +13,22 @@ subject-space maps averages unrelated tissue. fsaverage is the frame in which
 averaging is defined, so the projection has to come first. (Note that
 `stats/analysis.py` writes `group/mean_*.npy` the other way round.)
 
-Vertices are not covered equally either: a subject's slab does not reach all
-of cortex, and `--min-ev` leaves whole regions unfitted. Each subject's
-coverage is therefore recorded and uncovered vertices are excluded from the
-mean rather than pulled toward zero, with `n_subjects_*.npy` written
-alongside every group map so a vertex backed by 2 subjects is not read like
-one backed by 9.
+Vertices are not covered equally either, and for two independent reasons. A
+subject's slab does not reach all of cortex -- recorded as `coverage_fsaverage`
+and applied to every map. And `--min-ev` leaves ~98% of voxels unfitted, with
+`run_encoding` saving them as literal zeros (the sweeps save NaN); projecting
+that padding as if it were data diluted the real values 45.7x on UTS01. Maps
+that exist only inside `voxel_mask.npy` are therefore projected through
+`project_masked`, which normalises by the mask's own interpolation weight and
+returns NaN where no fitted voxel reaches -- so the group mean averages the
+values that exist rather than the padding around them. `n_subjects_*.npy` is
+written alongside every group map so a vertex backed by 2 subjects is not read
+like one backed by 9.
+
+Whether a map is mask-scattered is decided by looking at it, not by its name:
+if every value outside `voxel_mask` is 0 or NaN, it was scattered. `ev.npy` is
+defined everywhere and so is projected plainly, which is what its own values
+show.
 
 Usage
 -----
@@ -50,6 +60,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -229,10 +240,18 @@ class Projector:
             )
         return self._masks[n_voxels][1]
 
+    def _project_raw(self, data: np.ndarray) -> np.ndarray:
+        """The volume-to-fsaverage mapping itself. NaN-free input assumed."""
+        mask = self.mask_for(data.shape[-1])
+        vol = self.cortex.Volume(np.asarray(data, dtype=np.float32),
+                                 self.subject, self.xfmname, mask=mask)
+        vtx = np.asarray(self.mapper(vol).data).ravel()
+        return np.concatenate([self.mapping["lh"] @ vtx[:self.num_lh],
+                               self.mapping["rh"] @ vtx[self.num_lh:]]
+                              ).astype(np.float32)
+
     def project(self, data: np.ndarray) -> np.ndarray:
         """(n_voxels,) -> (n_fsaverage_vertices,)."""
-        mask = self.mask_for(data.shape[-1])
-
         # NaNs would bleed through the sparse matmul into every vertex the
         # voxel touches; zero them and say how many, rather than returning a
         # map with mysteriously blank patches.
@@ -241,13 +260,33 @@ class Projector:
             log.warning(f"[{self.subject}] {n_nan:,} NaN set to 0 before "
                         f"projection")
             data = np.nan_to_num(data, nan=0.0)
+        return self._project_raw(data)
 
-        vol = self.cortex.Volume(np.asarray(data, dtype=np.float32),
-                                 self.subject, self.xfmname, mask=mask)
-        vtx = np.asarray(self.mapper(vol).data).ravel()
-        return np.concatenate([self.mapping["lh"] @ vtx[:self.num_lh],
-                               self.mapping["rh"] @ vtx[self.num_lh:]]
-                              ).astype(np.float32)
+    def project_masked(self, data: np.ndarray,
+                       voxel_mask: np.ndarray) -> np.ndarray:
+        """Project a map that only exists inside `voxel_mask`.
+
+        The interpolation is a weighted sum over nearby voxels. When a map is
+        defined on 2% of the voxels and padded with zeros everywhere else --
+        which is what `run_encoding` saves, and what the sweeps save as NaN --
+        a plain projection returns
+        ``sum_i w_i d_i`` with `d_i = 0` outside the mask, i.e. the real values
+        diluted by however much of the vertex's weight came from unfitted
+        voxels. Measured on UTS01 that dilution is 45.7x.
+
+        Dividing by ``sum_{i in mask} w_i`` turns that back into the weighted
+        mean over the *fitted* voxels alone, which is the quantity the map is
+        supposed to carry. Vertices that no fitted voxel reaches get NaN, so
+        `write_group_mean` excludes them instead of averaging in a zero.
+        """
+        weights = self._project_raw(voxel_mask.astype(np.float32))
+        filled = np.nan_to_num(np.asarray(data, dtype=np.float64), nan=0.0)
+        filled[~voxel_mask] = 0.0
+        numerator = self._project_raw(filled.astype(np.float32))
+        out = np.full(weights.shape, np.nan, dtype=np.float32)
+        reached = weights > 0
+        out[reached] = numerator[reached] / weights[reached]
+        return out
 
     def coverage(self, n_voxels: int) -> np.ndarray:
         """Vertices this subject's data can actually reach.
@@ -308,6 +347,23 @@ def fs_name(path: Path) -> Path:
     return path.with_name(path.stem + "_fsaverage.npy")
 
 
+def is_mask_scattered(arr: np.ndarray, voxel_mask: Optional[np.ndarray]) -> bool:
+    """Was this map computed on the EV mask and padded outside it?
+
+    Decided by looking at the values rather than at the filename, because the
+    two writers disagree about the padding: `run_encoding` scatters with 0.0
+    and both sweeps with NaN, and a name-based rule would have to track that.
+    A map is mask-scattered when *every* value outside the mask is 0 or NaN --
+    which `ev.npy`, defined everywhere, fails, so it is projected plainly.
+    """
+    if voxel_mask is None or arr.shape != voxel_mask.shape:
+        return False
+    outside = arr[~voxel_mask]
+    if outside.size == 0:
+        return False
+    return bool(np.all((outside == 0) | np.isnan(outside)))
+
+
 # ---------------------------------------------------------------------------
 def project_run(per_subject, args) -> dict:
     """Project one run's maps. -> {subject: {"maps": {key: path}, ...}}."""
@@ -332,11 +388,23 @@ def project_run(per_subject, args) -> dict:
                     log.error(f"    {problem}")
                 continue
             projector = Projector(subject, verbose=args.verbose)
+            voxel_mask = None
+            mask_path = subject_dir / "voxel_mask.npy"
+            if mask_path.exists():
+                voxel_mask = np.load(mask_path).ravel().astype(bool)
+                log.info(f"[{subject}] EV mask: {voxel_mask.sum():,}/"
+                         f"{voxel_mask.size:,} voxels fitted")
             for path in todo:
                 arr = np.load(path).ravel()
-                fs = projector.project(arr)
+                if is_mask_scattered(arr, voxel_mask):
+                    fs = projector.project_masked(arr, voxel_mask)
+                    how = "masked"
+                else:
+                    fs = projector.project(arr)
+                    how = "plain"
                 np.save(fs_name(path), fs)
-                log.info(f"[{subject}] {path.name} {arr.shape} -> {fs.shape}")
+                log.info(f"[{subject}] {path.name} {arr.shape} -> {fs.shape} "
+                         f"({how})")
             if args.overwrite or not cov_path.exists():
                 n_vox = np.load(paths[0]).ravel().shape[0]
                 np.save(cov_path, projector.coverage(n_vox))

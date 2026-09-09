@@ -297,7 +297,8 @@ def run_subject(subject: str, args, sources: List[str],
                 test_spaces["audio"] = {held_out: audio_all[held_out]}
             design_test = build_design([held_out], test_spaces, trim=args.trim,
                                        ndelays=args.ndelays,
-                                       fitted_pca=design.fitted_pca)
+                                       fitted_pca=design.fitted_pca,
+                                       fitted_scalers=design.fitted_scalers)
             result = fit_banded(
                 X_train=design.X, Y_train=Y_train_fit,
                 X_test=design_test.X, Y_test=Y_test_fit,

@@ -155,12 +155,14 @@ def run_subject(subject: str, args, out_root: Path) -> None:
         [held_out], {b: {held_out: f[held_out]} for b, f in features.items()},
         trim=args.trim, ndelays=args.ndelays, use_pca=args.use_pca,
         n_comps=args.n_comps, fitted_pca=design.fitted_pca,
+        fitted_scalers=design.fitted_scalers,
     )
 
     Y_train = prepare_responses(
         load_aligned_response(subject, train_stories, feature_lengths, args.trim)
     )
     repeats = load_response_repeats(held_out, subject)
+    n_repeats = len(repeats)
     trimmed = np.stack([trim_response(r, feature_lengths[held_out], args.trim)
                         for r in repeats])
     ev = explainable_variance(trimmed)
@@ -314,7 +316,7 @@ def run_subject(subject: str, args, out_root: Path) -> None:
     payload["report"] = {
         "subject": subject, "n_perms": args.n_perms, "blocklen": args.blocklen,
         "min_ev": args.min_ev, "fdr_alpha": args.alpha,
-        "shuffle_block": args.shuffle_block,
+        "shuffle_block": args.shuffle_block, "n_repeats": n_repeats,
         "held_out_story": held_out, "n_train_stories": len(train_stories),
         "results": report,
     }

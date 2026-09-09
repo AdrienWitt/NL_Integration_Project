@@ -35,6 +35,10 @@ class Design:
     story_ids: np.ndarray               #: (n_TRs,) integer story index per TR
     stories: List[str]                  #: story name for each index
     fitted_pca: Dict[str, PCA] = field(default_factory=dict)
+    #: band -> (mean, std) of the training columns, to standardise a test
+    #: design in the units its weights were learned in.
+    fitted_scalers: Dict[str, Tuple[np.ndarray, np.ndarray]] = field(
+        default_factory=dict)
 
     @property
     def run_onsets(self) -> np.ndarray:
@@ -51,6 +55,29 @@ class Design:
         )
         return (f"Design(X={self.X.shape}, stories={len(self.stories)}, "
                 f"bands[{bands}])")
+
+
+def _standardise(stacked: np.ndarray,
+                 fitted: Optional[Tuple[np.ndarray, np.ndarray]] = None):
+    """Z-score columns, reusing training statistics when they are given.
+
+    Reproduces `common.ridge_utils.npp.zscore` exactly when `fitted is None`,
+    including its treatment of constant columns: they are mean-centred and left
+    unscaled rather than divided by zero.
+    """
+    if fitted is None:
+        mean, std = stacked.mean(0), stacked.std(0)
+    else:
+        mean, std = fitted
+        if mean.shape[0] != stacked.shape[1]:
+            raise ValueError(
+                f"fitted scaler has {mean.shape[0]} columns but the design "
+                f"band has {stacked.shape[1]} — these are not the same band."
+            )
+    out = stacked - mean
+    nonzero = std != 0
+    out[:, nonzero] /= std[nonzero]
+    return out, (mean, std)
 
 
 def trim_story(arr: np.ndarray, trim: int) -> np.ndarray:
@@ -93,6 +120,7 @@ def build_design(
     use_pca: bool = False,
     n_comps: float = 0.90,
     fitted_pca: Optional[Dict[str, PCA]] = None,
+    fitted_scalers: Optional[Dict[str, Tuple[np.ndarray, np.ndarray]]] = None,
 ) -> Design:
     """Assemble a delayed, banded design matrix.
 
@@ -112,6 +140,17 @@ def build_design(
     fitted_pca : dict, optional
         Pre-fitted PCA per band, from a training `Design`. Pass this when
         building the *test* design so the test set never refits the projection.
+    fitted_scalers : dict, optional
+        Per-band `(mean, std)` from a training `Design`, for the same reason.
+        **Pass this whenever you pass `fitted_pca`.** Without it the test design
+        is standardised by the test story's own per-column SDs while the ridge
+        weights were learned in pooled-training units, so every column *j* is
+        silently re-weighted by `sd_train_j / sd_test_j`. Column means cancel in
+        Pearson r; the SD ratio does not. Measured over the 24 common stories
+        against `wheretheressmoke`, that ratio is harmless for the neural bands
+        (median 1.03-1.05, max 1.6) and severe for openSMILE (median 1.28, p95
+        9.5, max 1059, 15.9% of columns off by more than 2x) — which is exactly
+        the band most likely to be a reference line in a comparison.
 
     Returns
     -------
@@ -128,6 +167,7 @@ def build_design(
 
     delays = range(1, ndelays + 1)
     fitted_pca = dict(fitted_pca or {})
+    fitted_scalers = dict(fitted_scalers or {})
 
     delayed_bands: Dict[str, np.ndarray] = {}
     story_ids: Optional[np.ndarray] = None
@@ -143,8 +183,11 @@ def build_design(
                 f"previous bands — features are not on the same TR grid."
             )
 
-        # Global z-scoring, across stories, before any projection.
-        stacked = zscore(stacked)
+        # Global z-scoring, across stories, before any projection — in the
+        # training statistics when they were handed down, so a test design
+        # lands in the units the weights were learned in.
+        stacked, scaler = _standardise(stacked, fitted_scalers.get(band))
+        fitted_scalers[band] = scaler
 
         if use_pca:
             if band in fitted_pca:
@@ -176,7 +219,8 @@ def build_design(
     X = np.hstack([delayed_bands[b] for b in delayed_bands]).astype(np.float32)
 
     return Design(X=X, bands=bands, story_ids=story_ids,
-                  stories=stories, fitted_pca=fitted_pca)
+                  stories=stories, fitted_pca=fitted_pca,
+                  fitted_scalers=fitted_scalers)
 
 
 def trim_response(resp: np.ndarray, n_feature_trs: int, trim: int) -> np.ndarray:

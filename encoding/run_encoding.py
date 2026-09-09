@@ -292,6 +292,7 @@ def run_subject(subject: str, args, out_root: Path) -> None:
 
     design_test, Y_test, ev = None, None, None
     voxel_mask = None
+    n_repeats = None
 
     if args.eval == "holdout":
         test_features = {
@@ -301,8 +302,13 @@ def run_subject(subject: str, args, out_root: Path) -> None:
             [held_out], test_features, trim=args.trim, ndelays=args.ndelays,
             use_pca=args.use_pca, n_comps=args.n_comps,
             fitted_pca=design.fitted_pca,       # never refit on the test story
+            fitted_scalers=design.fitted_scalers,  # ...nor re-standardise on it
         )
         repeats = load_response_repeats(held_out, subject)
+        # Recorded in meta: the target is the MEAN of these, so the noise
+        # ceiling depends on how many there were -- 10 for UTS01-03, 5 for the
+        # rest. Without it downstream cannot compute a correct ceiling.
+        n_repeats = len(repeats)
         trimmed = np.stack([
             trim_response(rep, feature_lengths[held_out], args.trim)
             for rep in repeats
@@ -310,11 +316,23 @@ def run_subject(subject: str, args, out_root: Path) -> None:
         ev = explainable_variance(trimmed)
         Y_test = prepare_responses(trimmed.mean(axis=0))
         log.info(f"  test {design_test} | Y_test {Y_test.shape} | "
-                 f"EV>0.1 in {(ev > 0.1).sum():,}/{ev.size:,} voxels")
+                 f"EV>{args.min_ev} in {(ev > args.min_ev).sum():,}/"
+                 f"{ev.size:,} voxels")
 
         if args.min_ev > 0:
             voxel_mask = ev > args.min_ev
             log.info(f"  fitting {voxel_mask.sum():,} voxels with EV > {args.min_ev}")
+
+    if args.eval != "holdout" and args.min_ev > 0:
+        # EV needs the repeated story, which only the holdout path loads, so
+        # under --eval cv this flag does nothing at all -- while both sweeps
+        # DO apply it on cv. Their cv numbers are therefore over ~1,776 voxels
+        # and these are over all ~81,126: not comparable, and nothing said so.
+        log.warning(
+            f"--min-ev {args.min_ev} has no effect under --eval {args.eval}: "
+            f"explainable variance needs the repeated story, which only the "
+            f"holdout path loads. These cv scores are whole-brain, unlike the "
+            f"sweeps' cv scores, which are masked. Do not compare them.")
 
     splits = story_folds(design.story_ids, args.n_splits)
     log.info(f"  {len(splits)} CV folds (shared by every model)")
@@ -325,6 +343,20 @@ def run_subject(subject: str, args, out_root: Path) -> None:
                                             Y_test is not None) else Y_test)
 
     backends = ["banded", "huth"] if args.backend == "both" else [args.backend]
+
+    if args.eval == "cv" and "huth" in backends:
+        # ridge_cv picks per-voxel alphas by LOO over ALL training stories and
+        # then reuses them inside the CV it reports, so its cross-validated r
+        # is optimistically biased; fit_banded_cv re-runs its inner search
+        # inside each outer fold and is not. CLAUDE.md calls huth a
+        # "conservative lower bound", which is true on holdout and backwards
+        # here.
+        log.warning(
+            "--backend huth with --eval cv: the huth solver selects alphas "
+            "over all training stories and reuses them inside the reported "
+            "CV, so its cv scores are optimistically biased while the banded "
+            "ones are not. A huth-vs-banded comparison on cv is not a "
+            "conservative check. Use --eval holdout for that contrast.")
 
     for backend in backends:
         if backend == "banded":
@@ -370,6 +402,7 @@ def run_subject(subject: str, args, out_root: Path) -> None:
         "audio_features": args.audio_features,
         "train_stories": train_stories,
         "held_out_story": held_out,
+        "n_repeats": n_repeats,
         "n_train_TRs": int(design.X.shape[0]),
         "n_voxels": int(n_voxels),
         "bands": {k: [v.start, v.stop] for k, v in design.bands.items()},
