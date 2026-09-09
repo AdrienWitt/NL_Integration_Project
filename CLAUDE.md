@@ -477,6 +477,113 @@ neither selection touched it — one more reason to report `preference` on
 holdout only, and to say in the methods how many configurations each band was
 selected over.
 
+## Code review, 2026-09-09 — what is actually wrong
+
+A multi-lens audit of the pipeline. Everything below was verified against the
+code and, where a number is quoted, measured on the real data. Ordered by how
+much it changes a reported result.
+
+### Confirmed, and it touches published numbers
+
+**`preprocess.py:147` z-scores the held-out design with the TEST story's own
+statistics.** There is a `fitted_pca` escape hatch, no `fitted_scalers` one, so
+ridge weights learned in pooled-train units are applied to per-story-
+standardised columns and column *j* is silently re-weighted by
+`sd_train_j / sd_test_j`. Measured over the 24 common stories vs
+`wheretheressmoke`:
+
+    band                        median   p95      max     >2x
+    opensmile                     1.28   9.54   1058.7   15.9%
+    perlayer_base_emotion L10     1.05   1.19      1.6    0.0%
+    perlayer_gpt2_k16 L8          1.04   1.13      1.3    0.0%
+    gpt2_mean                     1.03   1.10      1.2    0.0%
+
+So the bands the final joint model uses are barely touched, and **`--eval cv`
+is unaffected entirely** (one scaler over the whole training design) — every
+layer and context selection stands. The damage is confined to **openSMILE on
+holdout**, whose score is degraded by an artifact the neural bands do not feel.
+Consequence: the holdout Δ-vs-openSMILE columns overstate the neural bands, and
+a future `preference` on holdout with an openSMILE audio band would be biased
+toward text. Note this is the opposite of the rule CLAUDE.md already states for
+the fine-tuning stack ("validation scalers come from training"). Fix: give
+`build_design` a `fitted_scalers` argument mirroring `fitted_pca`.
+
+### Confirmed, and it will break the next thing that runs
+
+**`scripts/project_to_fsaverage.py:260` averages masked-out voxels as real
+zeros.** `run_encoding.py:355` scatters unfitted voxels back as `np.zeros`, and
+`coverage()` is `project(ones) > 0` — purely *anatomical*, with no knowledge of
+the EV mask (`voxel_mask.npy` is in `SKIP_SUFFIXES` and never projected). So
+`np.nanmean` averages 79,350 structural zeros in. Measured on UTS01: mean r over
+fitted voxels **+0.0335**, over the full array **+0.0007** — a **45.7x
+dilution**, uneven across the map because subjects disagree about which voxels
+pass EV. The module docstring (lines 17-21) promises exactly the opposite. Only
+3 fsaverage files exist so far, so nothing reported depends on it yet.
+Compounding it: the two fill conventions in the repo disagree — `run_encoding`
+fills `0.0`, both sweeps fill `np.nan` — and `project()` converts NaN to 0.0
+anyway, so honest missing-data marking is destroyed on the way to the surface.
+
+**`stats/analysis.py` double-dips on `preference`.** `compute_contrasts:99`
+thresholds on `max(r_text, r_audio, r_joint) > min_r` and then reports
+`preference = r_text - r_audio` over exactly those voxels. Conditioning on the
+max inflates |preference| within the selected set and tilts the counts toward
+whichever band has the larger sampling variance. `min_r=0.05` is below the
+per-voxel SE on a 291-TR story, so the gate is mostly noise. An independent
+mask is already on disk and unused: `voxel_mask`, which uses no model output.
+Also `winner_map:138` overwrites the semantic/prosodic labels with
+"integrative" wherever `delta > 0` unthresholded — the exact call the
+permutation machinery exists to replace — while `delta_significant` sits unread.
+And `group_summary:212` stacks subject maps of different voxel counts (81,126 to
+109,469), so it either raises or silently writes a one-subject "group" mean.
+
+### The EV mask: what it does and does not break
+
+**It does NOT invalidate the permutation.** The permutation is conditional on Y
+and EV is a function of Y alone — it never sees the features or the model — so
+conditioning on it leaves exchangeability intact and the test exactly valid.
+Selecting on measurement reliability buys power; it does not move the null.
+
+**It is unstable at 5 repeats**, which is a different problem from the
+"estimated twice as precisely" note elsewhere in this file. UTS01 as its own
+control, same subject, same story, only the repeat count changed:
+
+    all 10 repeats   1,776 voxels   mean ev 0.158
+    repeats 1-5      6,555 (3.7x)   mean ev 0.156
+    repeats 6-10     1,024 (0.58x)  mean ev 0.169
+
+Mean EV is unchanged, so the bias correction works; the *variance* swings mask
+size by 6x between two halves of the same data. UTS04-09's masks are therefore
+unreliable rather than uniformly bigger or smaller, and "mean r over EV>0.1
+voxels" is not the same quantity across subjects.
+
+**`noise_ceiling()` returns the wrong ceiling.** `sqrt(EV)` is the *single-
+repeat* ceiling, but r is scored against the *mean* of repeats. At the observed
+mean rho=0.158 the attainable ceiling is **0.696 at n=5 and 0.808 at n=10**,
+while `cv.py:107` returns **0.398 for both** — about half the true value, and
+identical across subjects, so it corrects none of the imbalance
+`stats/analysis.py:24` advertises it for. Live at `analysis.py:91-93`.
+
+### Lower priority, but real
+
+- `run_permutation` FDR-corrects over the EV ROI and then saves full-brain maps
+  padded with p=1, which invites a wrong second correction downstream.
+- `common/ridge_utils/ridge.py:61`: the huth backend reuses LOO-selected alphas
+  inside its reported CV, so `--backend huth --eval cv` is optimistically
+  biased while banded is not. Latent — every published number is banded, and
+  the documented `--backend both` recipes are all `--eval holdout`. But
+  CLAUDE.md calls huth a "conservative lower bound", and on cv that is backwards.
+- `scripts/run_pipeline.sh:39` still passes the removed brain-PCA multitask
+  flags.
+- `run_encoding` silently ignores `--min-ev` under `--eval cv` while both sweeps
+  honour it, so their cv numbers are over different voxel sets.
+
+### Fixed in d713d63
+
+Three bugs in the new permutation code, all of which good-looking output would
+have hidden: observed and null came from different estimators; the alpha search
+used leave-one-story-out where production used `--n-splits 5`; and the old
+prediction-shuffle null scored 290 TRs against an observed 291. See that commit.
+
 ## Story lists: use the derived intersection, not the shipped file
 
 `data/derivative/common_stories_25.json` is unusable. Its participant keys are
