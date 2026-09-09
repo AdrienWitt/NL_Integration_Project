@@ -24,8 +24,13 @@ PROJECT=$HOME/NL_Integration_Project
 cd "$PROJECT"
 mkdir -p logs
 
-module load GCCcore/12.3.0 Python/3.11.3
-. "$PROJECT/envs/prosody/bin/activate"
+# envs/prosody does not exist and GCCcore/12.3.0 is not the toolchain the
+# packages were built against: transformers lives in the user site-packages
+# and only resolves its dependencies under Python/3.9.5. This is the same
+# environment scripts/extract_semantic.sbatch uses, which is the one that has
+# actually run successfully.
+module load GCCcore/10.3.0 Python/3.9.5
+. "$PROJECT/envs/py39/bin/activate"
 
 export PYTHONUNBUFFERED=1
 export DATA_DIR=$PROJECT/data
