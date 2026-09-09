@@ -58,7 +58,15 @@ def load_smile():
 
 def extract_story_features(story: str, audio_dir: Path, onsets: np.ndarray,
                            smile):
-    """(n_TRs, 88) eGeMAPS functionals, one row per TR window."""
+    """``(features, names, sampling_rate)`` — one row of eGeMAPS per TR window.
+
+    The sample rate comes back because it belongs in the target file's
+    provenance: `finetune/dataset.py` feeds the model 16 kHz audio, so targets
+    computed from a 44.1 kHz wav describe spectral content above 8 kHz that the
+    model cannot hear, and those functionals are unlearnable by construction.
+    That is a real difference between two target files whose numbers otherwise
+    look interchangeable.
+    """
     import librosa
 
     y, sr = librosa.load(str(audio_dir / f"{story}.wav"), sr=None, mono=True)
@@ -76,7 +84,7 @@ def extract_story_features(story: str, audio_dir: Path, onsets: np.ndarray,
             names = list(feats.columns)
         rows.append(feats.values.reshape(1, -1))
 
-    return np.vstack(rows), names
+    return np.vstack(rows), names, sr
 
 
 def main(argv=None) -> None:
@@ -142,7 +150,7 @@ def main(argv=None) -> None:
             continue
 
         onsets = tr_onsets(story, trfiles)
-        raw, names = extract_story_features(story, audio_dir, onsets, smile)
+        raw, names, sr = extract_story_features(story, audio_dir, onsets, smile)
 
         if feature_names is None:
             feature_names = names
@@ -182,6 +190,19 @@ def main(argv=None) -> None:
                 "audio_preproc": f"trimmed [{offset}:-{args.trim}] TRs",
                 "trim": args.trim,
                 "tr_pad": TR_PAD,
+                # Provenance of the window grid. `finetune/dataset.py` cuts its
+                # audio windows from `tr_onsets` at run time and pairs them with
+                # these rows, so the two must agree about where TR `offset`
+                # starts in the wav. Recording that one number is what turns a
+                # disagreement into an error instead of a model trained to
+                # predict the acoustics of a window it never heard: `tr_onsets`
+                # returned the scanner clock until 2026-09-09, putting every
+                # window 10 s (5 TRs) later, and the only reason the existing
+                # checkpoints survived it is that both sides were wrong
+                # together.
+                "first_onset_sec": float(onsets[offset]),
+                "audio_sampling_rate": int(sr),
+                "audio_dir": str(audio_dir),
             },
         }
         with open(out_path, "w", encoding="utf-8") as f:

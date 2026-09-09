@@ -140,6 +140,53 @@ class ProsodyDataset(Dataset):
             )(waveform)
         return waveform
 
+    def _check_grid(self, story: str, data: Dict, onsets: np.ndarray) -> None:
+        """Refuse targets cut from a different window grid than we are cutting.
+
+        This class pairs audio it slices *now* with eGeMAPS rows computed
+        *earlier*, and nothing about the shapes reveals a disagreement: a
+        constant offset between the two produces windows of the right length,
+        labels of the right count, and a loss curve of the usual shape, while
+        the model learns to predict the acoustics of audio it never heard.
+        That is exactly what happened — `tr_onsets` returned the scanner clock
+        until 2026-09-09 and both sides were wrong together, which is the only
+        reason the existing checkpoints are valid. Once one side is fixed, the
+        pairing breaks silently unless something checks it.
+
+        `first_onset_sec` is that check: the wav position of the first kept TR,
+        written by `prep/make_finetune_targets.py`.
+        """
+        meta = data.get("metadata") or {}
+        recorded = meta.get("first_onset_sec")
+        if recorded is None:
+            raise ValueError(
+                f"{story}: this target file predates the window-grid check "
+                f"(no 'first_onset_sec' in its metadata), so it cannot be "
+                f"verified against the grid this dataset is cutting. Every "
+                f"file written before 2026-09-09 is on the pre-fix scanner "
+                f"clock and is 5 TRs (10 s) off. Re-run:\n"
+                f"    python -m prep.make_finetune_targets --trim {self.trim} "
+                f"--audio-dir <16 kHz wavs>"
+            )
+        if len(onsets) and abs(float(recorded) - float(onsets[0])) > 1e-6:
+            delta = float(onsets[0]) - float(recorded)
+            raise ValueError(
+                f"{story}: the targets were cut at {recorded:+.3f}s into the "
+                f"wav but this dataset is cutting audio at {float(onsets[0]):+.3f}s "
+                f"— a {delta:+.3f}s ({delta / TR:+.1f} TR) mismatch. The model "
+                f"would learn to predict the acoustics of a window it never "
+                f"heard. Re-run prep/make_finetune_targets.py with the current "
+                f"common/tr_alignment.py, or pass the --trim the targets were "
+                f"built with (this file says trim={meta.get('trim')})."
+            )
+        rate = meta.get("audio_sampling_rate")
+        if rate and int(rate) != int(self.sampling_rate):
+            print(f"  WARNING {story}: targets were computed from {rate} Hz "
+                  f"audio but the model is fed {self.sampling_rate} Hz. "
+                  f"eGeMAPS functionals describing content above "
+                  f"{self.sampling_rate // 2} Hz are unlearnable by "
+                  f"construction.")
+
     def _fit_scalers(self, loaded: List[Dict]) -> Dict[str, StandardScaler]:
         columns: Dict[str, List[float]] = {}
         for entry in loaded:
@@ -189,6 +236,7 @@ class ProsodyDataset(Dataset):
             ])
 
             onsets = tr_onsets(story, self.trfiles)[offset: offset + n_trs]
+            self._check_grid(story, data, onsets)
             if len(onsets) != n_trs:
                 # Raise rather than skip. A wrong --trim shifts every label by
                 # a fixed number of TRs and drops whole stories, which used to
