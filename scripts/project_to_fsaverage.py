@@ -25,6 +25,15 @@ values that exist rather than the padding around them. `n_subjects_*.npy` is
 written alongside every group map so a vertex backed by 2 subjects is not read
 like one backed by 9.
 
+Averaging only the subjects that have a value needs a floor, and not only
+because a mean of two is noisy. Which subjects reach a vertex is not random:
+they are the ones whose EV mask included it, i.e. the ones with reproducible
+signal there. So the thinly-covered vertices are *selected* for high r, and the
+group mean is biased upward exactly where it is least supported. `--min-subjects`
+(default 5) NaNs those vertices out of the saved mean; `n_subjects_*.npy` is
+written unthresholded, so the floor can be changed and the averaging re-run
+without re-projecting anything.
+
 Whether a map is mask-scattered is decided by looking at it, not by its name:
 if every value outside `voxel_mask` is 0 or NaN, it was scattered. `ev.npy` is
 defined everywhere and so is projected plainly, which is what its own values
@@ -420,8 +429,13 @@ def project_run(per_subject, args) -> dict:
     return written
 
 
-def write_group_mean(written: dict, out_dir: Path):
-    """Average each map over subjects, in fsaverage space, coverage-aware."""
+def write_group_mean(written: dict, out_dir: Path, min_subjects: int = 1):
+    """Average each map over subjects, in fsaverage space, coverage-aware.
+
+    Only the subjects with a finite value at a vertex enter its mean, and
+    `min_subjects` is the floor below which the vertex is dropped instead --
+    see the module docstring for why that floor is about bias, not just noise.
+    """
     by_key = defaultdict(list)
     for subject, entry in written.items():
         for key, path in entry["maps"].items():
@@ -444,20 +458,40 @@ def write_group_mean(written: dict, out_dir: Path):
             # vertices no subject covers are a real category, not a mistake
             warnings.simplefilter("ignore", RuntimeWarning)
             mean = np.nanmean(stack, axis=0)
-        mean[n == 0] = np.nan
+        floor = max(1, min(min_subjects, len(items)))
+        thin = int(((n > 0) & (n < floor)).sum())
+        mean[n < floor] = np.nan
 
         name = key.replace("/", "_")
         np.save(out_dir / f"mean_{name}_fsaverage.npy", mean.astype(np.float32))
         np.save(out_dir / f"n_subjects_{name}.npy", n.astype(np.int16))
         full = int((n == len(items)).sum())
+        kept = int(np.isfinite(mean).sum())
         log.info(f"group: mean_{name} over {len(items)} subjects "
-                 f"({full:,}/{n.size:,} vertices covered by all)")
+                 f"({full:,}/{n.size:,} vertices covered by all, "
+                 f"{kept:,} kept at n>={floor}, {thin:,} dropped as too thin)")
 
 
-def show(path: Path):
+def n_subjects_path(path: Path) -> Optional[Path]:
+    """The coverage count written beside a group mean, if this is one."""
+    name = path.name
+    if not (name.startswith("mean_") and name.endswith("_fsaverage.npy")):
+        return None
+    stem = name[len("mean_"):-len("_fsaverage.npy")]
+    sibling = path.with_name(f"n_subjects_{stem}.npy")
+    return sibling if sibling.exists() else None
+
+
+def show(path: Path, min_subjects: int = 1):
     """Open one projected map in the pycortex viewer."""
     cortex = setup_pycortex()
     data = np.load(path).astype(np.float64)
+    counts = n_subjects_path(path)
+    if counts is not None and min_subjects > 1:
+        n = np.load(counts)
+        data = np.where(n >= min_subjects, data, np.nan)
+        log.info(f"showing {int(np.isfinite(data).sum()):,} vertices with "
+                 f">= {min_subjects} subjects ({counts.name})")
     finite = data[np.isfinite(data) & (data != 0)]
     cortex.webshow(cortex.Vertex(
         data, "fsaverage", cmap="hot",
@@ -479,6 +513,14 @@ def main():
     ap.add_argument("--subjects", nargs="+", default=["all"])
     ap.add_argument("--no-group", action="store_true",
                     help="project only, skip the across-subject mean")
+    ap.add_argument("--min-subjects", type=int, default=5, metavar="N",
+                    help="vertices where fewer than N subjects have a value "
+                         "are NaN in the group mean (default 5). Thin "
+                         "coverage is not random -- the subjects that reach a "
+                         "vertex are the ones whose EV mask included it -- so "
+                         "those vertices are biased upward as well as noisy. "
+                         "n_subjects_*.npy is saved unthresholded either way. "
+                         "Also applied by --show.")
     ap.add_argument("--overwrite", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--check", action="store_true",
@@ -493,7 +535,7 @@ def main():
     subjects = SUBJECTS if args.subjects == ["all"] else args.subjects
 
     if args.show:
-        show(Path(args.show))
+        show(Path(args.show), min_subjects=args.min_subjects)
         return
 
     if args.check:
@@ -525,7 +567,8 @@ def main():
                  f"{', '.join(sorted(per_subject))})")
         written = project_run(per_subject, args)
         if written and not args.no_group and not args.dry_run:
-            write_group_mean(written, group_root / key)
+            write_group_mean(written, group_root / key,
+                             min_subjects=args.min_subjects)
 
 
 if __name__ == "__main__":

@@ -121,7 +121,16 @@ run_eval () {   # eval mode
         --himalaya-backend torch_cuda
 }
 
-run_eval cv
-run_eval holdout
+# EVALS picks which halves run; the default is both, in this order.
+#
+# It exists because the two halves cost very different amounts and fail
+# independently. `cv` is the expensive one -- nested 5x5 ridge fits per
+# configuration -- and `holdout` is one fit each, seconds per configuration.
+# When a node fault kills a task that had already written its cv sweep.csv,
+# re-running the whole task redoes ~12 minutes of work that is on disk and
+# valid. `EVALS=holdout sbatch --array=...` finishes it instead.
+for _eval in ${EVALS:-cv holdout}; do
+    run_eval "$_eval"
+done
 
 echo "=== task $SLURM_ARRAY_TASK_ID done in $((SECONDS / 60)) min ==="
