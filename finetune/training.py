@@ -17,8 +17,8 @@ from typing import Dict, List, Optional, Union
 
 import torch
 from transformers import (AutoConfig, AutoFeatureExtractor,
-                          EarlyStoppingCallback, Trainer, TrainingArguments,
-                          set_seed)
+                          EarlyStoppingCallback, Trainer, TrainerCallback,
+                          TrainingArguments, set_seed)
 
 from config import FINETUNE_OUT
 from . import resolve_base_model
@@ -50,6 +50,49 @@ class ProsodyTrainer(LLRDTrainerMixin, Trainer):
     """Standard Trainer plus optional layer-wise learning-rate decay."""
 
 
+class DriftCallback(TrainerCallback):
+    """Log how far each trainable layer has moved from its pretrained weights.
+
+    The `l2sp` penalty is measured in units nobody has intuitions about, and
+    the quantity that actually predicts the damage is the distance travelled.
+    Printing ``||theta - theta_0|| / ||theta_0||`` per layer at every
+    evaluation turns the coefficient into something readable -- and makes the
+    drift/damage relation plottable against the encoding scores afterwards
+    rather than guessed at.
+
+    Also prints the learned layer-pooling weights when they exist: they say
+    which depth the eGeMAPS objective actually wanted to read from.
+    """
+
+    def __init__(self, out_dir: Optional[str] = None):
+        self.out_dir = out_dir
+        self.history: List[Dict] = []
+
+    def on_evaluate(self, args, state, control, model=None, **kwargs):
+        if model is None:
+            return
+        report = model.drift_report() if hasattr(model, "drift_report") else {}
+        profile = (model.layer_weight_profile()
+                   if hasattr(model, "layer_weight_profile") else None)
+        if not report and profile is None:
+            return
+        entry = {"epoch": state.epoch, "drift": report,
+                 "layer_weights": profile}
+        self.history.append(entry)
+        if report:
+            shown = " ".join(f"L{k}:{v * 100:.2f}%" for k, v in report.items()
+                             if isinstance(k, int))
+            print(f"  drift from pretrained @epoch {state.epoch:.0f}: {shown}")
+        if profile is not None:
+            top = sorted(range(len(profile)), key=lambda i: -profile[i])[:3]
+            print(f"  layer-pooling weights: argmax {top}, "
+                  f"max {max(profile):.3f}")
+        if self.out_dir:
+            os.makedirs(self.out_dir, exist_ok=True)
+            with open(os.path.join(self.out_dir, "drift.json"), "w") as fh:
+                json.dump(self.history, fh, indent=2)
+
+
 # --------------------------------------------------------------------------
 # Entry point
 # --------------------------------------------------------------------------
@@ -65,7 +108,8 @@ def run_name(model_type: str, base_model_name: str, num_layers_to_freeze,
              truncate_layers: Optional[int] = None,
              llrd: Optional[float] = None,
              learning_rate: Optional[float] = None,
-             seed: Optional[int] = None) -> str:
+             seed: Optional[int] = None,
+             pool_layers: str = "last", l2sp: float = 0.0) -> str:
     """Directory name that records the run's defining settings.
 
     Every setting that changes the result is in the name. It used to key on
@@ -99,6 +143,12 @@ def run_name(model_type: str, base_model_name: str, num_layers_to_freeze,
     parts.append(layers)
     if llrd is not None:
         parts.append(f"llrd{llrd:g}")
+    # Both default to off, so an unflagged run keeps the name it always had and
+    # still resolves to the existing checkpoint directories.
+    if pool_layers and pool_layers != "last":
+        parts.append(f"pool{pool_layers}")
+    if l2sp:
+        parts.append(f"l2sp{l2sp:g}")
     if learning_rate is not None:
         parts.append(f"lr{learning_rate:g}")
     if seed is not None:
@@ -122,6 +172,8 @@ def train_model(
     save_total_limit: int = 3,
     resume_from_checkpoint: Optional[str] = None,
     llrd: Optional[float] = None,
+    pool_layers: str = "last",
+    l2sp: float = 0.0,
     metric_for_best: str = "eval_loss",
     dataloader_workers: int = 4,
     torch_compile: bool = False,
@@ -139,7 +191,8 @@ def train_model(
 
     name = run_name(model_type, base_model_name, num_layers_to_freeze,
                     truncate_layers=truncate_layers, llrd=llrd,
-                    learning_rate=learning_rate, seed=seed)
+                    learning_rate=learning_rate, seed=seed,
+                    pool_layers=pool_layers, l2sp=l2sp)
     root = output_dir or FINETUNE_OUT
     output_dir = os.path.join(str(root), name)
     metrics_dir = os.path.join(output_dir, "metrics")
@@ -163,6 +216,7 @@ def train_model(
             resume_from_checkpoint, num_features=num_prosody,
             base_model_name=base_model_name,
             freeze_layers=num_layers_to_freeze,
+            pool_layers=pool_layers, l2sp=l2sp,
         )
     else:
         config = AutoConfig.from_pretrained(base_model_name)
@@ -171,6 +225,7 @@ def train_model(
             base_model_name=base_model_name,
             freeze_layers=num_layers_to_freeze,
             truncate_layers=truncate_layers,
+            pool_layers=pool_layers, l2sp=l2sp,
         )
 
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -238,12 +293,19 @@ def train_model(
         callbacks=[
             EarlyStoppingCallback(early_stopping_patience=patience),
             MetricsCallback(metrics_dir),
+            DriftCallback(metrics_dir),
         ],
     )
 
     trainer.llrd_decay = llrd
     if llrd is not None:
         print(f"Layer-wise LR decay enabled (decay={llrd})")
+    if l2sp:
+        print(f"L2-SP enabled (lambda={l2sp:g}): weights are pulled toward the "
+              f"pretrained solution, not toward zero")
+    if pool_layers != "last":
+        print(f"Layer pooling: {pool_layers} — the head reads a learned "
+              f"softmax over all hidden states, not just the top one")
 
     train_result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 

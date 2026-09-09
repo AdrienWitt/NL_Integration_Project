@@ -114,6 +114,30 @@ def parse_args(argv=None) -> argparse.Namespace:
                             "gentler alternative to freezing; combine with "
                             "--freeze-layers none to keep every layer plastic "
                             "but stable.")
+    train.add_argument("--l2sp", type=float, default=0.0, metavar="LAMBDA",
+                       help="pull the trainable weights toward their "
+                            "PRETRAINED values instead of toward zero "
+                            "(Xuhong et al. 2018), penalty "
+                            "0.5*LAMBDA*||theta-theta_0||^2. This is the knob "
+                            "the freeze boundary cannot express: fine-tuning "
+                            "on eGeMAPS degrades brain prediction in "
+                            "proportion to how far a layer travels, so LAMBDA "
+                            "bounds the travel directly. 0 disables it "
+                            "(default), which reproduces the earlier runs. "
+                            "Worth sweeping 1e-4 .. 1e-1 — the mechanism "
+                            "predicts an optimum at small nonzero drift, not "
+                            "at zero.")
+    train.add_argument("--pool-layers", choices=["last", "weighted"],
+                       default="last",
+                       help="which hidden states the regression head reads. "
+                            "'last' (default) is the original behaviour and "
+                            "puts the whole gradient on the top layer — the "
+                            "one feature extraction reads. 'weighted' learns a "
+                            "softmax over every hidden state, so the model can "
+                            "satisfy the low-level eGeMAPS target from the "
+                            "early frozen layers where that information "
+                            "already lives, and the learned weights report "
+                            "which depth it chose.")
     train.add_argument("--batch-size", type=int, default=8)
     train.add_argument("--grad-accum", type=int, default=4)
     train.add_argument("--num-epochs", type=int, default=10)
@@ -243,6 +267,8 @@ def main(argv=None) -> None:
         num_layers_to_freeze=freeze_layers,
         truncate_layers=args.truncate_layers,
         llrd=args.llrd,
+        pool_layers=args.pool_layers,
+        l2sp=args.l2sp,
         learning_rate=args.learning_rate,
         batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,

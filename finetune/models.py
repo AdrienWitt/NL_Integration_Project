@@ -9,6 +9,32 @@ Pooling over time uses a learned attention weighting rather than a plain mean:
 within a 2 s window the prosodically informative frames are a minority, and
 mean pooling dilutes them.
 
+Two levers exist to stop the eGeMAPS objective from eating the representation
+------------------------------------------------------------------------------
+Fine-tuning on the 88 functionals measurably *degrades* brain prediction, and
+the damage has a shape: it grows monotonically with depth into the trainable
+region (emotion, cv, 9/9 subjects: -0.004 at L6, -0.056 at L11) and it stops at
+openSMILE's own encoding score (ft L11 = 0.094, openSMILE = 0.087). Where a base
+layer already scored *below* openSMILE the same objective made it better. So the
+loss transports every trainable layer toward one fixed destination -- a
+representation sufficient for 88 numbers -- and the only free variable is how far
+along that path training travels.
+
+`l2sp` shortens the path. Weight decay pulls toward zero, which is not where the
+pretrained solution is; L2-SP (Xuhong et al. 2018) penalises the distance to the
+*pretrained* weights instead, so lambda is a direct, sweepable bound on
+``||theta - theta_0||``. Freezing is the same idea with only two settings per
+layer, which is why it cannot express "let L11 move a little".
+
+`pool_layers="weighted"` changes *where* the pull lands. With the head on
+`last_hidden_state` every gradient enters at the top and the extracted layer
+takes the full force. A learned softmax over all hidden states lets the model
+satisfy the target from wherever the information already is -- and eGeMAPS is
+low-level, so that is the early, frozen layers. Read the learned weights after
+training: they say which depth the objective actually wanted.
+
+Both default to off, so an unflagged run reproduces the earlier checkpoints.
+
 A brain-PCA multi-task variant used to live here and was removed on
 2026-08-19 — training the encoder on brain responses and then using its
 features for voxelwise encoding is circular. See `trash/brain_pca_multitask/`.
@@ -21,6 +47,15 @@ from torch import nn
 from transformers import AutoConfig, AutoModel, PreTrainedModel
 
 
+def _layer_of(name: str) -> Union[int, str]:
+    """Transformer layer index in a parameter name, else a coarse group."""
+    parts = name.split(".")
+    for i, part in enumerate(parts):
+        if part == "layers" and i + 1 < len(parts) and parts[i + 1].isdigit():
+            return int(parts[i + 1])
+    return "other"
+
+
 class _SpeechRegressorBase(PreTrainedModel):
     """Shared encoder handling: freezing, checkpointing, attention pooling."""
 
@@ -28,8 +63,20 @@ class _SpeechRegressorBase(PreTrainedModel):
 
     def __init__(self, config, base_model_name: Optional[str] = None,
                  freeze_layers: Union[int, List[int], None] = 6,
-                 truncate_layers: Optional[int] = None, **kwargs):
+                 truncate_layers: Optional[int] = None,
+                 pool_layers: Optional[str] = None,
+                 l2sp: Optional[float] = None, **kwargs):
         super().__init__(config, **kwargs)
+
+        # Both settings change the module tree (`layer_weights` exists or does
+        # not) or the loss, so a checkpoint has to be rebuilt with the values it
+        # was trained under. Falling back to the config the way `num_features`
+        # and `base_model_name` already do means `from_pretrained(dir)` with no
+        # keywords reconstructs the right model instead of dropping a key.
+        if pool_layers is None:
+            pool_layers = getattr(config, "pool_layers", "last")
+        if l2sp is None:
+            l2sp = getattr(config, "l2sp", 0.0)
 
         if base_model_name is None:
             base_model_name = getattr(config, "base_model_name", None)
@@ -63,11 +110,33 @@ class _SpeechRegressorBase(PreTrainedModel):
         # Learned temporal attention pooling: one scalar score per frame.
         self.temporal_attn = nn.Linear(self.hidden_size, 1)
 
+        if pool_layers not in ("last", "weighted"):
+            raise ValueError(
+                f"pool_layers must be 'last' or 'weighted', got {pool_layers!r}")
+        self.pool_layers = pool_layers
+        if pool_layers == "weighted":
+            # One logit per hidden state, and there are num_hidden_layers + 1
+            # of those: index 0 is the CNN output, block i is at i + 1. Read
+            # after truncation so the count matches the final stack.
+            n_states = self.encoder.config.num_hidden_layers + 1
+            self.layer_weights = nn.Parameter(torch.zeros(n_states))
+
         self.loss_fct = nn.MSELoss()
         # Truncation first, so freeze indices refer to the final stack.
         self.freeze_base_model(freeze_layers)
+
+        # Anchors must be taken *after* freezing: only trainable parameters can
+        # drift, so only those need a reference, and snapshotting the frozen
+        # bottom would waste hundreds of MB on tensors that never move.
+        self.l2sp = float(l2sp)
+        self._anchor_names: dict = {}
+        if self.l2sp > 0:
+            self._register_anchors()
+
         self.config.base_model_name = base_model_name
         self.config.truncate_layers = truncate_layers
+        self.config.pool_layers = pool_layers
+        self.config.l2sp = self.l2sp
 
     # -- encoder plumbing ---------------------------------------------------
 
@@ -193,6 +262,61 @@ class _SpeechRegressorBase(PreTrainedModel):
             print(f"All {len(layers)} transformer layers trainable "
                   f"(CNN front end still frozen)")
 
+    # -- drift control ------------------------------------------------------
+
+    def _register_anchors(self):
+        """Snapshot the pretrained value of every trainable encoder parameter.
+
+        Registered as buffers so they follow the model through `.to(device)`
+        and AMP, but with ``persistent=False`` so they stay out of the
+        checkpoint: they are recoverable from the base model at any time, and
+        saving them would double every checkpoint on disk.
+        """
+        n = 0
+        for name, param in self.encoder.named_parameters():
+            if not param.requires_grad:
+                continue
+            buf = "_anchor_" + name.replace(".", "__")
+            self.register_buffer(buf, param.detach().clone(), persistent=False)
+            self._anchor_names[name] = buf
+            n += param.numel()
+        print(f"L2-SP: anchored {n:,} trainable encoder parameters "
+              f"({n * 4 / 1e6:.0f} MB)")
+
+    def drift_penalty(self) -> Optional[torch.Tensor]:
+        """``sum ||theta - theta_0||^2`` over the trainable encoder weights."""
+        if self.l2sp <= 0 or not self._anchor_names:
+            return None
+        total = None
+        for name, param in self.encoder.named_parameters():
+            buf = self._anchor_names.get(name)
+            if buf is None or not param.requires_grad:
+                continue
+            term = ((param - getattr(self, buf)) ** 2).sum()
+            total = term if total is None else total + term
+        return total
+
+    @torch.no_grad()
+    def drift_report(self) -> dict:
+        """Relative distance from the pretrained weights, per transformer layer.
+
+        The quantity the whole intervention is about, so it is logged rather
+        than inferred: `l2sp` is a knob whose units are meaningless on their
+        own, and this turns it into "layer 11 moved 3.2% of its norm".
+        """
+        by_layer: dict = {}
+        for name, param in self.encoder.named_parameters():
+            buf = self._anchor_names.get(name)
+            if buf is None:
+                continue
+            anchor = getattr(self, buf)
+            key = _layer_of(name)
+            num, den = by_layer.get(key, (0.0, 0.0))
+            by_layer[key] = (num + float(((param - anchor) ** 2).sum()),
+                             den + float((anchor ** 2).sum()))
+        return {k: (num / den) ** 0.5 if den > 0 else 0.0
+                for k, (num, den) in sorted(by_layer.items(), key=str)}
+
     def unfreeze_all_transformer_layers(self):
         layers = self._transformer_layers()
         if layers is None:
@@ -206,12 +330,25 @@ class _SpeechRegressorBase(PreTrainedModel):
 
     def pool(self, input_values, attention_mask=None):
         """Encode a batch of waveforms into one attention-pooled vector each."""
+        weighted = self.pool_layers == "weighted"
         outputs = self.encoder(input_values, attention_mask=attention_mask,
-                               output_hidden_states=False)
-        hidden = outputs.last_hidden_state                       # [B, T, D]
+                               output_hidden_states=weighted)
+        if weighted:
+            states = torch.stack(outputs.hidden_states, dim=0)   # [L+1,B,T,D]
+            w = torch.softmax(self.layer_weights, dim=0).view(-1, 1, 1, 1)
+            hidden = (states.to(w.dtype) * w).sum(dim=0)         # [B, T, D]
+        else:
+            hidden = outputs.last_hidden_state                   # [B, T, D]
         weights = torch.softmax(self.temporal_attn(hidden), dim=1)  # [B, T, 1]
         pooled = (hidden * weights).sum(dim=1)                   # [B, D]
         return self.dropout(pooled)
+
+    @torch.no_grad()
+    def layer_weight_profile(self) -> Optional[List[float]]:
+        """The learned softmax over hidden states, or None if not in use."""
+        if self.pool_layers != "weighted":
+            return None
+        return torch.softmax(self.layer_weights, dim=0).tolist()
 
     @torch.no_grad()
     def get_hidden_states(self, input_values, attention_mask=None,
@@ -232,10 +369,13 @@ class AudioEncoderForProsody(_SpeechRegressorBase):
     def __init__(self, config, num_features: Optional[int] = None,
                  base_model_name: Optional[str] = None,
                  freeze_layers: Union[int, List[int], None] = 6,
-                 truncate_layers: Optional[int] = None, **kwargs):
+                 truncate_layers: Optional[int] = None,
+                 pool_layers: Optional[str] = None,
+                 l2sp: Optional[float] = None, **kwargs):
         super().__init__(config, base_model_name=base_model_name,
                          freeze_layers=freeze_layers,
-                         truncate_layers=truncate_layers, **kwargs)
+                         truncate_layers=truncate_layers,
+                         pool_layers=pool_layers, l2sp=l2sp, **kwargs)
 
         if num_features is None:
             num_features = getattr(config, "num_features", None)
@@ -255,5 +395,11 @@ class AudioEncoderForProsody(_SpeechRegressorBase):
         logits = self.regressor(self.pool(input_values, attention_mask))
         if labels is None:
             return {"logits": logits}
-        return {"loss": self.loss_fct(logits, labels), "logits": logits}
+        loss = self.loss_fct(logits, labels)
+        penalty = self.drift_penalty()
+        if penalty is not None:
+            # 1/2 lambda ||theta - theta_0||^2, the usual parameterisation, so
+            # lambda is comparable to a weight-decay coefficient.
+            loss = loss + 0.5 * self.l2sp * penalty
+        return {"loss": loss, "logits": logits}
 
