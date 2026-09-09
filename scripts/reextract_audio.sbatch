@@ -62,7 +62,7 @@ export HF_HUB_OFFLINE=1
 
 FT=results/finetune
 SEED=${SEED:-42}
-LR=${LR:-3e-5}
+LR=${LR:-3e-05}   # note: 3e-05, the form the checkpoint dirs actually use
 
 NAMES=(opensmile perlayer_base_emotion perlayer_base_robust
        perlayer_ft_emotion perlayer_ft_robust)
