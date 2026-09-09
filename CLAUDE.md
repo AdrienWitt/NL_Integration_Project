@@ -1,60 +1,79 @@
-# ⚠ THE AUDIO BANDS ARE MISALIGNED BY 5 TRs — READ THIS FIRST (2026-09-09)
+# The audio bands were misaligned by 5 TRs. Fixed and redone (2026-09-09)
 
-**Every prosody number in this file was computed from audio taken 10 s later
-than the brain data it was regressed against.** `tr_onsets` returned the
-*scanner* clock and used it to index the wav, while the text band used the
-*sound* clock. Fixed in `common/tr_alignment.py`, but everything already
-extracted is on the old grid.
+`tr_onsets` returned the *scanner* clock and used it to index the wav, so every
+audio window covered `[2i, 2i+2)` where it should have covered `[2i-10, 2i-8)`
+— ten seconds, five TRs, later than the text band and the responses it was
+regressed against. Fixed in `common/tr_alignment.py`. All five audio stores and
+the eGeMAPS fine-tuning targets have been rebuilt and every prosody sweep re-run,
+so **there is nothing left to redo**; what follows is why it mattered, because
+the size of the correction is what dates several sections below.
 
-Measured on UTS01 / `wheretheressmoke`, mean BOLD over the 344 voxels with
-EV>0.2, correlation by lag:
+Measured on UTS04-09 only — their repeat count did not change, so the EV mask is
+identical and *only the audio moved*:
 
-    lag (TR)        0     1     2     3     4     5     6     7     8
-    gpt2_mean   -0.07 +0.16 +0.51 +0.22 -0.13 -0.05 +0.07 -0.04 -0.12   <- peak at 2
-    openSMILE   -0.02 -0.07 +0.00 +0.06 +0.01 -0.01 +0.03 +0.20 +0.10   <- peak at 7
+    store            old grid            new grid
+    base_emotion     L10  0.0207         9-11  0.1520      x7.3
+    ft_emotion       L9   0.0171         L7    0.1238      x7.2
+    base_robust      L17  0.0177         L11   0.1526      x8.6
+    ft_robust        L12  0.0172         L12   0.1485      x8.6
 
-The text band peaks at 2 TRs, a textbook HRF delay. The audio band peaks at 7,
-exactly 5 TRs later. **`--ndelays 4` offers lags of 1-4 only, so the prosody
-band's real signal was outside the model's reach entirely.**
+openSMILE per subject: 0.0222→0.1280, 0.0050→0.1038, 0.0106→0.0872,
+0.0064→0.0816, 0.0070→0.0679, 0.0026→0.0866 — x5.8 to x33.9.
 
-Three independent confirmations: the arithmetic (`get_reltriggertimes()`
-returns `trtimes - 10`, and `tr_onsets` added the 10 back); the trailing rows
-of every openSMILE store are identical, which happens only when the last
-windows run past the end of the wav, and solving for the wav duration that
-implies is consistent with the TextGrids on the scanner clock but *shorter
-than the last spoken word* on the sound clock in 4 of 5 stories; and the
-stores have no leading silence, ruling out the alternative that the wavs carry
-a 10 s lead-in.
+The previous version of this file called the prosody numbers "a floor, not an
+estimate". The floor was an order of magnitude low, and the audio-vs-text
+comparison this project exists to make is only now being run against a real
+audio band.
 
-**Direction of the error: fixing it can only help audio.** Every prosody
-number below is a floor, not an estimate — openSMILE ~0.011, the best layer's
-+0.010, the base-vs-fine-tuned deltas of ~0.005. `delta` was biased down and
-`preference = r_text - r_audio` strongly toward text. The audio-vs-text
-comparison this project exists to make has not actually been run yet.
+**Not affected, and never were:** every text band (`DataSequence` uses
+`get_reltriggertimes()` directly and was always on the sound clock), the
+responses, and the two fine-tuned checkpoints — input windows and eGeMAPS
+targets were shifted *together*, so the mapping they learned is intact. That
+last claim is now measured rather than argued; see the next section.
 
-## What must be redone
+A side benefit of the fix: the padded rows now fall at the *start* of each story,
+where `[TR_PAD + trim : -trim]` removes them, instead of at the end where one or
+two survived into the design. Confirmed on the rebuilt stores — `wheretheressmoke`
+has 4 consecutive duplicate rows, all at the head and none at the tail; the old
+store had the same 4 at the tail.
 
-    re-extract   opensmile, perlayer_base_{robust,emotion},
-                 perlayer_ft_{robust,emotion}, base_emotion_{L11,9to11},
-                 base_robust_{L18,15to18}, and prosody/finetune_targets
-    re-run       the prosody layer sweep (36 tasks) and the 45 holdout
-                 encoding runs
+## The fine-tuning targets: rebuilt, and guarded so this cannot recur
 
-## What is NOT affected
+The eGeMAPS targets under `data/features/prosody/finetune_targets/averaged/` came
+from the same broken `tr_onsets`. Both `prep/make_finetune_targets.py` and
+`finetune/dataset.py` call it, which is precisely why the checkpoints survived:
+window and label were wrong together, so the learned mapping — audio window to
+the acoustics of that same window — is unchanged.
 
-- **Every text band.** `gpt2_mean`, `gpt2_k*` and `perlayer_gpt2_k16` go
-  through `DataSequence`, which uses `get_reltriggertimes()` directly and was
-  always on the sound clock. The context-length and depth sweeps stand.
-- **The fine-tuned checkpoints.** Input windows and eGeMAPS targets were
-  shifted together, so the mapping they learned — audio window to the
-  acoustics of that same window — is unchanged. No re-training needed, only
-  re-extraction of the targets if they are rebuilt.
-- **Everything after the design matrix**: banded ridge, the permutation
-  machinery, the sweeps' logic. They were fed bad audio, not broken.
+Rebuilt 2026-09-09 (`scripts/make_targets.sbatch`, 44 min, CPU only) and checked
+against both openSMILE stores on the same `[TR_PAD+trim : -trim]` slice:
 
-A side benefit of the fix: the padded rows now fall at the *start* of each
-story, where `[TR_PAD + trim : -trim]` removes them, instead of at the end
-where one or two survived into the design.
+    targets              vs new store    vs old store
+    rebuilt                1.0000          0.05-0.16
+    old (2026-08-20)       0.04-0.11       0.52-0.64
+
+**1.0000, not 0.99.** The fine-tuning target and the openSMILE encoding band are
+now the same numbers on the same grid, which matters for interpretation and not
+only for plumbing: "the fine-tuned representation converges toward openSMILE's
+encoding score" becomes a statement about one feature set rather than two
+similar ones.
+
+Two things changed with the rebuild:
+
+- **`--audio-dir data/stimuli_16k` is required.** The script defaults to
+  `STIMULI_DIR`, the native-rate wavs, which do not exist on the cluster. It is
+  also the more correct choice: the model is fed 16 kHz, so functionals
+  describing content above 8 kHz cannot be predicted from what it hears. That is
+  what capped the old targets at r=0.56 against the store *on their own grid*.
+- **The grid is recorded and verified.** Each target JSON now carries
+  `first_onset_sec`, `audio_sampling_rate` and `audio_dir`, and
+  `ProsodyDataset._check_grid` refuses to build when the recorded onset
+  disagrees with what `tr_onsets` returns at run time — naming the gap in
+  seconds and in TRs. A file lacking the field is refused too, since every JSON
+  written before 2026-09-09 is on the old clock. Without this a fine-tuning run
+  launched after the fix would have paired audio from `[2i-10, 2i-8)` with
+  labels from `[2i, 2i+2)` on every window, silently, with a normal-looking loss
+  curve. The old targets are kept at `finetune_targets/_oldgrid_20260909/`.
 
 # Prosody_Semantics_NL — project context
 
@@ -136,14 +155,20 @@ model, whose forward returns *both* the 1024-d pooled state and the 3-d head.
 
 **Recommended arms.** A `--model wav2vec2-robust`, B `--model emotion`,
 C `--model wav2vec2-robust --truncate-layers 12` (optional). A vs B answers
-"which features predict better"; C vs B is needed to attribute a difference to
+"which features predict better"; C vs B was there to attribute a difference to
 emotion pretraining rather than depth.
+**A vs B is now answered, and it is a tie** (+0.0004, 4/9 — see the corrected
+Stage-2 section), so C is no longer worth running: there is no difference to
+attribute. A is the simpler arm to report.
 
-**Layer ranges shift after fine-tuning.** Registry `default_layers` are for
-*base* models and read mid-network (`12-17`), because prosody peaks mid-stack.
-After fine-tuning on prosody targets the upper layers are prosody-tuned, so
-extract from `18-23` on fine-tuned 24-layer checkpoints. Layer choice is
-empirical — sweep it with `--layers` and different `--out-name`s.
+**Layer ranges: sweep them, and ignore the old advice about fine-tuned
+checkpoints.** This used to say "extract from `18-23` on fine-tuned 24-layer
+checkpoints" because fine-tuning re-tunes the upper layers toward prosody. The
+corrected sweep says the opposite: `ft_robust` is *best at L12* and falls
+monotonically to L23, and `18-23` is among the worst ranges available. Prosody
+peaks mid-stack in the base models (L11 of 24, L11 of 12) and fine-tuning does
+not move the peak upward — it flattens everything it touches toward openSMILE.
+Layer choice is empirical; sweep it with `--layers` and different `--out-name`s.
 
 ## Gotchas that cost real time
 
@@ -204,11 +229,13 @@ empirical — sweep it with `--layers` and different `--out-name`s.
   0.6622) and `emotion_frozen_6_lr3e-05_seed42` (best epoch 29, 0.6534). Both
   verified to load with real fine-tuned weights: frozen bottom half is
   byte-identical to the pretrained base, trained top half differs by 3–10%.
-- **Five audio feature bands extracted**, 84 stories each, identical TR grids
-  (29,348 TRs): `opensmile` (88d), `base_robust_12to17`, `ft_robust_18to23`,
-  `base_emotion_6to11`, `ft_emotion_6to11` (1024d each). Note the robust pair
-  is extracted at *different* depths, so a base-vs-ft difference there is
-  confounded with layer range; the emotion pair is matched at 6-11.
+- **Five audio feature bands extracted**, 84 stories each. SUPERSEDED: these
+  flat stores were on the misaligned grid and the per-layer stores replaced
+  them. What exists now is `opensmile` (88d) plus `perlayer_base_robust` (0-23),
+  `perlayer_ft_robust` (12-23), `perlayer_base_emotion` (0-11) and
+  `perlayer_ft_emotion` (6-11), all 1024d and all on the corrected grid. The
+  per-layer form also removes the old confound where the robust base/ft pair was
+  extracted at different depths.
 - **Encoding smoke test passed** (UTS01, 6 stories, banded/holdout, 7.2 min).
 - **Only UTS01 has response data locally**; `SUBJECTS` lists nine. The other
   eight are ~19 GB each and are not on this machine in any form.
@@ -239,59 +266,131 @@ empirical — sweep it with `--layers` and different `--out-name`s.
 - Data was **moved** here out of `../NL_Project`, which is now code-only and
   whose scripts will fail on missing data. That was intentional.
 
-## Stage-2 result: every layer, common stories (2026-08-29)
+## Stage-2 result: every layer, common stories (2026-09-09, corrected grid)
 
-Supersedes the 2026-08-28 coarse sweep (every third layer, per-subject story
-lists, 40-story cap). That one was directionally right about the emotion model
-and wrong or blind about everything else, so read this section, not it.
+Supersedes both earlier prosody sweeps. The 2026-08-29 version ran on the
+misaligned audio and is wrong about the peak layer, the direction of the
+fine-tuning effect, and the value of emotion pretraining — three of its four
+conclusions. Archived at `results/encoding/prosody_sweep_misaligned_20260909/`.
 
-Design: 9 subjects x 4 stores = 36 GPU tasks, **all nine on the same 24 training
-stories** (`common_stories_all9.json`, the true intersection), every stored layer
-plus averaged ranges, `--min-ev 0.1`, both `--eval cv` and `--eval holdout`.
+Design unchanged: 9 subjects x 4 stores = 36 GPU tasks, all nine on the same 24
+training stories (`common_stories_all9.json`), every stored layer plus averaged
+ranges, `--min-ev 0.1`, `--max-repeats 5`, both `--eval cv` and `--eval holdout`.
 Summarise with `python scripts/summarise_sweep.py --eval cv --tidy out.csv`.
 
-**Choose on cv, report on holdout.** The held-out story is 291 TRs; its standard
-errors run 0.0015-0.0058 against 0.0003-0.0014 cross-validated. It cannot
-resolve a 0.005 effect, and it shows the emotion damage below as noise. Picking
-the best row out of a holdout sweep is also selection on the test set.
+**Choose on cv, report on holdout** — and the cost of getting that backwards is
+now measured rather than asserted. Over the 36 (store, subject) sweeps, the cv
+argmax and the holdout argmax agreed in **1 of 36**, disagreeing by 3.0 layers on
+average; selecting on holdout would have inflated the reported score by **+0.0083
+on average** (median +0.0067, max +0.027) — most of the entire effect. The
+held-out story is 291 TRs and its standard errors run about 4x the
+cross-validated ones.
 
-**Fine-tuning cut both ways** (cv, paired per subject, Δ = ft − base):
+Mean r over the EV>0.1 voxels, averaged over the nine subjects:
 
-    emotion  L6  -0.0001  4/9 worse   <- freeze boundary, identical weights
-             L8  -0.0024  7/9   *
-             L10 -0.0047  8/9   *
-             L11 -0.0066  8/9   *
-    robust   L17 -0.0012  7/9   *
-             L20 +0.0042  0/9   *     <- ft BETTER in every subject
-             L21 +0.0037  0/9   *
-             L22 +0.0024  2/9   *
+    store                  cv      vs oSMILE   n      holdout
+    opensmile            0.0867        —               0.1127
+    base_emotion  9-11   0.1516     +0.0649   9/9      0.2963   <- best on cv
+    base_robust   L11    0.1512     +0.0646   9/9      0.2796
+    ft_robust     L12    0.1463     +0.0596   9/9      0.2749
+    ft_emotion    L7     0.1190     +0.0323   9/9      0.2225
 
-One reading fits both: the eGeMAPS objective pulls top layers toward acoustics.
-Where they already carried brain-relevant prosody (emotion pretraining) that is
-a loss; where they had specialised away from acoustics entirely (top of a
-self-supervised speech stack) it is a partial recovery. Neither beats the frozen
-emotion model.
+**`base_robust` peaks at L11 of 24, a clean inverted U** — not the "cliff at
+L19-20" the misaligned sweep reported:
 
-**Two things the coarse sweep got wrong:**
-- `base_emotion` does **not** keep climbing to the top of the stack. It rises to
-  L10 (+0.0103) and plateaus at L11 (+0.0102). The peak is real, not truncation.
-- `base_robust` has a **cliff, not a slope**: ~+0.007 through L19, then +0.0025
-  at L20. Sampling L18 then L21 bracketed it without locating it.
+    L0 .099  L2 .107  L4 .113  L6 .122  L8 .136  L10 .151  L11 .152  <- peak
+    L12 .147 L14 .135 L16 .127 L18 .118 L20 .100 L22 .099 L23 .103
 
-**Averaged ranges never beat the best single layer.** emotion 9-11 +0.0098 vs
-L10 +0.0103; robust 15-18 +0.0077 vs L17 +0.0080. Do not pay 4x the columns.
+That also settles the truncation worry about the emotion model. It is
+`wav2vec2-large-robust` pruned to 12 layers, its own profile rises to L11, and
+the 24-layer version shows the peak is real and then falls.
 
-**Carry `base_emotion` L10 forward** — best layer of any model on cv, above
-openSMILE in 9/9 subjects, and no fine-tuned checkpoint needed. L11 is
-statistically indistinguishable.
+**Emotion pretraining buys nothing.** `base_emotion 9-11 - base_robust L11 =
++0.0004`, emotion ahead in 4/9. Before the fix emotion was the clear winner and
+the band to carry forward; it is now a tie, with the cheaper, unpruned,
+self-supervised backbone reaching the same place. Arm C (`--truncate-layers 12`)
+is no longer needed to attribute a difference, because there is no difference to
+attribute.
 
-Scale: openSMILE ~0.011 mean over the 1,776 of 81,126 voxels passing EV>0.1;
-the best layer adds ~0.010. Consistent across all nine subjects, still small.
+**Averaged ranges still do not pay.** emotion 9-11 (0.1516) vs L11 (0.1504):
++0.001 for 3x the columns.
 
-Published summary (both evaluations, every layer):
-https://claude.ai/code/artifact/1b2b34ce-2eb3-447f-9809-35d5bbd4f39d
+**Carry `perlayer_base_emotion:9-11` or `perlayer_base_robust:11` forward.** They
+are statistically indistinguishable. `base_robust` L11 is the simpler story — one
+public checkpoint, no pruning, no emotion-pretraining caveat — and
+`base_emotion` 9-11 is nominally the cv argmax. Pick one and write down which.
+
+## Why fine-tuning on eGeMAPS hurts, measured (2026-09-09)
+
+Fine-tuning degrades brain prediction in **9/9 subjects**, and the shape of the
+damage says why. ft minus base at matched depth, cv:
+
+    ft_emotion (0-5 frozen, 9 subj)        ft_robust (0-11 frozen, 7 subj)
+      L6  .1215 -> .1176  -0.0039  9/9       L12 .1473 -> .1474  +0.0002  1/7
+      L7  .1314 -> .1190  -0.0125  9/9       L15 .1300 -> .1300  -0.0000  5/7
+      L8  .1422 -> .1165  -0.0257  9/9       L18 .1180 -> .1167  -0.0013  7/7
+      L9  .1492 -> .1094  -0.0398  9/9       L20 .0996 -> .1043  +0.0047  0/7
+      L10 .1494 -> .1031  -0.0463  9/9       L21 .0995 -> .1019  +0.0024  1/7
+      L11 .1504 -> .0940  -0.0564  9/9       L23 .1031 -> .1006  -0.0025  7/7
+    openSMILE alone: 0.0867                openSMILE alone: 0.0894
+
+Three facts fix the interpretation:
+
+1. the damage grows **monotonically with depth into the trainable region**;
+2. it **stops at openSMILE's own score** (ft L11 = 0.0940 against 0.0867);
+3. where a base layer scored *below* openSMILE, the same objective made it
+   **better** (robust L20-22, 0/7 worse).
+
+So the loss transports every trainable layer toward one destination — a
+representation sufficient for 88 numbers — reached from above or from below, and
+the only free variable is how far along that path training travels. eGeMAPS is a
+weaker band than the pretrained mid-stack representation, so distilling into it
+loses wherever the layer was already stronger.
+
+This is also why `robust` looks unharmed: **its fine-tune froze the peak.** It
+trains blocks 12-23 while the peak sits at L11, so it never touched the layer
+that matters. The emotion fine-tune froze 0-5 and trained 6-11, which is exactly
+where the information is. Not one backbone being sturdier than the other — one of
+them fine-tuned where there was nothing left to lose.
+
+The registry's warning was right, and the frozen-baseline control it insisted on
+is what caught it: "if it wins, fine-tuning is hurting, and that is a real
+possible outcome here."
+
+**Two levers now exist to test whether a *small* drift helps before a large one
+destroys.** The mechanism predicts a non-monotonic optimum, and nothing in the
+old setup could express "let L11 move a little" — freezing is binary per layer.
+Both default to off, so an unflagged run reproduces the existing checkpoints and
+keeps its directory name.
+
+- `--l2sp LAMBDA` — weight decay toward the *pretrained* weights instead of zero
+  (Xuhong et al. 2018), penalty `0.5*LAMBDA*||theta - theta_0||^2`. Anchors are
+  taken after freezing and held as non-persistent buffers, so they follow the
+  model onto the GPU without doubling every checkpoint on disk.
+- `--pool-layers weighted` — the head reads a learned softmax over every hidden
+  state rather than `last_hidden_state`, so the gradient stops concentrating on
+  the layer feature extraction reads. The learned weights are themselves a
+  result: they say which depth the eGeMAPS objective actually wanted.
+- `DriftCallback` writes `metrics/drift.json` — per-layer
+  `||theta - theta_0|| / ||theta_0||` at every evaluation, plus the pooling
+  profile. LAMBDA is in units nobody has intuitions about; drift is not.
+
+**The cheapest experiment is one run with a large `--save-total-limit`**,
+extracting features from several epochs: that yields the whole drift-vs-damage
+curve from a single training run, and says whether the optimum is at zero drift
+before any lambda sweep is worth paying for. The existing runs cannot supply it —
+`save_total_limit=3` kept only epochs 29-32, all at the far end.
+
+Note `--llrd` already exists in `finetune/optim.py` and has never been used: both
+published runs are `frozen_N_lr3e-05_seed42`. It is the softer version of the
+freeze boundary and costs nothing to try.
 
 ## Stage-2 result: semantic context length (2026-09-01)
+
+> **On the old EV masks.** Predates `--max-repeats 5`, so UTS01-03 are
+> scored over 10-repeat masks. The k=16 *choice* is safe — the mask is the
+> same for every candidate within a subject — but the numbers are not
+> comparable to the prosody table above. See "The final joint model".
 
 9 subjects x 7 configurations x both evals, all nine on `common_stories_all9`,
 `--min-ev 0.1`, GPT-2 small at `--layers last`. Complete; read with
@@ -309,12 +408,20 @@ Mean r over the EV>0.1 voxels, averaged over the nine subjects:
     gpt2_k64    0.1587   +0.0241   0.3233   +0.0550
     gpt2_k256   0.1654   +0.0308   0.3312   +0.0629
 
-**Context helps in 9/9 subjects, and it is the biggest effect in the project
-so far** — +0.031 cv against the ~+0.010 the best audio layer buys over
-openSMILE. k=16 and k=256 are indistinguishable; the dip at k=64 is noise.
+**Context helps in 9/9 subjects**, +0.031 cv. This used to say it was the
+biggest effect in the project, against the ~+0.010 the best audio layer bought
+over openSMILE — that comparison was against the misaligned audio band. On the
+corrected grid the best audio layer buys **+0.065** over openSMILE, so the
+audio-layer effect is roughly twice the context effect, not a third of it.
+Context still helps in 9/9; it is no longer the headline.
+k=16 and k=256 are indistinguishable; the dip at k=64 is noise.
 Choosing on cv: **k=16**, same score for a sixteenth of the context.
 
 ## Stage-2 result: GPT-2 depth at k=16 (2026-09-08)
+
+> **On the old EV masks**, and being re-run on the current ones
+> (job submitted 2026-09-09). The L8 argmax should survive — mask changes
+> affect all layers alike — but the absolute r will move for UTS01-03.
 
 The context sweep above ran entirely at `--layers last`, which on a *causal*
 LM is the layer least likely to win: the top of the stack is optimised to emit
@@ -341,8 +448,10 @@ al. 2023). So +0.031 was measured at a probable trough. It was.
     L12     0.1657    —       0/9    0.3271    —       0/9   <- what the k sweep used
 
 **A clean inverted U peaking at L8 of 12 — two thirds of the way up.** The
-hourglass, measured. `--layers last` cost +0.0087 mean r, which is about what
-the *entire* audio-layer effect buys over openSMILE (~+0.010).
+hourglass, measured. `--layers last` cost +0.0087 mean r. (This used to add
+"about what the entire audio-layer effect buys over openSMILE (~+0.010)" — that
+was the misaligned audio band; the corrected figure is +0.065, so depth on the
+text side is a seventh of it, not a match for it.)
 
 **L8 is the argmax in all nine subjects independently** on cv — not a group
 mean with a soft peak, nine separate maxima at the same layer. Holdout (all
@@ -497,43 +606,39 @@ p-value as `max(p_audio|text, p_text|audio)`, then FDR across voxels on that.
 Each component p comes from its own DS null, each of which models the correct
 H0 by construction. Nothing about the header's definition changes.
 
-## The final joint model: which bands, and one mismatch to fix first
+## The final joint model: which bands
 
-The joint model takes the best-performing prosody band and the best-performing
-semantic band, each chosen on **cv** over its own sweep. As of 2026-09-08 that is:
+Each band is chosen on **cv** over its own sweep. As of 2026-09-09:
 
-    prosody    perlayer_base_emotion  layer 10     +0.0103 over openSMILE, 9/9
-    semantic   perlayer_gpt2_k16      layer 8      +0.0397 over gpt2_mean, 9/9
+    prosody    perlayer_base_emotion 9-11   or   perlayer_base_robust 11
+                                      +0.065 over openSMILE, 9/9
+    semantic   perlayer_gpt2_k16 layer 8    +0.0397 over gpt2_mean, 9/9
+                                      (being re-scored on the current masks)
 
-**The prosody choice does not match what the 45 held-out runs actually used.**
-Those ran `base_emotion_L11` and `base_robust_L18`, because
-`encoding_holdout.sbatch` was written against the *coarse* sweep, which sampled
-every third layer and never tested L10 or L17. The corrected all-layer sweep
-then found L10 (+0.0103 vs L11 +0.0102) and L17 (+0.0080 vs L18 +0.0078).
-Numerically this is nothing — L10 and L11 are statistically indistinguishable.
-As a *selection rule* it is not nothing: "we took the best layer on cv" has to
-name L10, or the sweep table in the paper contradicts the methods section.
-Decide one of:
-  (a) use L10 and say so — costs one extraction, matches the stated rule;
-  (b) keep L11 and state plainly that L10/L11 are within noise and L11 was
-      already extracted. Defensible, but must be written down, not silent.
+This supersedes the L10-vs-L11 mismatch that used to be recorded here. The
+corrected sweep puts the peak at 9-11 (emotion) and L11 (robust), and the 45 old
+holdout runs that used `base_emotion_L11` / `base_robust_L18` were on the
+misaligned grid and are void regardless of which layer they named.
 
-**There is no flat `base_emotion_L10` store**, only `base_emotion_L11`,
-`base_emotion_9to11`, `base_robust_L18`, `base_robust_15to18`. Rather than
-extract another flat store per layer, give `run_encoding` the `store:layer`
-source syntax `run_semantic_sweep` already has (`perlayer_base_emotion:10`,
-`perlayer_gpt2_k16:8`). One mechanism, no duplicated stores, and it removes the
-class of error that produced this mismatch.
+`run_encoding` should take the `store:layer` source syntax `run_semantic_sweep`
+already has (`perlayer_base_robust:11`, `perlayer_gpt2_k16:8`) instead of a flat
+store per layer. One mechanism, no duplicated stores, and it removes the class of
+error that produced that mismatch. **Still to do.**
 
-**Selection budgets are unequal, and that biases `preference` on cv.** The
-audio band was chosen over ~96 configurations (4 stores x ~24 layers); the text
-band over ~19 (13 layers at k=16, 7 context lengths at L12). Taking a max over
-more candidates carries more winner's curse, so the *cross-validated* audio
-score is the more optimistic of the two and `preference = r_text − r_audio` is
-biased toward audio if read off cv. The held-out story is unaffected, because
-neither selection touched it — one more reason to report `preference` on
-holdout only, and to say in the methods how many configurations each band was
-selected over.
+**The semantic numbers are on the old EV masks.** Every semantic sweep predates
+`--max-repeats 5` (2026-09-09), so UTS01-03 were scored over masks built from 10
+repeats while every prosody number above comes from 5 — 1,776 voxels against
+6,555 for UTS01. A depth sweep at k=16 on the current masks is running; the old
+results are archived at `results/encoding/semantic_sweep_oldmask_20260909/`.
+**Until it lands, do not put a text number and an audio number side by side.**
+
+**Selection budgets are unequal, and that biases `preference` on cv.** The audio
+band was chosen over ~96 configurations (4 stores x ~24 layers), the text band
+over ~19. A max over more candidates carries more winner's curse, so the
+cross-validated audio score is the more optimistic of the two. The held-out story
+is unaffected, since neither selection touched it — one more reason to report
+`preference` on holdout only, and to say in the methods how many configurations
+each band was selected over.
 
 ## Code review, 2026-09-09 — what was wrong, and what was done
 
@@ -650,11 +755,25 @@ identical across subjects, so it corrects none of the imbalance
 available. Results saved before this have no `n_repeats`; `--normalize` warns
 and falls back rather than silently using the wrong ceiling.
 
-**NOT fixed — and it cannot be fixed in code.** The mask instability at n=5 is a
-property of the data, not a bug. Options are to report per-subject rather than
-pooled, to fix one common mask (e.g. voxels passing EV in all nine, or a mask
-built from a fixed 5 repeats for every subject so the estimator variance
-matches), or to state the imbalance. Decide before the group maps.
+**Partly addressed since (2026-09-09).** `--max-repeats 5` is now the default on
+all four entry points (`02e0d3e`), so every subject's mask comes from the same
+number of repeats and the *estimator variance* is matched. It did not make the
+masks equal in size — at 5 repeats each, UTS01-03 are 6,555 / 11,254 / 16,395
+voxels against 1,706-4,092 for the other six. That residual gap is a real
+difference in data quality between the three dense subjects and the rest, not an
+artefact of the repeat count, so "mean r over EV>0.1 voxels" is still not quite
+the same quantity across subjects. Within a subject it cancels — every layer,
+model and condition shares one mask — which is why the sweeps are safe and only
+group-level statements are affected.
+
+For group maps the common space is fsaverage, not native space:
+`project_masked` writes NaN outside each subject's own mask and
+`--min-subjects N` (default 5) drops vertices too few subjects reach.
+`n_subjects_*.npy` is saved unthresholded, so the floor can be changed and the
+averaging re-run without reprojecting. Whether thin coverage is also *biased
+upward* — the subjects that reach a vertex being the ones whose EV mask included
+it — is untested; bin mean r by `n_subjects` once the surface maps exist. The
+variance argument for a floor holds either way.
 
 ### Lower priority
 
