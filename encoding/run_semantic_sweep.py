@@ -118,6 +118,14 @@ def build_parser() -> argparse.ArgumentParser:
     model.add_argument("--alpha-max", type=float, default=12.0)
     model.add_argument("--num-alphas", type=int, default=13)
     model.add_argument("--n-splits", type=int, default=5)
+    model.add_argument("--max-repeats", type=int, default=5,
+                       help="use only the first N repeats of the held-out story, "
+                            "for every subject. UTS01-03 have 10 and the rest "
+                            "have 5, which gives the first three a cleaner target "
+                            "(ceiling 0.808 vs 0.696) and a differently-precise EV "
+                            "mask (1,776 voxels from 10 repeats vs 6,555 from five, "
+                            "on UTS01 as its own control). Capping at 5 puts every "
+                            "subject on one footing. Pass 0 to use all of them.")
     model.add_argument("--min-ev", type=float, default=0.1)
 
     solver = p.add_argument_group("solver")
@@ -228,7 +236,8 @@ def run_subject(subject: str, args, sources: List[str],
     n_voxels = None
 
     if held_out is not None:
-        repeats = load_response_repeats(held_out, subject)
+        repeats = load_response_repeats(
+            held_out, subject, max_repeats=args.max_repeats, logger=log)
         trimmed = np.stack([trim_response(r, n_trs[held_out], args.trim)
                             for r in repeats])
         ev = explainable_variance(trimmed)

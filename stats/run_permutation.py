@@ -103,6 +103,14 @@ def parse_args(argv=None) -> argparse.Namespace:
                    help="permutation block length in TRs (20 s at TR=2 s)")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--alpha", type=float, default=0.05, help="FDR level")
+    p.add_argument("--max-repeats", type=int, default=5,
+                   help="use only the first N repeats of the held-out story, "
+                        "for every subject. UTS01-03 have 10 and the rest "
+                        "have 5, which gives the first three a cleaner target "
+                        "(ceiling 0.808 vs 0.696) and a differently-precise EV "
+                        "mask (1,776 voxels from 10 repeats vs 6,555 from five, "
+                        "on UTS01 as its own control). Capping at 5 puts every "
+                        "subject on one footing. Pass 0 to use all of them.")
     p.add_argument("--min-ev", type=float, default=0.1,
                    help="fit and test only voxels above this explainable variance")
 
@@ -165,7 +173,8 @@ def run_subject(subject: str, args, out_root: Path) -> None:
     Y_train = prepare_responses(
         load_aligned_response(subject, train_stories, feature_lengths, args.trim)
     )
-    repeats = load_response_repeats(held_out, subject)
+    repeats = load_response_repeats(
+        held_out, subject, max_repeats=args.max_repeats, logger=log)
     n_repeats = len(repeats)
     trimmed = np.stack([trim_response(r, feature_lengths[held_out], args.trim)
                         for r in repeats])

@@ -116,11 +116,37 @@ def load_response(stories: Sequence[str], subject: str,
     return np.vstack(blocks)
 
 
-def load_response_repeats(story: str, subject: str, fmri_dir=None) -> np.ndarray:
+def load_response_repeats(story: str, subject: str, fmri_dir=None,
+                          max_repeats: Optional[int] = None,
+                          logger=None) -> np.ndarray:
     """Return ``(n_repeats, n_TRs, n_voxels)`` for a story presented repeatedly.
 
     Only the held-out story has repeats; they are what makes the explainable-
     variance noise ceiling computable.
+
+    `max_repeats` keeps only the first N, and exists because the subjects do
+    not have the same number: UTS01-03 heard `wheretheressmoke` ten times, the
+    other six five times. That difference is not cosmetic. It changes
+
+    * **the target.** Y_test is the mean of the repeats, and a mean of ten is
+      cleaner than a mean of five, so the same model scores higher on UTS01-03
+      for a reason that is purely measurement (attainable ceiling 0.808 vs
+      0.696 at the observed reliability, a 16% advantage).
+    * **the EV mask.** The bias correction makes EV unbiased at both counts but
+      not equally *precise*, and since most voxels sit below the threshold the
+      extra variance pushes far more of them across it. Measured on UTS01 as
+      its own control: 1,776 voxels from all ten repeats, 6,555 from its first
+      five, 1,024 from its last five. Same subject, same data.
+
+    So capping everyone at five puts the whole cohort on one footing: same
+    target noise, same mask precision, same ceiling. It costs UTS01-03 some
+    precision, which is the right trade when the numbers are pooled or
+    compared across subjects.
+
+    Which five is arbitrary — the two halves of UTS01 differ by 6x in mask size
+    — so it is fixed as the first N and must stay that way. The other six
+    subjects have no choice to make, and that is the point: after the cap,
+    neither does anyone.
     """
     path = Path(fmri_dir or FMRI_DIR) / subject / f"{story}.hf5"
     if not path.exists():
@@ -131,7 +157,20 @@ def load_response_repeats(story: str, subject: str, fmri_dir=None) -> np.ndarray
                 f"{path} has no 'individual_repeats' dataset "
                 f"(keys: {list(f.keys())}) — this story was not repeated."
             )
-        return np.asarray(f["individual_repeats"])
+        repeats = np.asarray(f["individual_repeats"])
+
+    if max_repeats is not None and max_repeats > 0:
+        if repeats.shape[0] < max_repeats:
+            msg = (f"{subject}/{story}: asked for {max_repeats} repeats but "
+                   f"only {repeats.shape[0]} exist; using all of them. This "
+                   f"subject is NOT on the same footing as the others.")
+            (logger.warning if logger else print)(msg)
+        elif repeats.shape[0] > max_repeats:
+            if logger:
+                logger.info(f"  {subject}: using the first {max_repeats} of "
+                            f"{repeats.shape[0]} repeats")
+            repeats = repeats[:max_repeats]
+    return repeats
 
 
 def subject_has_story(subject: str, story: str, fmri_dir=None) -> bool:

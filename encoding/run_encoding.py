@@ -115,6 +115,14 @@ def parse_args(argv=None) -> argparse.Namespace:
     model.add_argument("--num-alphas", type=int, default=20)
     model.add_argument("--n-splits", type=int, default=None,
                        help="CV folds; default = leave-one-story-out")
+    model.add_argument("--max-repeats", type=int, default=5,
+                       help="use only the first N repeats of the held-out story, "
+                            "for every subject. UTS01-03 have 10 and the rest "
+                            "have 5, which gives the first three a cleaner target "
+                            "(ceiling 0.808 vs 0.696) and a differently-precise EV "
+                            "mask (1,776 voxels from 10 repeats vs 6,555 from five, "
+                            "on UTS01 as its own control). Capping at 5 puts every "
+                            "subject on one footing. Pass 0 to use all of them.")
     model.add_argument("--min-ev", type=float, default=0.0,
                        help="fit only voxels with explainable variance above "
                             "this (holdout eval only). 0.1 is a good default "
@@ -304,7 +312,8 @@ def run_subject(subject: str, args, out_root: Path) -> None:
             fitted_pca=design.fitted_pca,       # never refit on the test story
             fitted_scalers=design.fitted_scalers,  # ...nor re-standardise on it
         )
-        repeats = load_response_repeats(held_out, subject)
+        repeats = load_response_repeats(
+            held_out, subject, max_repeats=args.max_repeats, logger=log)
         # Recorded in meta: the target is the MEAN of these, so the noise
         # ceiling depends on how many there were -- 10 for UTS01-03, 5 for the
         # rest. Without it downstream cannot compute a correct ceiling.
@@ -402,7 +411,8 @@ def run_subject(subject: str, args, out_root: Path) -> None:
         "audio_features": args.audio_features,
         "train_stories": train_stories,
         "held_out_story": held_out,
-        "n_repeats": n_repeats,
+        "n_repeats": n_repeats,          # the number actually used
+        "max_repeats": args.max_repeats,  # the cap asked for, 0 = no cap
         "n_train_TRs": int(design.X.shape[0]),
         "n_voxels": int(n_voxels),
         "bands": {k: [v.start, v.stop] for k, v in design.bands.items()},
