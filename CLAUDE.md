@@ -477,13 +477,15 @@ neither selection touched it — one more reason to report `preference` on
 holdout only, and to say in the methods how many configurations each band was
 selected over.
 
-## Code review, 2026-09-09 — what is actually wrong
+## Code review, 2026-09-09 — what was wrong, and what was done
 
 A multi-lens audit of the pipeline. Everything below was verified against the
-code and, where a number is quoted, measured on the real data. Ordered by how
-much it changes a reported result.
+code and, where a number is quoted, measured on the real data. **All of it is
+fixed in `e659e3a`** unless marked otherwise; the diagnosis is kept because the
+numbers say how much each mattered, and because two of them changed results
+that are already in this file.
 
-### Confirmed, and it touches published numbers
+### Touched published numbers — FIXED
 
 **`preprocess.py:147` z-scores the held-out design with the TEST story's own
 statistics.** There is a `fitted_pca` escape hatch, no `fitted_scalers` one, so
@@ -505,10 +507,16 @@ holdout**, whose score is degraded by an artifact the neural bands do not feel.
 Consequence: the holdout Δ-vs-openSMILE columns overstate the neural bands, and
 a future `preference` on holdout with an openSMILE audio band would be biased
 toward text. Note this is the opposite of the rule CLAUDE.md already states for
-the fine-tuning stack ("validation scalers come from training"). Fix: give
-`build_design` a `fitted_scalers` argument mirroring `fitted_pca`.
+the fine-tuning stack ("validation scalers come from training").
 
-### Confirmed, and it will break the next thing that runs
+**Fixed:** `build_design` takes `fitted_scalers` mirroring `fitted_pca`, and
+all four callers pass it. The training path is byte-identical — `_standardise`
+reproduces `npp.zscore` to `max|diff| = 0.0`, constant columns included — so
+nothing selected on cv moves. **The openSMILE holdout numbers already in this
+file were computed before the fix** and are the ones to re-run if the paper
+quotes a holdout Δ-vs-openSMILE.
+
+### Would have broken the next thing that runs — FIXED
 
 **`scripts/project_to_fsaverage.py:260` averages masked-out voxels as real
 zeros.** `run_encoding.py:355` scatters unfitted voxels back as `np.zeros`, and
@@ -523,6 +531,14 @@ Compounding it: the two fill conventions in the repo disagree — `run_encoding`
 fills `0.0`, both sweeps fill `np.nan` — and `project()` converts NaN to 0.0
 anyway, so honest missing-data marking is destroyed on the way to the surface.
 
+**Fixed:** `project_masked` normalises by the mask's own interpolation weight,
+recovering the weighted mean over fitted voxels and returning NaN where none
+reach. Whether a map is mask-scattered is decided by *looking at its values*
+(everything outside the mask is 0 or NaN), not by its name — which is what makes
+it robust to the two writers padding differently. `ev.npy` is defined
+everywhere and so still projects plainly. The three existing `*_fsaverage.npy`
+files predate this and should be regenerated with `--overwrite`.
+
 **`stats/analysis.py` double-dips on `preference`.** `compute_contrasts:99`
 thresholds on `max(r_text, r_audio, r_joint) > min_r` and then reports
 `preference = r_text - r_audio` over exactly those voxels. Conditioning on the
@@ -535,6 +551,14 @@ Also `winner_map:138` overwrites the semantic/prosodic labels with
 permutation machinery exists to replace — while `delta_significant` sits unread.
 And `group_summary:212` stacks subject maps of different voxel counts (81,126 to
 109,469), so it either raises or silently writes a one-subject "group" mean.
+
+**Fixed:** selection defaults to the EV mask (`--selection min_r` keeps the old
+behaviour and warns); `winner_map` is preference-only and integration moved to
+`integration_map`, which takes `delta_significant` via `--permutation-dir` and
+warns loudly when it has to fall back to an unthresholded delta; and
+`group_summary` refuses a native-space group mean across different voxel spaces,
+pointing at `project_to_fsaverage` instead, while NaN-ing each subject outside
+its own selection.
 
 ### The EV mask: what it does and does not break
 
@@ -563,19 +587,35 @@ while `cv.py:107` returns **0.398 for both** — about half the true value, and
 identical across subjects, so it corrects none of the imbalance
 `stats/analysis.py:24` advertises it for. Live at `analysis.py:91-93`.
 
-### Lower priority, but real
+**Fixed:** `noise_ceiling(ev, n_repeats)` applies Spearman-Brown, and
+`run_encoding` / `run_permutation` now record `n_repeats` in meta so it is
+available. Results saved before this have no `n_repeats`; `--normalize` warns
+and falls back rather than silently using the wrong ceiling.
 
-- `run_permutation` FDR-corrects over the EV ROI and then saves full-brain maps
-  padded with p=1, which invites a wrong second correction downstream.
-- `common/ridge_utils/ridge.py:61`: the huth backend reuses LOO-selected alphas
-  inside its reported CV, so `--backend huth --eval cv` is optimistically
-  biased while banded is not. Latent — every published number is banded, and
-  the documented `--backend both` recipes are all `--eval holdout`. But
-  CLAUDE.md calls huth a "conservative lower bound", and on cv that is backwards.
-- `scripts/run_pipeline.sh:39` still passes the removed brain-PCA multitask
-  flags.
-- `run_encoding` silently ignores `--min-ev` under `--eval cv` while both sweeps
-  honour it, so their cv numbers are over different voxel sets.
+**NOT fixed — and it cannot be fixed in code.** The mask instability at n=5 is a
+property of the data, not a bug. Options are to report per-subject rather than
+pooled, to fix one common mask (e.g. voxels passing EV in all nine, or a mask
+built from a fixed 5 repeats for every subject so the estimator variance
+matches), or to state the imbalance. Decide before the group maps.
+
+### Lower priority
+
+- **FIXED (warning added):** `run_encoding --backend huth --eval cv` is
+  optimistically biased — `ridge_cv` picks alphas by LOO over all training
+  stories and reuses them inside the CV it reports, while `fit_banded_cv`
+  re-searches inside each outer fold. Latent, since every published number is
+  banded and the documented `--backend both` recipes are all `--eval holdout`,
+  but this file calls huth a "conservative lower bound" and on cv that is
+  backwards.
+- **FIXED (warning added):** `--min-ev` is a silent no-op under
+  `run_encoding --eval cv` (EV needs the repeated story, which only the holdout
+  path loads) while both sweeps honour it — so those cv numbers are over
+  ~81,126 voxels and the sweeps' over ~1,776. Not comparable, and nothing said so.
+- **FIXED:** `scripts/run_pipeline.sh` no longer passes the removed
+  `--use-brain-pca` / `--brain-weight` flags.
+- **NOT fixed:** `run_permutation` FDR-corrects over the EV ROI and then saves
+  full-brain maps padded with `p=1`. Correct as saved, but it invites a wrong
+  second correction downstream. Worth a note in whatever reads them.
 
 ### Fixed in d713d63
 
