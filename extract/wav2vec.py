@@ -45,7 +45,8 @@ import torchaudio
 
 from config import (FEATURES_DIR, SAMPLING_RATE, STIMULI_16K_DIR,
                     WINDOW_SIZE_SEC, ensure_dirs)
-from common.tr_alignment import load_trfiles, tr_onsets
+from common.tr_alignment import (load_trfiles, tr_onsets,
+                                 window_bounds)
 from finetune import REGISTRY, format_registry, resolve_model
 
 log = logging.getLogger("extract.wav2vec")
@@ -140,15 +141,13 @@ def extract_story(waveform: torch.Tensor, onsets: np.ndarray, processor, model,
     window_samples = int(WINDOW_SIZE_SEC * SAMPLING_RATE)
     vectors = []
     for onset in onsets:
-        start = int(onset * SAMPLING_RATE)
-        end = start + window_samples
-        if end <= waveform.shape[1]:
-            chunk = waveform[:, start:end]
-        else:
-            # The last windows can run past the end of the audio; pad with
-            # silence rather than emitting a shorter, differently-scaled vector.
-            pad = window_samples - max(0, waveform.shape[1] - start)
-            chunk = torch.nn.functional.pad(waveform[:, start:], (0, pad))
+        # Windows can fall off either end: the first TRs precede the sound
+        # (negative onsets) and the last run past it. Pad with silence rather
+        # than emitting a shorter, differently-scaled vector -- and never slice
+        # with a negative index, which would take audio from the wrong end.
+        lo, hi, pad_l, pad_r = window_bounds(onset, SAMPLING_RATE,
+                                             window_samples, waveform.shape[1])
+        chunk = torch.nn.functional.pad(waveform[:, lo:hi], (pad_l, pad_r))
         vectors.append(
             embed_window(chunk.squeeze(0).numpy(), processor, model, device,
                          layers, window_samples, per_layer)

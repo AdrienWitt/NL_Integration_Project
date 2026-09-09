@@ -94,6 +94,10 @@ def parse_args(argv=None) -> argparse.Namespace:
                         "'text'/'audio' = one Draper-Stoneman conditional "
                         "null. 'conditional' = both, plus the conjunction "
                         "that tests delta properly")
+    p.add_argument("--n-splits", type=int, default=5,
+                   help="CV folds for the alpha search. MUST match the value "
+                        "the fits being tested used (production is 5), or the "
+                        "'observed' r here is not the published r")
     p.add_argument("--n-perms", type=int, default=1000)
     p.add_argument("--blocklen", type=int, default=10,
                    help="permutation block length in TRs (20 s at TR=2 s)")

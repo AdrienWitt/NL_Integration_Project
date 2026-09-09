@@ -42,7 +42,8 @@ import numpy as np
 from config import (EGEMAPS_FEATURE_SET, EGEMAPS_N_FUNCTIONALS,
                     FINETUNE_TARGET_DIR, STIMULI_DIR, TR, TR_PAD,
                     WINDOW_SIZE_SEC, ensure_dirs)
-from common.tr_alignment import load_trfiles, tr_onsets
+from common.tr_alignment import (load_trfiles, tr_onsets,
+                                 window_bounds)
 
 log = logging.getLogger("prep.targets")
 
@@ -65,14 +66,10 @@ def extract_story_features(story: str, audio_dir: Path, onsets: np.ndarray,
     rows, names = [], None
 
     for onset in onsets:
-        start = int(onset * sr)
-        end = start + window_samples
-        if start >= len(y):
-            window = np.zeros(window_samples, dtype=np.float32)
-        elif end <= len(y):
-            window = y[start:end]
-        else:
-            window = np.pad(y[start:], (0, end - len(y)), mode="constant")
+        lo, hi, pad_l, pad_r = window_bounds(onset, sr, window_samples, len(y))
+        window = y[lo:hi]
+        if pad_l or pad_r:
+            window = np.pad(window, (pad_l, pad_r), mode="constant")
 
         feats = smile.process_signal(window, sr)
         if names is None:

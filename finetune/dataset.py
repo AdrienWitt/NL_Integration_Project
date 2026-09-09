@@ -36,7 +36,8 @@ from transformers import AutoFeatureExtractor
 
 from config import (EGEMAPS_N_FUNCTIONALS, SAMPLING_RATE, TR, TR_PAD,
                     WINDOW_SIZE_SEC)
-from common.tr_alignment import load_trfiles, tr_onsets
+from common.tr_alignment import (load_trfiles, tr_onsets,
+                                 window_bounds)
 
 #: Filename suffix written by prep/make_finetune_targets.py.
 TARGET_SUFFIX = "_prosody.json"
@@ -224,9 +225,12 @@ class ProsodyDataset(Dataset):
             waveform = self._load_waveform(story)
 
             for i in range(n_trs):
-                start = int(float(onsets[i]) * self.sampling_rate)
-                end = min(start + self.max_length, waveform.shape[1])
-                window = waveform[0, start:end].numpy()
+                lo, hi, pad_l, pad_r = window_bounds(
+                    float(onsets[i]), self.sampling_rate, self.max_length,
+                    waveform.shape[1])
+                window = waveform[0, lo:hi].numpy()
+                if pad_l or pad_r:
+                    window = np.pad(window, (pad_l, pad_r), mode="constant")
 
                 inputs = self.processor(
                     window, sampling_rate=self.sampling_rate,

@@ -36,7 +36,8 @@ import torch
 from torch import nn
 
 from config import FEATURES_DIR, SAMPLING_RATE, STIMULI_16K_DIR, ensure_dirs
-from common.tr_alignment import load_trfiles, tr_onsets
+from common.tr_alignment import (load_trfiles, tr_onsets,
+                                 window_bounds)
 from finetune import EMOTION_DIMENSIONS, EMOTION_MODEL
 
 log = logging.getLogger("extract.emotion")
@@ -93,13 +94,9 @@ def embed_story(waveform: torch.Tensor, onsets: np.ndarray, processor, model,
                 device, window_samples: int, output: str) -> np.ndarray:
     rows = []
     for onset in onsets:
-        start = int(onset * SAMPLING_RATE)
-        end = start + window_samples
-        if end <= waveform.shape[1]:
-            chunk = waveform[:, start:end]
-        else:
-            pad = window_samples - max(0, waveform.shape[1] - start)
-            chunk = torch.nn.functional.pad(waveform[:, start:], (0, pad))
+        lo, hi, pad_l, pad_r = window_bounds(onset, SAMPLING_RATE,
+                                             window_samples, waveform.shape[1])
+        chunk = torch.nn.functional.pad(waveform[:, lo:hi], (pad_l, pad_r))
 
         inputs = processor(
             chunk.squeeze(0).numpy(), sampling_rate=SAMPLING_RATE,

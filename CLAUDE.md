@@ -1,3 +1,61 @@
+# ⚠ THE AUDIO BANDS ARE MISALIGNED BY 5 TRs — READ THIS FIRST (2026-09-09)
+
+**Every prosody number in this file was computed from audio taken 10 s later
+than the brain data it was regressed against.** `tr_onsets` returned the
+*scanner* clock and used it to index the wav, while the text band used the
+*sound* clock. Fixed in `common/tr_alignment.py`, but everything already
+extracted is on the old grid.
+
+Measured on UTS01 / `wheretheressmoke`, mean BOLD over the 344 voxels with
+EV>0.2, correlation by lag:
+
+    lag (TR)        0     1     2     3     4     5     6     7     8
+    gpt2_mean   -0.07 +0.16 +0.51 +0.22 -0.13 -0.05 +0.07 -0.04 -0.12   <- peak at 2
+    openSMILE   -0.02 -0.07 +0.00 +0.06 +0.01 -0.01 +0.03 +0.20 +0.10   <- peak at 7
+
+The text band peaks at 2 TRs, a textbook HRF delay. The audio band peaks at 7,
+exactly 5 TRs later. **`--ndelays 4` offers lags of 1-4 only, so the prosody
+band's real signal was outside the model's reach entirely.**
+
+Three independent confirmations: the arithmetic (`get_reltriggertimes()`
+returns `trtimes - 10`, and `tr_onsets` added the 10 back); the trailing rows
+of every openSMILE store are identical, which happens only when the last
+windows run past the end of the wav, and solving for the wav duration that
+implies is consistent with the TextGrids on the scanner clock but *shorter
+than the last spoken word* on the sound clock in 4 of 5 stories; and the
+stores have no leading silence, ruling out the alternative that the wavs carry
+a 10 s lead-in.
+
+**Direction of the error: fixing it can only help audio.** Every prosody
+number below is a floor, not an estimate — openSMILE ~0.011, the best layer's
++0.010, the base-vs-fine-tuned deltas of ~0.005. `delta` was biased down and
+`preference = r_text - r_audio` strongly toward text. The audio-vs-text
+comparison this project exists to make has not actually been run yet.
+
+## What must be redone
+
+    re-extract   opensmile, perlayer_base_{robust,emotion},
+                 perlayer_ft_{robust,emotion}, base_emotion_{L11,9to11},
+                 base_robust_{L18,15to18}, and prosody/finetune_targets
+    re-run       the prosody layer sweep (36 tasks) and the 45 holdout
+                 encoding runs
+
+## What is NOT affected
+
+- **Every text band.** `gpt2_mean`, `gpt2_k*` and `perlayer_gpt2_k16` go
+  through `DataSequence`, which uses `get_reltriggertimes()` directly and was
+  always on the sound clock. The context-length and depth sweeps stand.
+- **The fine-tuned checkpoints.** Input windows and eGeMAPS targets were
+  shifted together, so the mapping they learned — audio window to the
+  acoustics of that same window — is unchanged. No re-training needed, only
+  re-extraction of the targets if they are rebuilt.
+- **Everything after the design matrix**: banded ridge, the permutation
+  machinery, the sweeps' logic. They were fed bad audio, not broken.
+
+A side benefit of the fix: the padded rows now fall at the *start* of each
+story, where `[TR_PAD + trim : -trim]` removes them, instead of at the end
+where one or two survived into the design.
+
 # Prosody_Semantics_NL — project context
 
 Voxelwise encoding of prosody and semantics in the LeBel `ds003020` dataset.
