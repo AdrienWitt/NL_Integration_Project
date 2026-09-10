@@ -3,7 +3,7 @@
 #SBATCH --output=logs/encavd_%a_out
 #SBATCH --error=logs/encavd_%a_err
 #SBATCH --partition=shared-gpu
-#SBATCH --time=04:00:00
+#SBATCH --time=12:00:00
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1,VramPerGpu:20G
 #SBATCH --constraint="COMPUTE_CAPABILITY_7_5|COMPUTE_CAPABILITY_8_0|COMPUTE_CAPABILITY_8_6|COMPUTE_CAPABILITY_8_9|COMPUTE_CAPABILITY_9_0"
@@ -43,11 +43,24 @@
 # a small alpha, the 4096-column bands get large ones, and every model is
 # regularised at its own optimum.
 #
-# --n-iter is raised well above the sweep's 20. random_search samples the
-# simplex of band weights, and 20 samples were calibrated for p=4096 where each
-# fit is expensive. Here each fit is seconds, and the band weights are exactly
-# what two collinear dimensions are fighting over, so sampling them well is the
-# whole point.
+# --n-iter stays at the default 20. An earlier version of this file raised it to
+# 200 on the reasoning that "each fit is seconds" at 12 columns. That was
+# asserted, not measured, and all nine tasks hit the 4-hour limit: the cost of
+# random_search is the number of fits, `outer * inner * n_iter`, and it scales
+# with how many BANDS there are rather than how many columns, because what it
+# samples is the simplex of band weights. Measured on UTS01 at n_iter=200:
+#
+#   arousal / dominance / valence   1 min 45 each  (one band: simplex is a point)
+#   arousal+valence                 > 3 h 54       (two bands, never finished)
+#
+# 5 outer x 23 inner x 200 = 23,000 fits per model, against 500 for a sweep.
+# Two factors had been multiplied in the same change -- n_iter (x10) and an
+# unbounded inner loop (x4.6) -- each argued for on its own merits.
+#
+# The inner loop stays leave-one-story-out, matching every other final model
+# here; scripts/inner_cv_check.sbatch measured 5-fold against it at |diff| =
+# 0.0001, so bounding it would be defensible too, but consistency with
+# encoding_prosody_bands.sbatch is worth more than the 4.6x.
 #
 # Common stories, because these maps get compared across subjects. Per-subject
 # story lists would make a group difference part affect and part "UTS01 heard
@@ -73,7 +86,6 @@ SUBJ=${SUBJECTS[$SLURM_ARRAY_TASK_ID]}
 
 EVALS=${EVALS:-"cv holdout"}
 STORIES_JSON=${STORIES_JSON:-common_stories_all9.json}
-NITER=${NITER:-200}
 
 for EV in $EVALS; do
     echo "=== $SUBJ | --eval $EV ==="
@@ -98,8 +110,7 @@ for EV in $EVALS; do
         --eval "$EV" \
         --min-ev 0.1 \
         --max-repeats 5 \
-        $SPLITS \
-        --n-iter "$NITER"
+        $SPLITS
 done
 
 echo "=== $SUBJ done in $((SECONDS / 60)) min ==="
