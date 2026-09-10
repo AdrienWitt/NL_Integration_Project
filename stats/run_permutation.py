@@ -51,6 +51,7 @@ Examples
 """
 
 import argparse
+import json
 import logging
 import time
 from pathlib import Path
@@ -61,7 +62,7 @@ from config import ENCODING_OUT, HELD_OUT_STORY, ensure_dirs
 from common.io import load_response_repeats, save_results
 from encoding.banded import (default_solver_params, fit_banded,
                              set_himalaya_backend)
-from encoding.cv import explainable_variance, story_folds
+from encoding.cv import explainable_variance, plan_folds
 from encoding.preprocess import build_design, prepare_responses, trim_response
 from encoding.run_encoding import (MODEL_BANDS, load_aligned_response,
                                    load_bands, resolve_stories,
@@ -70,6 +71,76 @@ from .permutation import (conjunction_pvalues, draper_stoneman_null,
                           permutation_null, permutation_pvalues, summarize)
 
 log = logging.getLogger("permutation")
+
+
+def load_observed_fit(root, subject: str, args) -> dict:
+    """Load a run_encoding holdout fit: band weights, unimodal r, its mask.
+
+    The permutations hold the joint model's band weights fixed (see
+    `fit_banded_fixed`), so those weights *are* the estimator being tested.
+    Taking them from the run that produced the published numbers is what makes
+    the observed statistic and the null the same estimator by construction --
+    rather than by two call sites agreeing about an alpha search, which is the
+    arrangement that already failed once.
+
+    Everything that would change the design is checked against the encoding
+    run's meta and refused on mismatch. A permutation of a design that differs
+    from the fitted one is not a conservative error; it is a wrong p-value that
+    looks entirely normal.
+    """
+    d = Path(root) / "banded" / "holdout" / subject
+    if not d.is_dir():
+        raise FileNotFoundError(
+            f"{d} not found. --from-encoding wants the run root, e.g. "
+            f"results/encoding/gpt2_mean__opensmile, and that run must have "
+            f"been done with --eval holdout.")
+
+    with open(d / "meta.json", encoding="utf-8") as f:
+        meta = json.load(f)
+
+    mismatches = []
+    for key, mine in (("trim", args.trim), ("ndelays", args.ndelays),
+                      ("min_ev", args.min_ev), ("use_pca", args.use_pca),
+                      ("held_out_story", args.held_out_story)):
+        theirs = meta.get(key)
+        if theirs is not None and theirs != mine:
+            mismatches.append(f"{key}: fit with {theirs!r}, here {mine!r}")
+    stores = meta.get("band_stores") or {}
+    for band, mine in (("text", args.text_features),
+                       ("audio", args.audio_features)):
+        theirs = stores.get(band)
+        if theirs is not None and theirs != mine:
+            mismatches.append(f"{band} band: fit with {theirs!r}, here {mine!r}")
+    if mismatches:
+        raise RuntimeError(
+            f"{subject}: --from-encoding does not describe this design:\n  "
+            + "\n  ".join(mismatches))
+
+    corrs = {}
+    for name in MODEL_BANDS:
+        path = d / f"{name}_corrs.npy"
+        if not path.exists():
+            raise FileNotFoundError(
+                f"{path} missing — the encoding run must have fit "
+                f"--models {' '.join(MODEL_BANDS)}.")
+        corrs[name] = np.load(path)
+
+    deltas_path = d / "joint_deltas.npy"
+    if not deltas_path.exists():
+        raise FileNotFoundError(
+            f"{deltas_path} missing, so there are no band weights to reuse. "
+            f"Refit the joint model, or drop --from-encoding and accept a "
+            f"second alpha search.")
+
+    mask_path = d / "voxel_mask.npy"
+    return {
+        "corrs": corrs,
+        "deltas": np.load(deltas_path),
+        "voxel_mask": (np.load(mask_path).astype(bool) if mask_path.exists()
+                       else None),
+        "folds": meta.get("folds", "unrecorded fold plan"),
+        "meta": meta,
+    }
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -94,10 +165,19 @@ def parse_args(argv=None) -> argparse.Namespace:
                         "'text'/'audio' = one Draper-Stoneman conditional "
                         "null. 'conditional' = both, plus the conjunction "
                         "that tests delta properly")
-    p.add_argument("--n-splits", type=int, default=5,
-                   help="CV folds for the alpha search. MUST match the value "
-                        "the fits being tested used (production is 5), or the "
-                        "'observed' r here is not the published r")
+    p.add_argument("--from-encoding", default=None, metavar="DIR",
+                   help="a run_encoding result root. The observed fit is then "
+                        "LOADED from it -- band weights and unimodal r -- "
+                        "instead of recomputed here. Strongly preferred: it is "
+                        "the only way the permutation is guaranteed to test "
+                        "the published numbers rather than a second fit that "
+                        "merely resembles them.")
+    p.add_argument("--alpha-n-splits", "--n-splits", dest="alpha_n_splits",
+                   type=int, default=None,
+                   help="folds for the alpha search, used ONLY when "
+                        "--from-encoding is absent. Must then match whatever "
+                        "produced the numbers being tested; run_encoding's "
+                        "default is leave-one-story-out (None).")
     p.add_argument("--n-perms", type=int, default=1000)
     p.add_argument("--blocklen", type=int, default=10,
                    help="permutation block length in TRs (20 s at TR=2 s)")
@@ -185,13 +265,33 @@ def run_subject(subject: str, args, out_root: Path) -> None:
     log.info(f"  testing {mask.sum():,}/{ev.size:,} voxels (EV > {args.min_ev})")
     n_voxels = ev.size
 
+    loaded = (load_observed_fit(args.from_encoding, subject, args)
+              if args.from_encoding else None)
+    if loaded is not None and args.shuffle_block == "both":
+        raise RuntimeError(
+            "--shuffle-block both needs the observed model's test-set "
+            "predictions, which run_encoding does not save. Use a "
+            "Draper-Stoneman null (text / audio / conditional) with "
+            "--from-encoding, which is the one that tests delta anyway.")
+    if (loaded is not None and loaded["voxel_mask"] is not None
+            and not np.array_equal(loaded["voxel_mask"], mask)):
+        raise RuntimeError(
+            f"{subject}: --from-encoding was fit over "
+            f"{int(loaded['voxel_mask'].sum()):,} voxels and this run selects "
+            f"{int(mask.sum()):,}. The band weights are per voxel, so they "
+            f"cannot be reindexed onto a different selection. Match --min-ev "
+            f"and --max-repeats to the encoding run."
+        )
+
     Y_train_fit, Y_test_fit = Y_train[:, mask], Y_test[:, mask]
-    # n_splits, not leave-one-story-out. The alpha search here must match the
-    # one that produced the numbers being tested: run_encoding uses
-    # --n-splits 5, and every production run did. Leaving this unbounded gave
-    # the permutation's "observed" r a different alpha search from the
-    # published r, so the two were not the same quantity.
-    splits = story_folds(design.story_ids, args.n_splits)
+    # This used to be `story_folds(design.story_ids, args.n_splits)` with a
+    # comment asking a human to keep it equal to whatever run_encoding was
+    # doing. That is a coupling maintained by prose, and it broke the first
+    # time run_encoding's alpha search changed. --from-encoding removes the
+    # second search altogether; without it, the plan at least states its own
+    # terms and records them.
+    plan = plan_folds(design.story_ids, "holdout",
+                      alpha_n_splits=args.alpha_n_splits)
     alphas = np.logspace(args.alpha_min, args.alpha_max, args.num_alphas)
     solver_params = default_solver_params(
         n_iter=args.n_iter, n_targets_batch=args.n_targets_batch,
@@ -202,20 +302,35 @@ def run_subject(subject: str, args, out_root: Path) -> None:
 
     observed, predictions = {}, {}
     joint_deltas = None
-    for model_name, band_names in MODEL_BANDS.items():
-        log.info(f"  fitting {model_name}")
-        result = fit_banded(
-            X_train=design.X, Y_train=Y_train_fit,
-            X_test=design_test.X, Y_test=Y_test_fit,
-            bands=_subset_bands(design.bands, band_names),
-            splits=splits, alphas=alphas, solver=args.solver,
-            solver_params=solver_params, compute_splits=False,
-            return_predictions=True,
-        )
-        observed[model_name] = result.corrs
-        predictions[model_name] = result.predictions
-        if model_name == "joint":
-            joint_deltas = result.deltas
+    if loaded is not None:
+        # The published fit, reused rather than reproduced. The band weights
+        # are what the permutations hold fixed, so taking them from the run
+        # being tested is what makes "observed" and "null" the same estimator
+        # by construction instead of by agreement between two call sites.
+        for model_name in MODEL_BANDS:
+            observed[model_name] = loaded["corrs"][model_name][mask]
+        joint_deltas = loaded["deltas"][:, mask]
+        log.info(f"  observed fit loaded from {args.from_encoding} "
+                 f"({loaded['folds']}) — no alpha search here")
+    else:
+        log.warning(
+            "no --from-encoding: refitting the observed model, whose alpha "
+            "search (%s) must match the run being tested or the 'observed' r "
+            "is not the published r.", plan.describe())
+        for model_name, band_names in MODEL_BANDS.items():
+            log.info(f"  fitting {model_name}")
+            result = fit_banded(
+                X_train=design.X, Y_train=Y_train_fit,
+                X_test=design_test.X, Y_test=Y_test_fit,
+                bands=_subset_bands(design.bands, band_names),
+                splits=plan.alpha_search, alphas=alphas, solver=args.solver,
+                solver_params=solver_params, compute_splits=False,
+                return_predictions=True,
+            )
+            observed[model_name] = result.corrs
+            predictions[model_name] = result.predictions
+            if model_name == "joint":
+                joint_deltas = result.deltas
 
     observed["delta"] = (observed["joint"]
                          - np.maximum(observed["text"], observed["audio"]))

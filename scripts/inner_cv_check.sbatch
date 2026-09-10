@@ -75,6 +75,6 @@ run () {   # tag, extra args
 }
 
 run innerLOSO
-run inner5 "--inner-n-splits 5"
+run inner5 "--alpha-n-splits 5"
 
 echo "=== $SUBJ done in $((SECONDS / 60)) min ==="

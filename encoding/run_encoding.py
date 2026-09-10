@@ -72,7 +72,7 @@ from common.io import (load_features, load_response, load_response_repeats,
                        save_results, stories_for_subject, subject_has_story)
 from .banded import (default_solver_params, fit_banded, fit_banded_cv,
                      set_himalaya_backend)
-from .cv import explainable_variance, story_folds
+from .cv import explainable_variance, plan_folds
 from .huth_ridge import fit_huth
 from .preprocess import build_design, prepare_responses, trim_response
 
@@ -101,7 +101,11 @@ def resolve_band_stores(args) -> Dict[str, str]:
     band, and banded ridge gives each its own alpha exactly as it does for
     text vs audio.
     """
-    if not args.band:
+    # getattr, not args.band: `stats.run_permutation` imports `load_bands` and
+    # defines no --band flag of its own, being text/audio by construction. A
+    # bare attribute access here breaks it at run time, which is exactly what
+    # happened when this function was introduced.
+    if not getattr(args, "band", None):
         return {"text": args.text_features, "audio": args.audio_features}
 
     bands: Dict[str, str] = {}
@@ -145,6 +149,16 @@ def resolve_model_bands(bands: Dict[str, str],
                 f"({', '.join(bands)}), 'joint', or a '+'-joined subset of "
                 f"bands" + (f"; unknown: {', '.join(unknown)}" if unknown
                             else " (a single '+' subset needs >= 2 bands)"))
+        if set(parts) == set(bands):
+            # A subset that is every band IS `joint`, so r_joint - r_subset is
+            # identically zero. Read as a leave-one-band-out contribution that
+            # says "the omitted band adds nothing" -- a wrong conclusion drawn
+            # from a band the caller simply forgot to declare.
+            raise ValueError(
+                f"--models {model!r} names every band, so it is the joint "
+                f"model under another name and `r_joint - r_{model}` is zero "
+                f"by construction. Did you mean to leave one band out, or to "
+                f"add a --band that is missing?")
         model_bands[model] = parts
     return model_bands
 
@@ -204,14 +218,14 @@ def parse_args(argv=None) -> argparse.Namespace:
     model.add_argument("--alpha-max", type=float, default=20.0,
                        help="log10 of the largest alpha")
     model.add_argument("--num-alphas", type=int, default=20)
-    model.add_argument("--inner-n-splits", type=int, default=None,
-                       help="folds in the alpha-selection loop inside each cv "
-                            "fold. Default None = leave-one-story-out, right "
-                            "for a final single-configuration model. The "
-                            "sweeps bound it to --n-splits because the fit "
-                            "count is n_splits * inner_n_splits *per "
-                            "configuration*. Set it to match a sweep when "
-                            "comparing against one.")
+    model.add_argument("--alpha-n-splits", "--inner-n-splits",
+                       dest="alpha_n_splits", type=int, default=None,
+                       help="folds used to CHOOSE alphas, in either eval mode. "
+                            "Default None = leave-one-story-out, right for a "
+                            "final single-configuration model. The sweeps bound "
+                            "it to --n-splits because the fit count is "
+                            "n_splits * alpha_n_splits *per configuration*. Set "
+                            "it to match a sweep when comparing against one.")
     model.add_argument("--n-splits", type=int, default=None,
                        help="CV folds; default = leave-one-story-out")
     model.add_argument("--max-repeats", type=int, default=5,
@@ -283,10 +297,16 @@ def resolve_stories(subject: str, args, stories_json: Path
 
 
 def load_bands(args, stories: List[str]) -> Dict[str, Dict[str, np.ndarray]]:
-    """Load every band's store, keyed by band name and in declared order."""
+    """Load every band's store, keyed by band name and in declared order.
+
+    `band_stores` is resolved here when the caller has not already stashed it,
+    so any namespace with `--text-features`/`--audio-features` works without
+    having to know that `run_encoding.main` normally does it.
+    """
+    stores = getattr(args, "band_stores", None) or resolve_band_stores(args)
     features: Dict[str, Dict[str, np.ndarray]] = {}
-    width = max(len(name) for name in args.band_stores)
-    for name, store in args.band_stores.items():
+    width = max(len(name) for name in stores)
+    for name, store in stores.items():
         log.info(f"  loading band {name:<{width}} <- '{store}'")
         features[name] = load_features(store, stories)
     return features
@@ -315,7 +335,7 @@ def _subset_bands(bands: Dict[str, slice], names: List[str]) -> Dict[str, slice]
 
 
 def fit_one_model(model_name: str, backend: str, args, design, Y_train,
-                  design_test=None, Y_test=None, splits=None) -> Dict[str, object]:
+                  design_test=None, Y_test=None, plan=None) -> Dict[str, object]:
     """Fit `model_name` with `backend`; returns arrays ready to save."""
     band_subset = _subset_bands(design.bands, args.model_bands[model_name])
     n_cols = sum(s.stop - s.start for s in band_subset.values())
@@ -334,15 +354,16 @@ def fit_one_model(model_name: str, backend: str, args, design, Y_train,
             result = fit_banded(
                 X_train=design.X, Y_train=Y_train,
                 X_test=design_test.X, Y_test=Y_test,
-                bands=band_subset, splits=splits, alphas=alphas,
+                bands=band_subset, splits=plan.alpha_search, alphas=alphas,
                 solver=args.solver, solver_params=solver_params,
             )
         else:
             result = fit_banded_cv(
                 X=design.X, Y=Y_train, bands=band_subset,
-                story_ids=design.story_ids, outer_splits=splits, alphas=alphas,
+                story_ids=design.story_ids, outer_splits=plan.evaluation,
+                alphas=alphas,
                 solver=args.solver, solver_params=solver_params, logger=log,
-                inner_n_splits=args.inner_n_splits,
+                inner_n_splits=plan.alpha_n_splits,
             )
         return result.as_dict()
 
@@ -457,8 +478,17 @@ def run_subject(subject: str, args, out_root: Path) -> None:
             f"variance to threshold. These scores are whole-brain, unlike the "
             f"sweeps' masked ones. Do not compare them.")
 
-    splits = story_folds(design.story_ids, args.n_splits)
-    log.info(f"  {len(splits)} CV folds (shared by every model)")
+    # One object, two named fold sets, so neither can be read as the other.
+    # See encoding.cv.FoldPlan for the two bugs that motivated it.
+    plan = plan_folds(design.story_ids, args.eval,
+                      n_splits=args.n_splits,
+                      alpha_n_splits=args.alpha_n_splits)
+    log.info(f"  folds: {plan.describe()} (shared by every model)")
+    if args.eval == "holdout" and args.n_splits is not None:
+        log.warning(
+            "--n-splits is ignored under --eval holdout: there is no outer "
+            "loop to split, the score comes from the held-out story. The "
+            "alpha search is --alpha-n-splits (default leave-one-story-out).")
 
     n_voxels = Y_train.shape[1]
     Y_train_fit = Y_train[:, voxel_mask] if voxel_mask is not None else Y_train
@@ -495,7 +525,7 @@ def run_subject(subject: str, args, out_root: Path) -> None:
 
             arrays = fit_one_model(
                 model_name, backend, args, design, Y_train_fit,
-                design_test=design_test, Y_test=Y_test_fit, splits=splits,
+                design_test=design_test, Y_test=Y_test_fit, plan=plan,
             )
 
             # Scatter masked results back into full voxel space so every saved
@@ -541,11 +571,12 @@ def run_subject(subject: str, args, out_root: Path) -> None:
         "use_pca": args.use_pca,
         "n_comps": args.n_comps,
         "eval": args.eval,
-        "n_folds": len(splits),
+        "n_folds": None if plan.evaluation is None else len(plan.evaluation),
         # The inner loop is part of the estimator, not of the design, so two
         # runs that disagree here are not strictly comparable even with
         # identical folds. Recorded so a later reader can tell.
-        "inner_n_splits": args.inner_n_splits,
+        "alpha_n_splits": plan.alpha_n_splits,   # None = leave-one-story-out
+        "folds": plan.describe(),
         "alphas": [args.alpha_min, args.alpha_max, args.num_alphas],
         "min_ev": args.min_ev,
         "n_voxels_fit": int(voxel_mask.sum()) if voxel_mask is not None else int(n_voxels),

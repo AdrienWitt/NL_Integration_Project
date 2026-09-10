@@ -76,7 +76,7 @@ from common.io import (load_features, load_response, load_response_repeats,
                        stories_for_subject, subject_has_story)
 from .banded import (default_solver_params, fit_banded, fit_banded_cv,
                      set_himalaya_backend)
-from .cv import explainable_variance, story_folds
+from .cv import explainable_variance, plan_folds
 from .preprocess import build_design, prepare_responses, trim_response
 
 log = logging.getLogger("prosody_sweep")
@@ -348,13 +348,13 @@ def run_subject(subject: str, args, src_dir: Path, configs: List[str],
     ensure_dirs(save_dir)
     rows = []
 
-    splits = None
+    plan = None
 
     def score_band(spec: str, label: str, layers: Sequence[int],
                    audio: Dict[str, np.ndarray]) -> dict:
         """Fit one prosodic band and summarise it. Identical folds and mask
         for every caller, which is what makes the rows comparable."""
-        nonlocal splits
+        nonlocal plan
 
         spaces = {"audio": {s: audio[s] for s in train_stories}}
         if args.with_text:
@@ -362,11 +362,21 @@ def run_subject(subject: str, args, src_dir: Path, configs: List[str],
 
         design = build_design(train_stories, spaces, trim=args.trim,
                               ndelays=args.ndelays)
-        if splits is None:
+        if plan is None:
             # Depends only on the story layout, which never changes here, so
             # every configuration is scored on identical folds.
-            splits = story_folds(design.story_ids, args.n_splits)
-            log.info(f"  {len(splits)} CV folds (shared by every configuration)")
+            # A sweep pays n_splits * alpha_n_splits fits PER configuration,
+            # so it bounds the alpha search to the same number rather than
+            # leaving it leave-one-story-out: 25 fits instead of 115 on 24
+            # training stories, times ~96 configurations. Passing it explicitly
+            # is the point -- run_encoding leaves it None because a final
+            # single-configuration model can afford the extra folds, and that
+            # difference now lives at the two call sites instead of in a
+            # default that reads the same in both.
+            plan = plan_folds(design.story_ids, args.eval,
+                              n_splits=args.n_splits,
+                              alpha_n_splits=args.n_splits)
+            log.info(f"  folds: {plan.describe()} (shared by every configuration)")
 
         if Y_train_fit.shape[0] != design.X.shape[0]:
             raise ValueError(
@@ -387,7 +397,7 @@ def run_subject(subject: str, args, src_dir: Path, configs: List[str],
             result = fit_banded(
                 X_train=design.X, Y_train=Y_train_fit,
                 X_test=design_test.X, Y_test=Y_test_fit,
-                bands=design.bands, splits=splits, alphas=alphas,
+                bands=design.bands, splits=plan.alpha_search, alphas=alphas,
                 solver=args.solver, solver_params=solver_params,
             )
         else:
@@ -398,9 +408,10 @@ def run_subject(subject: str, args, src_dir: Path, configs: List[str],
             # control is mostly in the loop it was not reaching.
             result = fit_banded_cv(
                 X=design.X, Y=Y_train_fit, bands=design.bands,
-                story_ids=design.story_ids, outer_splits=splits, alphas=alphas,
+                story_ids=design.story_ids, outer_splits=plan.evaluation,
+                alphas=alphas,
                 solver=args.solver, solver_params=solver_params,
-                inner_n_splits=args.n_splits, logger=None,
+                inner_n_splits=plan.alpha_n_splits, logger=None,
             )
 
         # With a covariate, the prosody answer is the audio band's split score,

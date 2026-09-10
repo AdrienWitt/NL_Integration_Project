@@ -10,6 +10,7 @@ same splits is what makes
 a comparison between models rather than between fold assignments.
 """
 
+from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -46,6 +47,73 @@ def story_folds(story_ids: np.ndarray, n_splits: Optional[int] = None
     splitter = GroupKFold(n_splits=n_splits)
     dummy = np.zeros((len(story_ids), 1))
     return [(tr, te) for tr, te in splitter.split(dummy, groups=story_ids)]
+
+
+@dataclass(frozen=True)
+class FoldPlan:
+    """The two fold sets a fit needs, each with exactly one meaning.
+
+    `story_folds` alone is ambiguous, and the ambiguity has caused two bugs.
+    The same call builds *evaluation* folds under ``--eval cv`` and the
+    *alpha-search* folds under ``--eval holdout``, so one flag named
+    `--n-splits` silently meant two different things depending on a mode set
+    elsewhere. Consequences, both real and both already paid for:
+
+    * `run_encoding --eval holdout` bounded its alpha search to 5 folds while
+      the cv half of the same job searched over 23, so one run reported two
+      eval modes produced by two estimators;
+    * `run_permutation` had to keep a comment asking a human to keep its alpha
+      search equal to whatever run_encoding was doing, which is a coupling that
+      breaks the moment run_encoding changes -- and it did.
+
+    Here `n_splits` always means "folds a cross-validated score is reported
+    over" and `alpha_n_splits` always means "folds used to choose alphas",
+    whatever the eval mode. Under holdout there is no evaluation fold set --
+    the score comes from the held-out story -- so `evaluation` is None and
+    nothing can accidentally read it as the alpha search.
+    """
+
+    evaluation: Optional[List[Split]]
+    alpha_search: Optional[List[Split]]
+    alpha_n_splits: Optional[int]
+
+    def describe(self) -> str:
+        n_alpha = ("leave-one-story-out" if self.alpha_n_splits is None
+                   else f"{self.alpha_n_splits}-fold")
+        if self.evaluation is None:
+            return f"holdout scoring; alphas by {n_alpha} CV over the training stories"
+        return (f"{len(self.evaluation)} evaluation folds; alphas by {n_alpha} "
+                f"CV inside each")
+
+
+def plan_folds(story_ids: np.ndarray, eval_mode: str,
+               n_splits: Optional[int] = None,
+               alpha_n_splits: Optional[int] = None) -> FoldPlan:
+    """Build both fold sets for `eval_mode`, which is 'cv' or 'holdout'.
+
+    `alpha_n_splits` defaults to None, i.e. leave-one-story-out, which is right
+    for a final single-configuration model. A sweep must pass it explicitly:
+    the fit count is ``n_splits * alpha_n_splits`` *per configuration*, so
+    leaving it unbounded over ~96 configurations is the difference between 25
+    and 115 fits each. Passing it at the call site is the point -- the cost is
+    then visible where the decision is made instead of inherited from a default.
+    """
+    if eval_mode not in ("cv", "holdout"):
+        raise ValueError(f"eval_mode must be 'cv' or 'holdout', got {eval_mode!r}")
+
+    if eval_mode == "holdout":
+        # No outer loop: the score comes from the repeated story. `n_splits`
+        # has nothing to name here, so it is not consulted -- a caller that
+        # passes it is saying something about an evaluation that does not exist.
+        return FoldPlan(evaluation=None,
+                        alpha_search=story_folds(story_ids, alpha_n_splits),
+                        alpha_n_splits=alpha_n_splits)
+
+    # cv: the alpha search is nested inside each evaluation fold and is built
+    # there from that fold's training stories, so only its size travels.
+    return FoldPlan(evaluation=story_folds(story_ids, n_splits),
+                    alpha_search=None,
+                    alpha_n_splits=alpha_n_splits)
 
 
 def leave_one_run_out(n_samples: int, run_onsets: Sequence[int]) -> List[Split]:
