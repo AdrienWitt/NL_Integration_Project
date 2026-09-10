@@ -204,6 +204,14 @@ def parse_args(argv=None) -> argparse.Namespace:
     model.add_argument("--alpha-max", type=float, default=20.0,
                        help="log10 of the largest alpha")
     model.add_argument("--num-alphas", type=int, default=20)
+    model.add_argument("--inner-n-splits", type=int, default=None,
+                       help="folds in the alpha-selection loop inside each cv "
+                            "fold. Default None = leave-one-story-out, right "
+                            "for a final single-configuration model. The "
+                            "sweeps bound it to --n-splits because the fit "
+                            "count is n_splits * inner_n_splits *per "
+                            "configuration*. Set it to match a sweep when "
+                            "comparing against one.")
     model.add_argument("--n-splits", type=int, default=None,
                        help="CV folds; default = leave-one-story-out")
     model.add_argument("--max-repeats", type=int, default=5,
@@ -334,6 +342,7 @@ def fit_one_model(model_name: str, backend: str, args, design, Y_train,
                 X=design.X, Y=Y_train, bands=band_subset,
                 story_ids=design.story_ids, outer_splits=splits, alphas=alphas,
                 solver=args.solver, solver_params=solver_params, logger=log,
+                inner_n_splits=args.inner_n_splits,
             )
         return result.as_dict()
 
@@ -533,6 +542,10 @@ def run_subject(subject: str, args, out_root: Path) -> None:
         "n_comps": args.n_comps,
         "eval": args.eval,
         "n_folds": len(splits),
+        # The inner loop is part of the estimator, not of the design, so two
+        # runs that disagree here are not strictly comparable even with
+        # identical folds. Recorded so a later reader can tell.
+        "inner_n_splits": args.inner_n_splits,
         "alphas": [args.alpha_min, args.alpha_max, args.num_alphas],
         "min_ev": args.min_ev,
         "n_voxels_fit": int(voxel_mask.sum()) if voxel_mask is not None else int(n_voxels),
