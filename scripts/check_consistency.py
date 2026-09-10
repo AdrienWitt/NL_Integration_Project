@@ -284,6 +284,25 @@ def _():
         json.dump({"min_ev": 0.0}, open(d / "meta.json", "w"))
         assert load_subject(d).get("unmasked") is True
 
+        # A multi-band model also writes <model>_split_corrs.npy, which ends in
+        # _corrs.npy and holds (n_bands, n_voxels). Globbed in as a model it
+        # invents "joint_split", whose per-voxel mask then indexes the band
+        # axis. A complete subject has seven files, not five.
+        d = root / "withsplits"
+        d.mkdir()
+        for m in ("arousal", "valence", "joint"):
+            np.save(d / ("%s_corrs.npy" % m), np.zeros(50))
+        np.save(d / "joint_split_corrs.npy", np.zeros((3, 50)))
+        mask = np.zeros(50, bool)
+        mask[:20] = True
+        np.save(d / "voxel_mask.npy", mask)
+        json.dump({"min_ev": 0.1}, open(d / "meta.json", "w"))
+        got = load_subject(d)
+        assert "joint_split" not in got["corrs"], sorted(got["corrs"])
+        for name, arr in got["corrs"].items():
+            assert arr.ndim == 1, (name, arr.shape)
+            float(np.nanmean(arr[got["mask"]]))
+
 
 print("\nresults record how they were produced")
 

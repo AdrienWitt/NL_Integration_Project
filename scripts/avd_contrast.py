@@ -71,8 +71,14 @@ def load_subject(path: Path) -> Optional[Dict]:
     with open(meta_path, encoding="utf-8") as f:
         meta = json.load(f)
 
+    # `*_split_corrs.npy` also ends in `_corrs.npy`, and it holds a
+    # (n_bands, n_voxels) array rather than a per-voxel score. Globbing it in
+    # invents models called "joint_split" whose boolean mask indexes the band
+    # axis -- an IndexError at best, a wrong row at worst. Multi-band models
+    # write one each, so a complete subject has seven files, not five.
     corrs = {p.name[: -len("_corrs.npy")]: np.load(p)
-             for p in sorted(path.glob("*_corrs.npy"))}
+             for p in sorted(path.glob("*_corrs.npy"))
+             if not p.name.endswith("_split_corrs.npy")}
     if not corrs:
         return None
     out: Dict[str, object] = {"corrs": corrs, "meta": meta}
