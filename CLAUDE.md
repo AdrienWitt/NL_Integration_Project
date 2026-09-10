@@ -444,19 +444,28 @@ Do **not** use `--output both`. The 3 values are a function of the 1024-d
 vector, so concatenating returns an opaque band and throws away the only thing
 worth having: three columns with names.
 
-**Dominance is not a separate dimension.** Measured on the 774 stimuli of
-`../Clean_Irony/embeddings/audio_wav2vec_avd/` — this exact model's outputs:
+**Dominance is not a separate dimension.** Measured on the LeBel stimuli
+themselves (84 stories, 28,088 TRs on the design slice), and on the 774 stimuli
+of `../Clean_Irony/embeddings/audio_wav2vec_avd/` for comparison:
 
-    arousal x dominance   0.950      variance per component:
-    arousal x valence     0.223          0.639 / 0.348 / 0.013
-    dominance x valence   0.274      -> effective rank 2, not 3
+                          LeBel     Clean_Irony
+    arousal x dominance   0.963       0.950
+    arousal x valence     0.416       0.223
+    dominance x valence   0.408       0.274
+    variance/component    0.734       0.639
+                          0.254       0.348
+                          0.011       0.013
 
-Likely a property of the model (MSP-Podcast dominance annotations track arousal)
-rather than of that corpus; `scripts/split_avd_bands.py` reprints the matrix on
-the LeBel stimuli so it can be confirmed here. Consequences:
+**Effective rank 2 on both**, so the dominance result is a property of the model
+(MSP-Podcast dominance annotations track arousal), not of a corpus — and on
+LeBel it is slightly worse, 93% shared variance. Consequences:
 
-- **Valence vs arousal (r ~ 0.25) is the identifiable contrast**, and the one
-  with a literature behind it. Report it as primary.
+- **Valence vs arousal is the identifiable contrast**, and the one with a
+  literature behind it. But it is *less* clean here than the irony corpus
+  suggested — r = 0.42 rather than 0.22, and the per-story median is +0.401 with
+  a range of [-0.007, +0.674], so how separable the two are depends heavily on
+  the story. Report it as primary, and put the cross-subject replication gate on
+  it too rather than only on dominance.
 - **Arousal vs dominance is not.** Banded ridge does not dissolve collinearity,
   it *allocates* it: with 90% shared variance the split is decided by noise in
   the model's own output, and a winner-take-all map still looks clean because an
