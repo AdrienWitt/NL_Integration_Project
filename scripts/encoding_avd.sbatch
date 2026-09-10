@@ -77,6 +77,16 @@ NITER=${NITER:-200}
 
 for EV in $EVALS; do
     echo "=== $SUBJ | --eval $EV ==="
+    # --n-splits means two different things. Under --eval cv it sets the OUTER
+    # folds, and the alpha search is the inner loop, left at leave-one-story-out.
+    # Under --eval holdout there is no outer loop: --n-splits IS the alpha
+    # search (fit_banded(..., splits=splits)), so passing 5 there would select
+    # alphas on 5 folds for the number we actually report, while the cv path
+    # searches over 23. Pass it only for cv; a final single-configuration model
+    # can afford the extra folds, which is exactly what fit_banded_cv's
+    # docstring says they are for.
+    SPLITS=""
+    [ "$EV" = "cv" ] && SPLITS="--n-splits 5"
     python3 -m encoding.run_encoding \
         --subjects "$SUBJ" \
         --band arousal=emotion_arousal \
@@ -88,7 +98,7 @@ for EV in $EVALS; do
         --eval "$EV" \
         --min-ev 0.1 \
         --max-repeats 5 \
-        --n-splits 5 \
+        $SPLITS \
         --n-iter "$NITER"
 done
 
