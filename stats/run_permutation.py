@@ -116,6 +116,16 @@ def load_observed_fit(root, subject: str, args) -> dict:
             f"{subject}: --from-encoding does not describe this design:\n  "
             + "\n  ".join(mismatches))
 
+    if meta.get("solver_form") == "primal":
+        raise RuntimeError(
+            f"{d}: this fit is primal (GroupRidgeCV), whose `deltas` weight "
+            f"feature groups, while the permutations refit with "
+            f"WeightedKernelRidge, whose deltas weight kernels. Reusing one as "
+            f"the other silently produces a null from a model that was never "
+            f"fitted. Re-fit this run without --primal, or extend "
+            f"fit_banded_fixed with a primal path."
+        )
+
     corrs = {}
     for name in MODEL_BANDS:
         path = d / f"{name}_corrs.npy"

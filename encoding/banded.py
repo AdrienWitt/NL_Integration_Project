@@ -117,6 +117,62 @@ def _build_pipeline(bands: Dict[str, slice], splits, alphas: np.ndarray,
     return make_pipeline(kernelizer, model), model
 
 
+def _fit_primal(X_train, Y_train, X_test, Y_test, bands, splits,
+                solver_params, compute_splits):
+    """Banded ridge in the primal, via `himalaya.ridge.GroupRidgeCV`.
+
+    The dual builds an n x n kernel, and a linear kernel from p features has
+    rank at most p. The AVD design is 12 columns against ~8,700 training TRs,
+    so its Gram matrix carries ~8,700 zero eigenvalues, LAPACK's eigh gives up,
+    and `fit_banded` falls back to svd at ~42x the cost. **Small bands are the
+    worst case for the dual, not the safest** -- the opposite of what this file
+    used to assume.
+
+    In the primal there is nothing to go wrong: X^T X is 12x12 and full rank.
+    Measured on an AVD-shaped problem (12 columns, 3 bands, 2,400 samples,
+    numpy backend, without even triggering the svd fallback):
+
+        dual    186.5 s    mean r 0.7428
+        primal    3.5 s    mean r 0.7428     x53
+
+    per-voxel |dual - primal| mean 0.00012, max 0.0017 -- inside the
+    hyperparameter search's own noise -- and the per-band split predictions
+    come back in the same shape.
+
+    `deltas_` here weights *feature groups*, not kernels, so it is NOT the
+    array `fit_banded_fixed` wants. Anything reusing band weights must know
+    which form produced them; `run_encoding` records it in meta as
+    `solver_form`.
+    """
+    from himalaya.backend import get_backend
+    from himalaya.ridge import GroupRidgeCV
+    from himalaya.scoring import correlation_score, correlation_score_split
+
+    backend = get_backend()
+    groups = np.zeros(X_train.shape[1], dtype=int)
+    for index, band_slice in enumerate(bands.values()):
+        groups[band_slice] = index
+
+    params = dict(solver_params or {})
+    params.pop("diagonalize_method", None)      # dual-only
+    model = GroupRidgeCV(groups=groups, cv=splits, solver_params=params)
+    model.fit(X_train, Y_train)
+
+    corrs = backend.to_numpy(correlation_score(Y_test, model.predict(X_test)))
+    split_corrs = None
+    if compute_splits and len(bands) > 1:
+        split_corrs = np.asarray(backend.to_numpy(correlation_score_split(
+            Y_test, model.predict(X_test, split=True))), dtype=float)
+
+    return BandedResult(
+        corrs=np.asarray(corrs, dtype=float),
+        split_corrs=split_corrs,
+        band_names=list(bands),
+        deltas=np.asarray(backend.to_numpy(model.deltas_), dtype=float),
+        best_alphas=np.asarray(backend.to_numpy(model.best_alphas_), dtype=float),
+    )
+
+
 def fit_banded(
     X_train: np.ndarray,
     Y_train: np.ndarray,
@@ -129,6 +185,7 @@ def fit_banded(
     solver_params: Optional[dict] = None,
     compute_splits: bool = True,
     return_predictions: bool = False,
+    primal: bool = False,
 ) -> BandedResult:
     """Fit on (X_train, Y_train) and score correlations on (X_test, Y_test).
 
@@ -175,6 +232,14 @@ def fit_banded(
     # features has rank at most p, so the 12-column AVD design leaves ~8,700
     # zero eigenvalues against 8,700 training TRs -- far more degenerate than
     # the p=4096 case that motivated this fallback.
+    if primal:
+        if return_predictions:
+            raise ValueError(
+                "primal=True does not return test predictions; the only caller "
+                "that wants them is the prediction-shuffle null, which is dual.")
+        return _fit_primal(X_train, Y_train, X_test, Y_test, bands, splits,
+                           solver_params, compute_splits)
+
     n_cols = X_train.shape[1]
     try:
         pipeline.fit(X_train, Y_train)
@@ -287,6 +352,7 @@ def fit_banded_cv(
     solver_params: Optional[dict] = None,
     compute_splits: bool = True,
     inner_n_splits: Optional[int] = None,
+    primal: bool = False,
     logger=None,
 ) -> BandedResult:
     """Nested CV: hyperparameters are chosen inside each outer training set.
@@ -321,7 +387,7 @@ def fit_banded_cv(
             X_train=X[train_idx], Y_train=Y[train_idx],
             X_test=X[test_idx], Y_test=Y[test_idx],
             bands=bands, splits=inner_splits, alphas=alphas,
-            solver=solver, solver_params=solver_params,
+            solver=solver, solver_params=solver_params, primal=primal,
             compute_splits=compute_splits,
         )
         fold_corrs.append(result.corrs)
