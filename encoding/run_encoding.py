@@ -34,6 +34,27 @@ and reproducible (see `extract.build_band`)::
 
 To choose that layer range in the first place rather than assume it, sweep it
 with `encoding.run_prosody_sweep` on the training stories.
+
+More than two bands
+-------------------
+`--band NAME=STORE` (repeatable) replaces the text/audio pair with an
+arbitrary named band set, which is what a decomposition *inside* one modality
+needs. Each band still gets its own alpha, and `split_corrs` still reports each
+band's share of the joint prediction::
+
+    python -m encoding.run_encoding --subjects all \\
+        --band arousal=emotion_arousal \\
+        --band dominance=emotion_dominance \\
+        --band valence=emotion_valence \\
+        --models arousal dominance valence arousal+valence joint \\
+        --eval holdout --min-ev 0.1
+
+`arousal+valence` fits an explicit subset, so `r_joint - r_arousal+valence` is
+the unique contribution of dominance beyond the other two — which is how the
+"is the third dimension worth keeping" question gets answered per voxel rather
+than argued. Note the AVD dimensions are far from orthogonal: arousal and
+dominance correlate ~0.95 in this model, so read that contrast together with a
+cross-subject replication count, never as a single-subject map.
 """
 
 import argparse
@@ -41,7 +62,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -57,12 +78,75 @@ from .preprocess import build_design, prepare_responses, trim_response
 
 log = logging.getLogger("encoding")
 
-#: Which bands each model is allowed to see.
+#: Which bands each model sees in the default two-band (text/audio) setup.
+#: `resolve_model_bands` builds the equivalent for a `--band` run; this stays
+#: the name `stats.run_permutation` imports, since permutation is text/audio.
 MODEL_BANDS: Dict[str, List[str]] = {
     "text":  ["text"],
     "audio": ["audio"],
     "joint": ["text", "audio"],
 }
+
+
+def resolve_band_stores(args) -> Dict[str, str]:
+    """``{band name: feature store}`` for this run.
+
+    Without `--band` this is the historical two-band setup — `text` and
+    `audio` from `--text-features` / `--audio-features` — so every existing
+    script, sbatch and both sweeps keep working untouched.
+
+    With `--band NAME=STORE` (repeatable) the band set is whatever was named.
+    That is what a *within*-modality decomposition needs: three affective
+    dimensions are three bands of one modality, not a text band and an audio
+    band, and banded ridge gives each its own alpha exactly as it does for
+    text vs audio.
+    """
+    if not args.band:
+        return {"text": args.text_features, "audio": args.audio_features}
+
+    bands: Dict[str, str] = {}
+    for item in args.band:
+        name, sep, store = item.partition("=")
+        name, store = name.strip(), store.strip()
+        if not sep or not name or not store:
+            raise ValueError(f"--band {item!r}: write it as --band name=store")
+        if name == "joint":
+            raise ValueError(
+                "--band joint: 'joint' already names every band at once, so "
+                "it cannot also be one of them.")
+        if name in bands:
+            raise ValueError(f"--band {name!r} given twice")
+        bands[name] = store
+    return bands
+
+
+def resolve_model_bands(bands: Dict[str, str],
+                        models: Sequence[str]) -> Dict[str, List[str]]:
+    """``{model name: [bands it sees]}``, validating every requested model.
+
+    A model is a band name, ``joint`` (every band), or a ``+``-joined subset.
+    The subset form is how a leave-one-band-out contribution is asked for:
+    with bands arousal/dominance/valence, ``--models arousal+valence joint``
+    fits both, and ``r_joint - r_arousal+valence`` is the unique contribution
+    of dominance beyond the other two — the same conditional-contribution
+    logic the text/audio permutations already use, one level down.
+    """
+    model_bands: Dict[str, List[str]] = {name: [name] for name in bands}
+    model_bands["joint"] = list(bands)
+
+    for model in models:
+        if model in model_bands:
+            continue
+        parts = [q.strip() for q in model.split("+") if q.strip()]
+        unknown = [q for q in parts if q not in bands]
+        if len(parts) < 2 or unknown:
+            raise ValueError(
+                f"--models {model!r}: expected a band name "
+                f"({', '.join(bands)}), 'joint', or a '+'-joined subset of "
+                f"bands" + (f"; unknown: {', '.join(unknown)}" if unknown
+                            else " (a single '+' subset needs >= 2 bands)"))
+        model_bands[model] = parts
+    return model_bands
 
 
 # --------------------------------------------------------------------------
@@ -81,6 +165,11 @@ def parse_args(argv=None) -> argparse.Namespace:
                       help="feature directory under data/features for the semantic band")
     data.add_argument("--audio-features", default="opensmile",
                       help="feature directory under data/features for the prosodic band")
+    data.add_argument("--band", action="append", metavar="NAME=STORE",
+                      default=None,
+                      help="add a named band, repeatable; replaces the "
+                           "text/audio pair. e.g. --band arousal=emotion_arousal "
+                           "--band valence=emotion_valence")
     data.add_argument("--stories-json", default="all_stories.json",
                       help="story list in data/derivative (subject -> stories)")
     data.add_argument("--held-out-story", default=HELD_OUT_STORY,
@@ -99,8 +188,10 @@ def parse_args(argv=None) -> argparse.Namespace:
                         help="PCA components: <=1 means explained variance")
 
     model = p.add_argument_group("model")
-    model.add_argument("--models", nargs="+", default=["text", "audio", "joint"],
-                       choices=sorted(MODEL_BANDS))
+    model.add_argument("--models", nargs="+", default=None,
+                       help="band names, 'joint', or '+'-joined subsets "
+                            "(arousal+valence). Default: every band alone, "
+                            "then joint.")
     model.add_argument("--backend", default="banded",
                        choices=["banded", "huth", "both"],
                        help="banded = himalaya per-band alphas (primary); "
@@ -184,11 +275,13 @@ def resolve_stories(subject: str, args, stories_json: Path
 
 
 def load_bands(args, stories: List[str]) -> Dict[str, Dict[str, np.ndarray]]:
-    log.info(f"  loading text band  '{args.text_features}'")
-    text = load_features(args.text_features, stories)
-    log.info(f"  loading audio band '{args.audio_features}'")
-    audio = load_features(args.audio_features, stories)
-    return {"text": text, "audio": audio}
+    """Load every band's store, keyed by band name and in declared order."""
+    features: Dict[str, Dict[str, np.ndarray]] = {}
+    width = max(len(name) for name in args.band_stores)
+    for name, store in args.band_stores.items():
+        log.info(f"  loading band {name:<{width}} <- '{store}'")
+        features[name] = load_features(store, stories)
+    return features
 
 
 def load_aligned_response(subject: str, stories: List[str],
@@ -216,7 +309,7 @@ def _subset_bands(bands: Dict[str, slice], names: List[str]) -> Dict[str, slice]
 def fit_one_model(model_name: str, backend: str, args, design, Y_train,
                   design_test=None, Y_test=None, splits=None) -> Dict[str, object]:
     """Fit `model_name` with `backend`; returns arrays ready to save."""
-    band_subset = _subset_bands(design.bands, MODEL_BANDS[model_name])
+    band_subset = _subset_bands(design.bands, args.model_bands[model_name])
     n_cols = sum(s.stop - s.start for s in band_subset.values())
     log.info(f"    [{backend}] {model_name}: bands={list(band_subset)} "
              f"({n_cols} columns)")
@@ -276,7 +369,10 @@ def run_subject(subject: str, args, out_root: Path) -> None:
 
     all_stories = train_stories + ([held_out] if held_out else [])
     features = load_bands(args, all_stories)
-    feature_lengths = {s: features["text"][s].shape[0] for s in all_stories}
+    # Any band would do -- build_design already checks that every band agrees
+    # on every story's length -- so take the first declared one.
+    ref_band = next(iter(features))
+    feature_lengths = {s: features[ref_band][s].shape[0] for s in all_stories}
 
     train_features = {
         band: {s: arr for s, arr in feats.items() if s in train_stories}
@@ -302,16 +398,19 @@ def run_subject(subject: str, args, out_root: Path) -> None:
     voxel_mask = None
     n_repeats = None
 
-    if args.eval == "holdout":
-        test_features = {
-            band: {held_out: feats[held_out]} for band, feats in features.items()
-        }
-        design_test = build_design(
-            [held_out], test_features, trim=args.trim, ndelays=args.ndelays,
-            use_pca=args.use_pca, n_comps=args.n_comps,
-            fitted_pca=design.fitted_pca,       # never refit on the test story
-            fitted_scalers=design.fitted_scalers,  # ...nor re-standardise on it
-        )
+    if held_out is not None and (args.eval == "holdout" or args.min_ev > 0):
+        # EV is a function of Y alone, so it can be computed whenever the
+        # repeated story is available -- including under --eval cv, where this
+        # used to be skipped. That skip made `--min-ev` a silent no-op on cv
+        # while both sweeps honoured it, so run_encoding's cv scores covered
+        # ~81,126 voxels and the sweeps' ~1,776, with nothing saying so.
+        #
+        # It does not compromise the cv fit: the repeated story is never in
+        # `train_stories` (resolve_stories drops it and every repeat-suffixed
+        # variant), so nothing loaded here enters the design or the folds. Only
+        # the mask is taken, and a mask built from Y alone leaves the
+        # permutation exactly valid -- see CLAUDE.md, "The EV mask: what it
+        # does and does not break".
         repeats = load_response_repeats(
             held_out, subject, max_repeats=args.max_repeats, logger=log)
         # Recorded in meta: the target is the MEAN of these, so the noise
@@ -323,25 +422,31 @@ def run_subject(subject: str, args, out_root: Path) -> None:
             for rep in repeats
         ])
         ev = explainable_variance(trimmed)
-        Y_test = prepare_responses(trimmed.mean(axis=0))
-        log.info(f"  test {design_test} | Y_test {Y_test.shape} | "
-                 f"EV>{args.min_ev} in {(ev > args.min_ev).sum():,}/"
+        log.info(f"  EV>{args.min_ev} in {(ev > args.min_ev).sum():,}/"
                  f"{ev.size:,} voxels")
-
         if args.min_ev > 0:
             voxel_mask = ev > args.min_ev
             log.info(f"  fitting {voxel_mask.sum():,} voxels with EV > {args.min_ev}")
 
-    if args.eval != "holdout" and args.min_ev > 0:
-        # EV needs the repeated story, which only the holdout path loads, so
-        # under --eval cv this flag does nothing at all -- while both sweeps
-        # DO apply it on cv. Their cv numbers are therefore over ~1,776 voxels
-        # and these are over all ~81,126: not comparable, and nothing said so.
+    if args.eval == "holdout":
+        test_features = {
+            band: {held_out: feats[held_out]} for band, feats in features.items()
+        }
+        design_test = build_design(
+            [held_out], test_features, trim=args.trim, ndelays=args.ndelays,
+            use_pca=args.use_pca, n_comps=args.n_comps,
+            fitted_pca=design.fitted_pca,       # never refit on the test story
+            fitted_scalers=design.fitted_scalers,  # ...nor re-standardise on it
+        )
+        Y_test = prepare_responses(trimmed.mean(axis=0))
+        log.info(f"  test {design_test} | Y_test {Y_test.shape}")
+
+    if args.min_ev > 0 and voxel_mask is None:
         log.warning(
-            f"--min-ev {args.min_ev} has no effect under --eval {args.eval}: "
-            f"explainable variance needs the repeated story, which only the "
-            f"holdout path loads. These cv scores are whole-brain, unlike the "
-            f"sweeps' cv scores, which are masked. Do not compare them.")
+            f"--min-ev {args.min_ev} could not be applied: {subject} has no "
+            f"repeats of '{args.held_out_story}', so there is no explainable "
+            f"variance to threshold. These scores are whole-brain, unlike the "
+            f"sweeps' masked ones. Do not compare them.")
 
     splits = story_folds(design.story_ids, args.n_splits)
     log.info(f"  {len(splits)} CV folds (shared by every model)")
@@ -407,8 +512,14 @@ def run_subject(subject: str, args, out_root: Path) -> None:
 
     meta = {
         "subject": subject,
-        "text_features": args.text_features,
-        "audio_features": args.audio_features,
+        # The band set, whatever its shape. `text_features`/`audio_features`
+        # stay for readers written against the two-band runs, but only when
+        # this run actually had those bands -- writing them from the unused
+        # defaults under --band would be a lie a downstream script would act on.
+        "band_stores": dict(args.band_stores),
+        "model_bands": {k: list(v) for k, v in args.model_bands.items()},
+        **({} if args.band else {"text_features": args.text_features,
+                                 "audio_features": args.audio_features}),
         "train_stories": train_stories,
         "held_out_story": held_out,
         "n_repeats": n_repeats,          # the number actually used
@@ -450,13 +561,33 @@ def main(argv=None) -> None:
     stories_json = Path(ENCODING_SPLIT_DIR) / args.stories_json
     subjects = resolve_subjects(args.subjects, stories_json)
 
-    name = f"{args.text_features}__{args.audio_features}"
+    args.band_stores = resolve_band_stores(args)
+    if args.models is None:
+        args.models = ([*args.band_stores, "joint"] if args.band
+                       else list(MODEL_BANDS))
+    args.model_bands = resolve_model_bands(args.band_stores, args.models)
+
+    # `store:9-11` is a legal band name but an awkward directory name, so the
+    # colon becomes an L: perlayer_gpt2_k16:8 -> perlayer_gpt2_k16L8. The band
+    # names themselves go into meta.json unchanged, which is what any later
+    # reader should key on.
+    def _dirsafe(band: str) -> str:
+        return band.replace(":", "L")
+
+    if args.band:
+        # Band *names* here, not stores: with three affective dimensions the
+        # store names are near-identical and the directory would be unreadable.
+        name = "bands_" + "-".join(args.band_stores)
+    else:
+        name = f"{_dirsafe(args.text_features)}__{_dirsafe(args.audio_features)}"
     if args.tag:
         name = f"{name}__{args.tag}"
     out_root = Path(args.out or ENCODING_OUT) / name
     ensure_dirs(out_root)
 
     log.info(f"Subjects : {', '.join(subjects)}")
+    log.info("Bands    : " + ", ".join(f"{n} <- {s}"
+                                       for n, s in args.band_stores.items()))
     log.info(f"Models   : {', '.join(args.models)}")
     log.info(f"Backend  : {args.backend} | eval: {args.eval}")
     log.info(f"Output   : {out_root}")
