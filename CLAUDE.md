@@ -313,12 +313,20 @@ is no longer needed to attribute a difference, because there is no difference to
 attribute.
 
 **Averaged ranges still do not pay.** emotion 9-11 (0.1516) vs L11 (0.1504):
-+0.001 for 3x the columns.
++0.0012. This used to say "for 3x the columns", which was wrong: a range
+*averages* its layers (`run_prosody_sweep.py:156`, and `common/io.py` for the
+`store:9-11` syntax), so it is the same 1024 dimensions. The cost is three
+stored layers instead of one, not three times the design matrix.
 
-**Carry `perlayer_base_emotion:9-11` or `perlayer_base_robust:11` forward.** They
-are statistically indistinguishable. `base_robust` L11 is the simpler story — one
-public checkpoint, no pruning, no emotion-pretraining caveat — and
-`base_emotion` 9-11 is nominally the cv argmax. Pick one and write down which.
+**DECIDED 2026-09-10: carry `perlayer_base_emotion:11`.** The three candidates
+sit within 0.0012 of each other, so this is a choice of story, not of
+performance, and the story is what settles it: the affective band
+(`emotion_avd`, see below) is the *head* of this same checkpoint, so 3-d against
+1024-d is an affective bottleneck measured against the representation it is
+drawn from, rather than a contrast across two backbones. The single layer over
+9-11 for the reason above — same dimensionality, one stored layer.
+`base_robust:11` remains the fallback if the emotion-pretraining caveat ever
+needs removing; it is 0.0008 away.
 
 ## Why fine-tuning on eGeMAPS hurts, measured (2026-09-09)
 
@@ -357,8 +365,37 @@ The registry's warning was right, and the frozen-baseline control it insisted on
 is what caught it: "if it wins, fine-tuning is hurting, and that is a real
 possible outcome here."
 
-**Two levers now exist to test whether a *small* drift helps before a large one
-destroys.** The mechanism predicts a non-monotonic optimum, and nothing in the
+### CLOSED 2026-09-10: there is no drift worth testing
+
+A ridge from a **frozen**, mean-pooled layer to the same 88 functionals, on the
+same split (23,853 train / 3,944 val windows) and the same per-column r averaged
+over 88 targets — so directly comparable to `eval_mean_r`:
+
+    base_robust  L6   0.6359      base_robust L20  0.6282
+    base_robust  L11  0.6184      ft_robust   L12  0.6231
+    base_emotion L11  0.6145      base_robust L12  0.6174
+    full fine-tuning, 32 epochs   0.6622
+
+Fine-tuning buys **+0.026 on its own target** for up to **-0.056** on the brain.
+And the eGeMAPS-decodability profile is nearly flat across depth (range 0.018)
+while brain prediction is a sharp inverted U (range 0.052): **eGeMAPS content is
+not what makes L11 the best brain-predicting layer**, so moving a layer toward
+eGeMAPS cannot add anything there — only remove. The destination contains
+nothing the backbone did not already have linearly, which is why there is no
+non-monotonic optimum to find and no lambda sweep worth paying for.
+
+**The rule this leaves behind, and it generalises past eGeMAPS: a target
+deserves fine-tuning only if a linear readout of the frozen backbone cannot
+already reach it.** Run the probe first. Both candidate targets here fail it for
+opposite reasons — eGeMAPS is already linearly present, and arousal/dominance/
+valence was already learned by audEERING on far more data than this dataset
+holds.
+
+Keep the negative result; it is publishable as written. The levers below stay in
+the code, unused, in case a future target passes the probe.
+
+**Two levers exist to test whether a *small* drift helps before a large one
+destroys.** The mechanism predicted a non-monotonic optimum, and nothing in the
 old setup could express "let L11 move a little" — freezing is binary per layer.
 Both default to off, so an unflagged run reproduces the existing checkpoints and
 keeps its directory name.
@@ -375,15 +412,82 @@ keeps its directory name.
   `||theta - theta_0|| / ||theta_0||` at every evaluation, plus the pooling
   profile. LAMBDA is in units nobody has intuitions about; drift is not.
 
-**The cheapest experiment is one run with a large `--save-total-limit`**,
-extracting features from several epochs: that yields the whole drift-vs-damage
-curve from a single training run, and says whether the optimum is at zero drift
-before any lambda sweep is worth paying for. The existing runs cannot supply it —
-`save_total_limit=3` kept only epochs 29-32, all at the far end.
+~~**The cheapest experiment is one run with a large `--save-total-limit`**~~ —
+superseded by the frozen probe above, which answered the same question for the
+cost of a CPU job: the optimum is at zero drift, because the destination holds
+nothing new. `scripts/finetune.sbatch` takes `SAVE_LIMIT` as an env var if a
+future target ever justifies the curve.
 
 Note `--llrd` already exists in `finetune/optim.py` and has never been used: both
 published runs are `frozen_N_lr3e-05_seed42`. It is the softer version of the
 freeze boundary and costs nothing to try.
+
+## The affective band: `emotion_avd`, and what it can and cannot claim
+
+Submitted 2026-09-10 (Baobab 12590825 -> 12590826). `extract/emotion_avd.py` has
+existed since August and had never been run.
+
+Same checkpoint the encoding already uses, read at the **head** instead of the
+hidden states: its forward returns both the 1024-d mean-pooled state and the 3
+numbers the regression head makes from it. The audio band is otherwise 1024
+opaque dimensions, so "this voxel is predicted by the audio band" says nothing
+about *what* it tracks. Comparing r(3-d) with r(1024-d) asks how much of the
+audio effect survives an affect-only bottleneck — the only measurement here that
+addresses *affective* prosody rather than prosody.
+
+    band                 dim    columns   mean r (EV>0.1, cv)
+    emotion_avd            3        12    running
+    opensmile             88       352    0.0867
+    base_emotion L11    1024      4096    0.1504
+
+Do **not** use `--output both`. The 3 values are a function of the 1024-d
+vector, so concatenating returns an opaque band and throws away the only thing
+worth having: three columns with names.
+
+**Dominance is not a separate dimension.** Measured on the 774 stimuli of
+`../Clean_Irony/embeddings/audio_wav2vec_avd/` — this exact model's outputs:
+
+    arousal x dominance   0.950      variance per component:
+    arousal x valence     0.223          0.639 / 0.348 / 0.013
+    dominance x valence   0.274      -> effective rank 2, not 3
+
+Likely a property of the model (MSP-Podcast dominance annotations track arousal)
+rather than of that corpus; `scripts/split_avd_bands.py` reprints the matrix on
+the LeBel stimuli so it can be confirmed here. Consequences:
+
+- **Valence vs arousal (r ~ 0.25) is the identifiable contrast**, and the one
+  with a literature behind it. Report it as primary.
+- **Arousal vs dominance is not.** Banded ridge does not dissolve collinearity,
+  it *allocates* it: with 90% shared variance the split is decided by noise in
+  the model's own output, and a winner-take-all map still looks clean because an
+  argmax never abstains. Gate any per-dimension claim on cross-subject
+  replication — per voxel, how many of the nine subjects agree, against
+  Binomial(9, 0.5); the exact sign test bottoms out at 1/512 = 0.002, the same
+  floor as every other group claim here.
+- Whether the third dimension earns its columns is `--models arousal+valence`
+  against `joint`: `r_joint - r_(arousal+valence)` is the unique contribution of
+  dominance, the same conditional-contribution logic as the text/audio
+  permutations, one level down. This is deliberately *not* a comparison against
+  openSMILE or the emotion layer, which answer "which band predicts better".
+
+Read the run back with `PYTHONPATH=. python3 scripts/avd_contrast.py`.
+
+**`run_encoding` now takes N named bands** (`6f8e28d`): `--band NAME=STORE`,
+repeatable, replacing the text/audio pair, because a decomposition *inside* one
+modality is three bands of one modality rather than a text band and an audio
+band. Each band still gets its own alpha; `split_corrs` still reports each
+band's share of the joint prediction — shares that sum to the joint r, **not**
+standalone correlations. Without `--band` nothing changes: the two-band design
+matrix is column-for-column identical, and `MODEL_BANDS` keeps its name because
+`stats.run_permutation` imports it.
+
+Note `--n-iter 200` rather than the sweeps' 20: random search samples the
+simplex of band weights, 20 was calibrated for p=4096 where each fit is
+expensive, and here the band weights are exactly what two collinear dimensions
+are fighting over.
+
+`stats/run_permutation.py` is still text/audio only, so the per-dimension claims
+carry counts rather than p-values until it is extended.
 
 ## Stage-2 result: semantic context length (2026-09-01)
 
@@ -610,8 +714,8 @@ H0 by construction. Nothing about the header's definition changes.
 
 Each band is chosen on **cv** over its own sweep. As of 2026-09-09:
 
-    prosody    perlayer_base_emotion 9-11   or   perlayer_base_robust 11
-                                      +0.065 over openSMILE, 9/9
+    prosody    perlayer_base_emotion 11     +0.064 over openSMILE, 9/9
+                                      (decided 2026-09-10; see above)
     semantic   perlayer_gpt2_k16 layer 8    +0.0397 over gpt2_mean, 9/9
                                       (being re-scored on the current masks)
 
@@ -620,10 +724,12 @@ corrected sweep puts the peak at 9-11 (emotion) and L11 (robust), and the 45 old
 holdout runs that used `base_emotion_L11` / `base_robust_L18` were on the
 misaligned grid and are void regardless of which layer they named.
 
-`run_encoding` should take the `store:layer` source syntax `run_semantic_sweep`
-already has (`perlayer_base_robust:11`, `perlayer_gpt2_k16:8`) instead of a flat
-store per layer. One mechanism, no duplicated stores, and it removes the class of
-error that produced that mismatch. **Still to do.**
+**DONE (`2ba552b`).** `run_encoding` takes the `store:layer` source syntax
+`run_semantic_sweep` already has (`perlayer_base_emotion:11`,
+`perlayer_gpt2_k16:8`) instead of a flat store per layer. One mechanism, no
+duplicated stores, and it removes the class of error that produced that
+mismatch. The store's own `layers` attribute is read rather than assumed,
+because the two writers disagree about what index *i* means.
 
 **The semantic numbers are on the old EV masks.** Every semantic sweep predates
 `--max-repeats 5` (2026-09-09), so UTS01-03 were scored over masks built from 10
@@ -784,10 +890,14 @@ variance argument for a floor holds either way.
   banded and the documented `--backend both` recipes are all `--eval holdout`,
   but this file calls huth a "conservative lower bound" and on cv that is
   backwards.
-- **FIXED (warning added):** `--min-ev` is a silent no-op under
-  `run_encoding --eval cv` (EV needs the repeated story, which only the holdout
-  path loads) while both sweeps honour it — so those cv numbers are over
-  ~81,126 voxels and the sweeps' over ~1,776. Not comparable, and nothing said so.
+- **FIXED for real (`6f8e28d`):** `--min-ev` used to be a silent no-op under
+  `run_encoding --eval cv` — EV was computed only on the holdout path, while
+  both sweeps honour it, so those cv numbers were over ~81,126 voxels and the
+  sweeps' over ~1,776, with nothing saying so. EV is a function of Y alone, so
+  it is now computed whenever the repeated story exists. The repeated story is
+  still never in `train_stories`, so only the mask is taken and the fit is
+  unchanged; a subject without repeats warns instead of silently scoring
+  whole-brain.
 - **FIXED:** `scripts/run_pipeline.sh` no longer passes the removed
   `--use-brain-pca` / `--brain-weight` flags.
 - **NOT fixed:** `run_permutation` FDR-corrects over the EV ROI and then saves
