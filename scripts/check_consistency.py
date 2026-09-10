@@ -242,6 +242,49 @@ def _():
         raise AssertionError("a run without band weights was not refused")
 
 
+@check("avd_contrast refuses in-flight and mask-less runs")
+def _():
+    import json
+    import tempfile
+    from pathlib import Path
+
+    import numpy as np
+
+    from scripts.avd_contrast import load_subject
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+
+        # run_encoding writes meta.json after the model loop, so corrs without
+        # meta means still running -- or raised, since a failing subject is
+        # caught per subject and never reaches the meta write.
+        d = root / "inflight"
+        d.mkdir()
+        np.save(d / "arousal_corrs.npy", np.zeros(50))
+        assert load_subject(d) is None, "an unfinished subject must be skipped"
+
+        # Selected voxels that cannot be recovered is a different quantity, not
+        # a degraded one: averaging the full array counts every unfitted voxel
+        # as a zero, which turned r = 0.024 into r = 0.0013 once already.
+        d = root / "nomask"
+        d.mkdir()
+        np.save(d / "joint_corrs.npy", np.zeros(50))
+        json.dump({"min_ev": 0.1}, open(d / "meta.json", "w"))
+        try:
+            load_subject(d)
+        except FileNotFoundError:
+            pass
+        else:
+            raise AssertionError("a masked run with no saved mask was accepted")
+
+        # --min-ev 0 really is whole-brain, and says so.
+        d = root / "wholebrain"
+        d.mkdir()
+        np.save(d / "joint_corrs.npy", np.zeros(50))
+        json.dump({"min_ev": 0.0}, open(d / "meta.json", "w"))
+        assert load_subject(d).get("unmasked") is True
+
+
 print("\nresults record how they were produced")
 
 

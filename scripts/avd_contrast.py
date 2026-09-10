@@ -54,20 +54,44 @@ def sign_test(n_pos: int, n: int) -> float:
 
 
 def load_subject(path: Path) -> Optional[Dict]:
-    """Every `<model>_corrs.npy` in one subject directory, plus the mask."""
+    """Every `<model>_corrs.npy` in one subject directory, plus the mask.
+
+    Returns None for a subject that has not finished. `run_encoding` writes
+    `meta.json`, `ev.npy` and `voxel_mask.npy` *after* the model loop, so a
+    directory holding correlation maps but no meta is a run still in flight --
+    or one that raised, since a failing subject is caught and logged and never
+    reaches the meta write. Either way it must not be summarised: an earlier
+    version of this script averaged an in-flight cv run over 81,126 unmasked
+    voxels instead of the 6,555 that pass EV, printed r = 0.0013 where the
+    true value was 0.024, and flagged it with a warning that read like a footnote.
+    """
+    meta_path = path / "meta.json"
+    if not meta_path.exists():
+        return None
+    with open(meta_path, encoding="utf-8") as f:
+        meta = json.load(f)
+
     corrs = {p.name[: -len("_corrs.npy")]: np.load(p)
              for p in sorted(path.glob("*_corrs.npy"))}
     if not corrs:
         return None
-    out: Dict[str, object] = {"corrs": corrs}
+    out: Dict[str, object] = {"corrs": corrs, "meta": meta}
 
     mask_path = path / "voxel_mask.npy"
     if mask_path.exists():
         out["mask"] = np.load(mask_path).astype(bool)
+    elif meta.get("min_ev", 0) > 0:
+        # The run selected voxels but did not save which. Falling back to the
+        # full array is not a degraded answer, it is a different quantity that
+        # looks like the same one.
+        raise FileNotFoundError(
+            f"{path}: meta says --min-ev {meta['min_ev']} but voxel_mask.npy "
+            f"is missing, so the selected voxels cannot be recovered. Refusing "
+            f"to average over the full array, which would silently include "
+            f"every unfitted voxel as a zero."
+        )
     else:
-        # No --min-ev on this run: score everywhere the joint model is defined.
-        # Saying so matters -- an unmasked mean r is a different quantity from
-        # a mean over EV>0.1 voxels, and the two are not comparable.
+        # Genuinely whole-brain: --min-ev 0. Recorded so the header can say so.
         any_corr = next(iter(corrs.values()))
         out["mask"] = np.ones(any_corr.shape[-1], dtype=bool)
         out["unmasked"] = True
@@ -102,10 +126,27 @@ def main(argv=None) -> None:
         raise FileNotFoundError(f"{base} not found — has the run finished?")
 
     subjects = sorted(d.name for d in base.iterdir() if d.is_dir())
-    data = {s: load_subject(base / s) for s in subjects}
-    data = {s: d for s, d in data.items() if d}
+    loaded = {s: load_subject(base / s) for s in subjects}
+    unfinished = [s for s, d in loaded.items() if d is None]
+    data = {s: d for s, d in loaded.items() if d}
+    if unfinished:
+        log.warning("skipping %d unfinished subject(s): %s — no meta.json, so "
+                    "the run is still in flight or it raised",
+                    len(unfinished), ", ".join(unfinished))
     if not data:
-        raise FileNotFoundError(f"no *_corrs.npy under {base}")
+        raise FileNotFoundError(
+            f"no finished subject under {base} "
+            f"({len(unfinished)} in flight or failed)")
+
+    # A model missing from some subjects makes a column that averages over a
+    # different set of people than its neighbours.
+    per_subject = {s: set(d["corrs"]) for s, d in data.items()}
+    common = set.intersection(*per_subject.values())
+    ragged = {s: sorted(m - common) for s, m in per_subject.items()
+              if m - common}
+    if ragged:
+        log.warning("these subjects have models the others lack, and those "
+                    "columns will be blank for the rest: %s", ragged)
 
     models: List[str] = sorted({m for d in data.values()
                                 for m in d["corrs"]})            # type: ignore
