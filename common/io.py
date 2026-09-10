@@ -32,20 +32,92 @@ _FEATURE_SUFFIXES = (".hf5", ".h5")
 # Features
 # --------------------------------------------------------------------------
 
-def _read_single_dataset(path) -> np.ndarray:
+def parse_layer_spec(spec: str) -> List[int]:
+    """``"11"`` -> ``[11]``; ``"9-11"`` -> ``[9, 10, 11]``.
+
+    The same grammar `run_prosody_sweep` and `run_semantic_sweep` already
+    accept, so a layer named in a sweep can be named again here verbatim.
+    """
+    spec = spec.strip()
+    if "-" in spec:
+        lo, _, hi = spec.partition("-")
+        try:
+            lo, hi = int(lo), int(hi)
+        except ValueError:
+            raise ValueError(f"Bad layer range {spec!r}; write '9-11'.")
+        if hi < lo:
+            raise ValueError(f"Bad layer range {spec!r}: {hi} < {lo}.")
+        return list(range(lo, hi + 1))
+    try:
+        return [int(spec)]
+    except ValueError:
+        raise ValueError(f"Bad layer spec {spec!r}; write '11' or '9-11'.")
+
+
+def _select_layers(path, arr: np.ndarray, layers: Sequence[int],
+                   stored: Optional[Sequence[int]]) -> np.ndarray:
+    """Pick (and average) transformer layers out of a per-layer store.
+
+    `stored` is the store's own ``layers`` attribute, and it is read rather
+    than assumed because the two writers do not agree on what index *i* means:
+    `extract.wav2vec --per-layer` writes block *i* at position *i*, while
+    `extract.context_lm --per-layer` writes `hidden_states`, whose position 0
+    is the embedding layer and whose block *i* sits at *i + 1*. A 13-entry
+    GPT-2 store is 12 blocks plus embeddings, not 13 blocks. Both label the
+    axis; trusting the label is what keeps `perlayer_gpt2_k16:8` meaning the
+    same layer here as in the sweep that chose it.
+    """
+    if arr.ndim != 3:
+        raise ValueError(
+            f"{path} is {arr.ndim}-D, so it holds no layer axis to select "
+            f"from. Drop the ':<layer>' suffix, or point at a per-layer store."
+        )
+    if stored is None:
+        # Positional fallback, and it is announced rather than silent: a store
+        # written before the attribute existed is the one case where index and
+        # position can disagree without anything saying so.
+        if max(layers) >= arr.shape[1]:
+            raise ValueError(
+                f"{path} has {arr.shape[1]} layers and no 'layers' attribute; "
+                f"cannot resolve {layers}."
+            )
+        idx = list(layers)
+    else:
+        stored = list(stored)
+        missing = [l for l in layers if l not in stored]
+        if missing:
+            raise ValueError(
+                f"{path} holds layers {stored}, so {missing} is not in it."
+            )
+        idx = [stored.index(l) for l in layers]
+
+    picked = arr[:, idx, :]
+    return picked[:, 0, :] if len(idx) == 1 else picked.mean(axis=1)
+
+
+def _read_single_dataset(path, layers: Optional[Sequence[int]] = None
+                         ) -> np.ndarray:
     """Read the one array stored in an HDF5 file, whatever its key is."""
     with h5py.File(path, "r") as f:
         keys = list(f.keys())
         if not keys:
             raise ValueError(f"{path} contains no datasets")
         if "data" in keys:
-            return np.asarray(f["data"])
-        if len(keys) > 1:
+            key = "data"
+        elif len(keys) > 1:
             raise ValueError(
                 f"{path} holds several datasets {keys} and none is named "
                 f"'data' — cannot decide which to load"
             )
-        return np.asarray(f[keys[0]])
+        else:
+            key = keys[0]
+        dataset = f[key]
+        arr = np.asarray(dataset)
+        if layers is None:
+            return arr
+        stored = dataset.attrs.get("layers")
+        return _select_layers(path, arr, layers,
+                              None if stored is None else list(stored))
 
 
 def load_features(feature_name_or_dir, stories: Optional[Sequence[str]] = None
@@ -57,13 +129,34 @@ def load_features(feature_name_or_dir, stories: Optional[Sequence[str]] = None
     feature_name_or_dir : str or Path
         Either a directory, or a name resolved under `config.FEATURES_DIR`
         (e.g. ``"gpt2_mean"`` -> ``data/features/gpt2_mean``).
+
+        A ``store:layer`` suffix selects one layer of a per-layer (3-D) store,
+        and ``store:lo-hi`` averages a range: ``"perlayer_gpt2_k16:8"``,
+        ``"perlayer_base_emotion:9-11"``. This is the syntax the sweeps already
+        use to *choose* a layer, so the winner can be named here verbatim
+        instead of being re-extracted into a flat store — which is the
+        mechanism that let `encoding_holdout.sbatch` run `base_emotion_L11`
+        while the sweep table said L10.
     stories : sequence of str, optional
         Load only these stories. Missing ones are reported, not skipped
         silently, because a silently absent story changes the design matrix.
     """
-    folder = Path(feature_name_or_dir)
+    name = str(feature_name_or_dir)
+    layers = None
+    if not Path(name).is_dir():
+        # Only split a name that is not itself a path: a directory may contain
+        # a colon, and an existing directory should always win.
+        store, sep, spec = name.partition(":")
+        if sep:
+            if not spec.strip():
+                raise ValueError(
+                    f"{name!r} ends in ':' with no layer. Write 'store:8', "
+                    f"'store:9-11', or just 'store'.")
+            name, layers = store, parse_layer_spec(spec)
+
+    folder = Path(name)
     if not folder.is_dir():
-        folder = Path(FEATURES_DIR) / str(feature_name_or_dir)
+        folder = Path(FEATURES_DIR) / name
     if not folder.is_dir():
         raise FileNotFoundError(f"Feature directory not found: {folder}")
 
@@ -82,7 +175,8 @@ def load_features(feature_name_or_dir, stories: Optional[Sequence[str]] = None
             )
         by_story = {s: by_story[s] for s in stories}
 
-    return {story: _read_single_dataset(path) for story, path in by_story.items()}
+    return {story: _read_single_dataset(path, layers)
+            for story, path in by_story.items()}
 
 
 def feature_dim(features: Dict[str, np.ndarray]) -> int:
