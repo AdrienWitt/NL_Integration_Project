@@ -435,10 +435,34 @@ about *what* it tracks. Comparing r(3-d) with r(1024-d) asks how much of the
 audio effect survives an affect-only bottleneck — the only measurement here that
 addresses *affective* prosody rather than prosody.
 
-    band                 dim    columns   mean r (EV>0.1, cv)
-    emotion_avd            3        12    running
-    opensmile             88       352    0.0867
-    base_emotion L11    1024      4096    0.1504
+Measured 2026-09-10, all nine subjects, one runner, one design, `common_
+stories_all9`, `--min-ev 0.1`, `--max-repeats 5`, each band a single-band
+banded ridge so the rows differ only in the band:
+
+    band                 dim    columns      cv     holdout
+    emotion_avd            3        12    0.0573    0.0911
+    opensmile             88       352    0.0866    0.1131
+    base_emotion L11    1024      4096    0.1505    0.2908
+
+    r_avd / r_emotion            cv 0.379   (per subject 0.33-0.45)
+                            holdout 0.305   (per subject 0.17-0.43)
+    avd < opensmile              9/9 subjects on cv, 8/9 on holdout
+
+**Three named affective dimensions recover ~38% of what 1024 learned ones
+explain**, and the fraction is stable across subjects. That is the quantity
+this project existed to produce, and it is substantial for three columns.
+
+**But affect alone sits below openSMILE in 9/9 subjects.** The ordering is
+affect (3d) < hand-designed acoustics (88d) < learned representation (1024d).
+So affective prosody is an identifiable and sizeable *component* of what the
+audio band explains, not its principal explanation — write the paper that way.
+Two caveats belong in the same sentence: these are A/D/V *predicted from
+acoustics*, and since dominance ~ arousal the three dimensions are effectively
+two.
+
+A cross-check worth keeping: the sweep reported **0.1504** for this band and
+`run_encoding` gives **0.1505**, through two different runners and two
+different alpha searches.
 
 Do **not** use `--output both`. The 3 values are a function of the 1024-d
 vector, so concatenating returns an opaque band and throws away the only thing
@@ -490,10 +514,26 @@ standalone correlations. Without `--band` nothing changes: the two-band design
 matrix is column-for-column identical, and `MODEL_BANDS` keeps its name because
 `stats.run_permutation` imports it.
 
-Note `--n-iter 200` rather than the sweeps' 20: random search samples the
-simplex of band weights, 20 was calibrated for p=4096 where each fit is
-expensive, and here the band weights are exactly what two collinear dimensions
-are fighting over.
+**Do not raise `--n-iter` here.** Set to 200 on the reasoning that 12 columns
+makes each fit cheap, it timed out all nine tasks at 4 hours. `random_search`
+samples the simplex of *band weights*, so its cost scales with the number of
+bands, not columns, and the fit count is `outer * inner * n_iter`. Measured on
+UTS01 at n_iter=200: 1 min 45 for each single-band model (the simplex is a
+point) and **over 3 h 54 for the two-band model, unfinished**. 5 x 23 x 200 =
+23,000 fits per model against a sweep's 500.
+
+**The inner CV size does not matter, measured** (`scripts/inner_cv_check.sbatch`,
+2026-09-10). `base_emotion:11` on cv, alpha search leave-one-story-out against
+5-fold, three subjects spanning mask size:
+
+    UTS02  0.1493 / 0.1492      UTS04  0.1770 / 0.1770
+    UTS07  0.1534 / 0.1533      mean |diff| 0.00007, max 0.0001
+
+An order of magnitude below anything reportable, so the sweeps' bounded search
+was the right call -- 4.6x cheaper for 0.0001 -- and their layer choices are
+safe under leave-one-story-out. Note both settings are nested (the search runs
+on `story_ids[train_idx]` only), so this was never a leakage question; the one
+place leakage is real remains `--backend huth --eval cv`.
 
 `stats/run_permutation.py` is still text/audio only, so the per-dimension claims
 carry counts rather than p-values until it is extended.
