@@ -188,6 +188,60 @@ def _():
     assert parse_args(["--n-splits", "5"]).alpha_n_splits == 5
 
 
+@check("--from-encoding round-trips a synthetic run and refuses every mismatch")
+def _():
+    import json
+    import tempfile
+    from pathlib import Path
+
+    import numpy as np
+
+    from encoding.run_encoding import MODEL_BANDS
+    from stats.run_permutation import parse_args, load_observed_fit
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        d = root / "banded" / "holdout" / "UTS01"
+        d.mkdir(parents=True)
+        n_voxels = 64
+        mask = np.zeros(n_voxels, bool)
+        mask[:20] = True
+        for name in MODEL_BANDS:
+            np.save(d / f"{name}_corrs.npy", np.zeros(n_voxels))
+        np.save(d / "joint_deltas.npy", np.zeros((2, n_voxels)))
+        np.save(d / "voxel_mask.npy", mask)
+        defaults = parse_args([])
+        json.dump({"band_stores": {"text": defaults.text_features,
+                                   "audio": defaults.audio_features},
+                   "trim": defaults.trim, "ndelays": defaults.ndelays,
+                   "min_ev": defaults.min_ev, "use_pca": defaults.use_pca,
+                   "held_out_story": defaults.held_out_story,
+                   "folds": "synthetic"},
+                  open(d / "meta.json", "w"))
+
+        got = load_observed_fit(root, "UTS01", defaults)
+        assert set(got["corrs"]) == set(MODEL_BANDS), got["corrs"].keys()
+        assert got["deltas"][:, mask].shape == (2, 20)
+
+        # Each of these would silently produce a wrong p-value: the null would
+        # be built from a design the observed weights were never fit on.
+        for flag, value in (("--trim", "7"), ("--ndelays", "6"),
+                            ("--min-ev", "0.2"),
+                            ("--text-features", "something_else")):
+            try:
+                load_observed_fit(root, "UTS01", parse_args([flag, value]))
+            except RuntimeError:
+                continue
+            raise AssertionError(f"{flag} {value} was not refused")
+
+        (d / "joint_deltas.npy").unlink()
+        try:
+            load_observed_fit(root, "UTS01", defaults)
+        except FileNotFoundError:
+            return
+        raise AssertionError("a run without band weights was not refused")
+
+
 print("\nresults record how they were produced")
 
 
