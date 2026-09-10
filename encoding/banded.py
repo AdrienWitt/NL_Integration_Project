@@ -37,10 +37,13 @@ band contributes *inside* the joint model, which is a different question from
 whether joining helped at all.
 """
 
+import logging
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
+
+log = logging.getLogger("encoding.banded")
 
 
 @dataclass
@@ -160,11 +163,31 @@ def fit_banded(
     # ~80% that don't. (The primal formulation would sidestep this entirely,
     # since X^T X is 4096x4096 and full rank — worth revisiting if the fallback
     # starts firing on most fits rather than a minority.)
+    #
+    # It says so when it fires. This used to be silent, and the comment above
+    # asks the reader to revisit the design "if the fallback starts firing on
+    # most fits" -- a condition nothing could observe. A 42x slowdown that
+    # leaves no trace is indistinguishable from a hung job, and a fit that
+    # takes 4 minutes on four folds and hours on the fifth is exactly what it
+    # looks like from the outside.
+    #
+    # Small bands are the worst case, not the safest. A linear kernel from p
+    # features has rank at most p, so the 12-column AVD design leaves ~8,700
+    # zero eigenvalues against 8,700 training TRs -- far more degenerate than
+    # the p=4096 case that motivated this fallback.
+    n_cols = X_train.shape[1]
     try:
         pipeline.fit(X_train, Y_train)
     except RuntimeError as exc:
         if "eigenvalues decomposition failed" not in str(exc):
             raise
+        log.warning(
+            "eigh failed at p=%d, n=%d (a linear kernel from %d features has "
+            "rank <= %d, so the Gram matrix carries ~%d zero eigenvalues); "
+            "retrying this fit with diagonalize_method='svd', which is ~42x "
+            "slower. If this fires on most fits, use the primal solver.",
+            n_cols, X_train.shape[0], n_cols, n_cols,
+            max(0, X_train.shape[0] - n_cols))
         retry_params = dict(solver_params)
         retry_params["diagonalize_method"] = "svd"
         pipeline, model = _build_pipeline(bands, splits, alphas, solver,
