@@ -26,13 +26,30 @@
 #   arousal+valence                 the two-dimension model
 #   joint                           all three
 #
-# The pair that answers "two dimensions or three"
-# -----------------------------------------------
-# r_joint - r_(arousal+valence) is the unique contribution of dominance beyond
-# the other two -- the same conditional-contribution logic the text/audio
-# permutations use, one level down. It is deliberately NOT a comparison against
-# openSMILE or the emotion layer; those answer "which band predicts better",
-# which is a different question with its own runs.
+# Seven models, because a leave-one-out test needs all three subsets
+# ------------------------------------------------------------------
+#   joint   = A + D + V          the full model
+#   A + V   -> r_joint - r_(A+V) = the unique contribution of D
+#   D + V   -> r_joint - r_(D+V) = the unique contribution of A
+#   A + D   -> r_joint - r_(A+D) = the unique contribution of V
+#   A, D, V alone                 the standalone scores
+#
+# The first run fitted only A+V, which shows that dominance adds nothing but
+# cannot show that the other two add something -- half the argument. Without
+# the other two subsets, the test is indistinguishable from one that penalises
+# any third band whatever it contains.
+#
+# This is the same conditional-contribution logic the text/audio permutations
+# use, one level down. It is deliberately NOT a comparison against openSMILE or
+# the emotion layer; those answer "which band predicts better", a different
+# question with its own runs.
+#
+# What the first run already showed, and why the subsets matter: the unique
+# contribution of dominance is +0.0227 on cv (9/9 subjects, sign test p=0.002)
+# and -0.0107 on holdout (1/9, p=0.998). The sign flips. A band 96% redundant
+# with one already present buys cv fit through the extra hyperparameter and
+# loses it on a genuinely held-out story -- which is what "choose on cv, report
+# on holdout" is for.
 #
 # Twelve columns is not a problem
 # -------------------------------
@@ -84,6 +101,18 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 SUBJECTS=(UTS01 UTS02 UTS03 UTS04 UTS05 UTS06 UTS07 UTS08 UTS09)
 SUBJ=${SUBJECTS[$SLURM_ARRAY_TASK_ID]}
 
+# --seed reaches the band-weight search. It was unseeded until e39a6ba, which
+# is why nine identical designs ran between 1h13 and 5h27: random_search draws
+# n_iter points on the simplex, the kernel factorised is sum_i exp(delta_i)K_i,
+# and the draw decides whether eigh converges or the 42x svd fallback fires.
+#
+# The flip side: with one seed and one design, every subject now draws the SAME
+# points, so either none of them hits the fallback or all nine do. Watch the
+# first minutes for "eigh failed" (it logs since 7eb9882); if it fires, cancel,
+# change SEED, resubmit. --primal sidesteps the question entirely and is ~53x
+# faster here, at the cost of differing from the solver every published number
+# used and of being unusable by run_permutation --from-encoding.
+SEED=${SEED:-0}
 EVALS=${EVALS:-"cv holdout"}
 STORIES_JSON=${STORIES_JSON:-common_stories_all9.json}
 
@@ -104,11 +133,14 @@ for EV in $EVALS; do
         --band arousal=emotion_arousal \
         --band dominance=emotion_dominance \
         --band valence=emotion_valence \
-        --models arousal dominance valence arousal+valence joint \
+        --models arousal dominance valence \
+                 dominance+valence arousal+dominance arousal+valence \
+                 joint \
         --stories-json "$STORIES_JSON" \
         --backend banded \
         --eval "$EV" \
         --min-ev 0.1 \
+        --seed "$SEED" \
         --max-repeats 5 \
         $SPLITS
 done

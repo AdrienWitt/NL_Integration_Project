@@ -68,6 +68,11 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 SUBJECTS=(UTS01 UTS02 UTS03 UTS04 UTS05 UTS06 UTS07 UTS08 UTS09)
 SUBJ=${SUBJECTS[$SLURM_ARRAY_TASK_ID]}
 
+# Seeded since e39a6ba: an unseeded band-weight search made the same
+# command irreproducible (max|diff| 2.9e-04 between two runs of one fit)
+# and made runtime a lottery. Same seed for every band here, so the rows
+# differ only in the band.
+SEED=${SEED:-0}
 EVALS=${EVALS:-"cv holdout"}
 STORIES_JSON=${STORIES_JSON:-common_stories_all9.json}
 
@@ -98,6 +103,7 @@ for SPEC in "${BANDS[@]}"; do
             --backend banded \
             --eval "$EV" \
             --min-ev 0.1 \
+        --seed "$SEED" \
             --max-repeats 5 \
             $SPLITS
     done
