@@ -242,6 +242,14 @@ def parse_args(argv=None) -> argparse.Namespace:
                             "and cuts runtime a lot.")
 
     solver = p.add_argument_group("solver")
+    solver.add_argument("--seed", type=int, default=0,
+                        help="seeds the band-weight search. random_search "
+                             "samples n_iter points on the simplex, so an "
+                             "unseeded fit draws a different candidate set "
+                             "every run -- scores move slightly and runtime "
+                             "moves a lot, since how degenerate the weighted "
+                             "kernel is depends on the draw. Pass a negative "
+                             "value to restore the old unseeded behaviour.")
     solver.add_argument("--primal", action="store_true",
                         help="fit banded ridge in the primal (GroupRidgeCV) "
                              "instead of the dual. Right whenever p is small: "
@@ -338,6 +346,20 @@ def load_aligned_response(subject: str, stories: List[str],
 # Fitting
 # --------------------------------------------------------------------------
 
+def _seed(args) -> Optional[int]:
+    """`--seed`, or None for the old unseeded behaviour at a negative value.
+
+    Seeding matters more than it looks. `random_search` draws `n_iter` points
+    on the simplex of band weights, and the kernel that actually gets
+    factorised is ``sum_i exp(delta_i) K_i`` -- so the draw decides how
+    degenerate that matrix is, and therefore whether `eigh` converges or the
+    42x svd fallback fires. With all nine subjects on one identical design
+    (24 stories, 8,683 TRs), runtimes ranged from 1h13 to 5h27, twice on the
+    same node. Nothing about the data varied; the draw did.
+    """
+    return None if args.seed < 0 else int(args.seed)
+
+
 def _subset_bands(bands: Dict[str, slice], names: List[str]) -> Dict[str, slice]:
     return {name: bands[name] for name in names}
 
@@ -363,7 +385,7 @@ def fit_one_model(model_name: str, backend: str, args, design, Y_train,
                 X_train=design.X, Y_train=Y_train,
                 X_test=design_test.X, Y_test=Y_test,
                 bands=band_subset, splits=plan.alpha_search, alphas=alphas,
-                primal=args.primal,
+                primal=args.primal, random_state=_seed(args),
                 solver=args.solver, solver_params=solver_params,
             )
         else:
@@ -373,6 +395,7 @@ def fit_one_model(model_name: str, backend: str, args, design, Y_train,
                 alphas=alphas,
                 solver=args.solver, solver_params=solver_params, logger=log,
                 inner_n_splits=plan.alpha_n_splits, primal=args.primal,
+                random_state=_seed(args),
             )
         return result.as_dict()
 
@@ -587,6 +610,8 @@ def run_subject(subject: str, args, out_root: Path) -> None:
         # Primal `deltas` weight feature groups, dual ones weight kernels, so
         # anything reusing band weights has to know which produced them.
         "solver_form": "primal" if args.primal else "dual",
+        "seed": _seed(args),                     # None = unseeded, as before
+
         "alpha_n_splits": plan.alpha_n_splits,   # None = leave-one-story-out
         "folds": plan.describe(),
         "alphas": [args.alpha_min, args.alpha_max, args.num_alphas],

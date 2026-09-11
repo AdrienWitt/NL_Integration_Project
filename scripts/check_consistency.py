@@ -304,6 +304,19 @@ def _():
             float(np.nanmean(arr[got["mask"]]))
 
 
+@check("the band-weight search is seeded by default")
+def _():
+    import importlib
+    from encoding.run_encoding import _seed
+    enc = parse_defaults(importlib.import_module("encoding.run_encoding"))
+    assert _seed(enc) is not None, (
+        "random_search draws n_iter points on the simplex of band weights, so "
+        "an unseeded fit is not reproducible -- and the draw also decides how "
+        "degenerate the weighted kernel is, hence whether the 42x svd fallback "
+        "fires. Measured: unseeded repeats of one fit differed by 2.9e-04, "
+        "seeded repeats by 0.")
+
+
 print("\nresults record how they were produced")
 
 

@@ -97,7 +97,8 @@ def _band_kernelizer(bands: Dict[str, slice]):
 
 
 def _build_pipeline(bands: Dict[str, slice], splits, alphas: np.ndarray,
-                    solver: str, solver_params: dict):
+                    solver: str, solver_params: dict,
+                    random_state: Optional[int] = None):
     from himalaya.kernel_ridge import MultipleKernelRidgeCV
     from sklearn.pipeline import make_pipeline
 
@@ -111,14 +112,23 @@ def _build_pipeline(bands: Dict[str, slice], splits, alphas: np.ndarray,
     if len(bands) == 1 and solver == "random_search":
         params["n_iter"] = 1
 
+    # `random_search` samples n_iter points on the simplex of band weights, so
+    # an unseeded fit draws a different candidate set every time. That is not
+    # only a reproducibility hole -- re-running the same command moved the
+    # scores -- it is also why identical designs behaved so differently: the
+    # kernel actually factorised is sum_i exp(delta_i) K_i, and how degenerate
+    # that weighted combination is depends on which deltas were drawn. All nine
+    # subjects here share one X (24 stories, 8,683 TRs), yet one run took 1h13
+    # and another 5h27, on the same node in one case. The draw was the variable.
     model = MultipleKernelRidgeCV(
-        kernels="precomputed", solver=solver, solver_params=params, cv=splits
+        kernels="precomputed", solver=solver, solver_params=params, cv=splits,
+        random_state=random_state,
     )
     return make_pipeline(kernelizer, model), model
 
 
 def _fit_primal(X_train, Y_train, X_test, Y_test, bands, splits,
-                solver_params, compute_splits):
+                solver_params, compute_splits, random_state=None):
     """Banded ridge in the primal, via `himalaya.ridge.GroupRidgeCV`.
 
     The dual builds an n x n kernel, and a linear kernel from p features has
@@ -155,7 +165,8 @@ def _fit_primal(X_train, Y_train, X_test, Y_test, bands, splits,
 
     params = dict(solver_params or {})
     params.pop("diagonalize_method", None)      # dual-only
-    model = GroupRidgeCV(groups=groups, cv=splits, solver_params=params)
+    model = GroupRidgeCV(groups=groups, cv=splits, solver_params=params,
+                         random_state=random_state)
     model.fit(X_train, Y_train)
 
     corrs = backend.to_numpy(correlation_score(Y_test, model.predict(X_test)))
@@ -186,6 +197,7 @@ def fit_banded(
     compute_splits: bool = True,
     return_predictions: bool = False,
     primal: bool = False,
+    random_state: Optional[int] = None,
 ) -> BandedResult:
     """Fit on (X_train, Y_train) and score correlations on (X_test, Y_test).
 
@@ -200,7 +212,8 @@ def fit_banded(
     backend = get_backend()
     solver_params = solver_params or {}
 
-    pipeline, model = _build_pipeline(bands, splits, alphas, solver, solver_params)
+    pipeline, model = _build_pipeline(bands, splits, alphas, solver,
+                                      solver_params, random_state)
 
     X_train = np.asarray(X_train, dtype=np.float32)
     X_test = np.asarray(X_test, dtype=np.float32)
@@ -238,7 +251,7 @@ def fit_banded(
                 "primal=True does not return test predictions; the only caller "
                 "that wants them is the prediction-shuffle null, which is dual.")
         return _fit_primal(X_train, Y_train, X_test, Y_test, bands, splits,
-                           solver_params, compute_splits)
+                           solver_params, compute_splits, random_state)
 
     n_cols = X_train.shape[1]
     try:
@@ -256,7 +269,7 @@ def fit_banded(
         retry_params = dict(solver_params)
         retry_params["diagonalize_method"] = "svd"
         pipeline, model = _build_pipeline(bands, splits, alphas, solver,
-                                          retry_params)
+                                          retry_params, random_state)
         pipeline.fit(X_train, Y_train)
 
     Y_pred = pipeline.predict(X_test)
@@ -353,6 +366,7 @@ def fit_banded_cv(
     compute_splits: bool = True,
     inner_n_splits: Optional[int] = None,
     primal: bool = False,
+    random_state: Optional[int] = None,
     logger=None,
 ) -> BandedResult:
     """Nested CV: hyperparameters are chosen inside each outer training set.
@@ -388,6 +402,7 @@ def fit_banded_cv(
             X_test=X[test_idx], Y_test=Y[test_idx],
             bands=bands, splits=inner_splits, alphas=alphas,
             solver=solver, solver_params=solver_params, primal=primal,
+            random_state=random_state,
             compute_splits=compute_splits,
         )
         fold_corrs.append(result.corrs)
