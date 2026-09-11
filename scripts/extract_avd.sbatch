@@ -46,6 +46,19 @@
 
 set -e
 
+# ---------------------------------------------------------------------------
+# Run marker. --output/--error use fixed names by project convention, so this
+# file still holds the PREVIOUS run's text between submission and dispatch --
+# and a reader in that window sees the past while believing it sees the present.
+# That inverted a diagnosis twice in one session: once reading a replacement
+# job's first line as the stuck job "recovering", once reading last night's
+# `eigh failed` as this run's.
+#
+# Anchor on this line instead of on a timestamp:
+#     sed -n "/=== RUN $SLURM_JOB_ID /,\$p" logs/<file>
+echo "=== RUN ${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID:-0} started $(date -Is) on $(hostname) ==="
+echo "=== RUN ${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID:-0} started $(date -Is) on $(hostname) ===" >&2
+
 # logs/ is a symlink to scratch; see scripts/prosody_sweep_all.sbatch for why.
 mkdir -p logs
 
