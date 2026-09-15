@@ -997,6 +997,71 @@ A 20-permutation probe reports `n_significant: 0` everywhere. That is correct,
 not a failure — the smallest attainable p is 1/21 = 0.048 and nothing survives
 FDR across thousands of voxels. It is only a plumbing check.
 
+## The inference: Draper-Stoneman conditional nulls, 1000 permutations (2026-09-15)
+
+Run on the final bands (`perlayer_gpt2_k256:8` against `perlayer_base_emotion:11`),
+nine subjects, `--shuffle-block conditional --n-perms 1000 --blocklen 10`,
+alphas and band weights reused from the joint fit via `--from-encoding` so the
+observed statistic is the published one rather than a second search that agrees
+with it. Wall clock 51 min to 5 h 01 per subject, scaling with mask size, all
+nine COMPLETED. FDR q < 0.05 within each subject's EV mask.
+
+    subject  voxels    audio|text          text|audio          delta (conjunction)
+    UTS01      6555   +0.0214  2020  31%  +0.0688   5374  82%  +0.0079   933  14%
+    UTS02     11254   +0.0061  1029   9%  +0.0687   8672  77%  -0.0026     0   0%
+    UTS03     16395   +0.0068  1118   7%  +0.0796  12280  75%  -0.0012   333   2%
+    UTS04      1706   +0.0285   666  39%  +0.0535   1221  72%  +0.0122   307  18%
+    UTS05      1736   +0.0370  1002  58%  +0.0387   1119  64%  +0.0054   363  21%
+    UTS06      3192   +0.0318  1018  32%  +0.0663   2452  77%  +0.0073   144   5%
+    UTS07      2489   +0.0194   699  28%  +0.0453   1669  67%  +0.0014   240  10%
+    UTS08      2608   +0.0043   119   5%  +0.0514   1455  56%  -0.0081     0   0%
+    UTS09      4092   +0.0222  1103  27%  +0.0558   3069  75%  +0.0068   348   9%
+    MEAN      50027   +0.0197        18%  +0.0587         75%  +0.0032         5%
+
+**Both bands contribute conditionally in 9 of 9 subjects.** Audio adds beyond
+text somewhere in every subject, and text adds beyond audio somewhere in every
+subject. Neither modality is redundant given the other, which is the first thing
+this project needed to establish and the thing a single-band comparison cannot
+show.
+
+**Text's conditional contribution is about three times audio's**, +0.0587 against
++0.0197 on average, and larger in every subject individually. That is the same
+ordering as `preference` and it is now the conditional version of it: text does
+not merely predict better on its own, it adds more once the other band is already
+in the model.
+
+**Integration is significant in 7 of 9 subjects and is spatially restricted.**
+The conjunction clears FDR in about 5% of explainable-signal voxels on average,
+ranging from 0% (UTS02, UTS08) to 21% (UTS05). So integration is real and
+localised rather than general: most voxels that carry signal are explained well
+by one band with the other adding nothing detectable on top.
+
+**What limits the conjunction is the audio term, not the text term.** The
+intersection-union test needs both components significant in the same voxel, and
+audio clears FDR in 18% of voxels against text's 75%. The delta map is therefore
+bounded above by the audio map almost everywhere, and the three subjects with the
+weakest audio contribution (UTS08 5%, UTS03 7%, UTS02 9%) are exactly the three
+with zero or near-zero integration voxels. Do not read a low delta count as weak
+integration without reporting the audio-conditional map beside it; the constraint
+is visible in the data rather than inferred.
+
+**The negative delta means are not a contradiction.** UTS02, UTS03 and UTS08 have
+mean delta below zero while still showing significant conditional contributions,
+because `delta` takes the per-voxel max of two noisy estimates and that max is
+biased upward on a 291-TR story. The permutation is what handles it: the null
+carries the identical bias, which is why voxels still clear FDR in a map whose
+mean is negative. This is the measured version of the argument in the joint-model
+section above.
+
+Read the maps back from:
+
+    results/encoding/perlayer_gpt2_k256L8__perlayer_base_emotionL11__shuffle_conditional/permutation/<SUBJ>/
+
+`delta_significant.npy` is the integration map, `delta_audio_given_text_*` and
+`delta_text_given_audio_*` the two components. Note the standing caveat that
+`run_permutation` FDR-corrects within the EV ROI and then pads to full brain with
+p = 1, so anything downstream must not correct a second time.
+
 ## Code review, 2026-09-09 — what was wrong, and what was done
 
 A multi-lens audit of the pipeline. Everything below was verified against the
