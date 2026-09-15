@@ -505,6 +505,40 @@ LeBel it is slightly worse, 93% shared variance. Consequences:
 
 Read the run back with `PYTHONPATH=. python3 scripts/avd_contrast.py`.
 
+### Which dimension earns its columns: measured (2026-09-11, all seven models)
+
+Seven models rather than five (`cf8b0dd`), so every dimension gets the same
+leave-one-out treatment dominance already had. `r_joint - r_subset`, nine
+subjects, the same design as the table above:
+
+    dimension       cv      n    p        holdout     n    p
+    arousal      +0.0187   9/9  0.002     -0.0110    1/9  0.998
+    dominance    +0.0227   9/9  0.002     -0.0109    1/9  0.998
+    valence      +0.0041   8/9  0.020     +0.0222    9/9  0.002
+
+**Only valence is positive on both evals, and the two evals otherwise say
+opposite things.** On cv all three dimensions add something and dominance adds
+the most; on holdout arousal and dominance both come out *negative* in 8 of 9
+subjects, i.e. the joint model (0.0872) scores below both `arousal+valence`
+(0.0981) and `dominance+valence` (0.0982). A nested joint model scoring below
+its own subset is noise, not a finding: 291 TRs and a randomised band-weight
+search. But the direction of that noise is not arbitrary — it is arousal and
+dominance, the pair at r = 0.963, whose split is allocated rather than measured,
+and the collinear pair is exactly where a re-draw of the simplex can move the
+answer.
+
+**So report valence.** It is the one dimension whose unique contribution is
+positive under both evaluations and in 9/9 subjects on the one that was never
+used for selection. Dominance's own sbatch header already recorded the sign
+flip; the arousal row now shows the flip is a property of the collinear *pair*,
+not a fact about dominance. Do not report a per-dimension map for arousal or
+dominance without the cross-subject replication gate above.
+
+The one thing both evals agree on beyond valence: the three-dimension joint is
+not bigger than a well-chosen two-dimension subset. `arousal+valence` and
+`dominance+valence` score within 0.0001 of each other on holdout, which is what
+an effective rank of 2 looks like when you ask it directly.
+
 **`run_encoding` now takes N named bands** (`6f8e28d`): `--band NAME=STORE`,
 repeatable, replacing the text/audio pair, because a decomposition *inside* one
 modality is three bands of one modality rather than a text band and an audio
@@ -570,11 +604,14 @@ Context still helps in 9/9; it is no longer the headline.
 k=16 and k=256 are indistinguishable; the dip at k=64 is noise.
 Choosing on cv: **k=16**, same score for a sixteenth of the context.
 
-## Stage-2 result: GPT-2 depth at k=16 (2026-09-08)
+## Stage-2 result: GPT-2 depth at k=16 (2026-09-08, re-scored 2026-09-11)
 
-> **On the old EV masks**, and being re-run on the current ones
-> (job submitted 2026-09-09). The L8 argmax should survive — mask changes
-> affect all layers alike — but the absolute r will move for UTS01-03.
+> **Re-scored on the current `--max-repeats 5` masks and it held.** The table
+> below is the new one; the old-mask run is archived at
+> `results/encoding/semantic_sweep_oldmask_20260909/`. Everything the old
+> version claimed survived — same peak, same shape, same +0.0397 against
+> `gpt2_mean` to four decimals — so the two paragraphs of caveat that used to
+> sit here are gone rather than updated.
 
 The context sweep above ran entirely at `--layers last`, which on a *causal*
 LM is the layer least likely to win: the top of the stack is optimised to emit
@@ -586,32 +623,41 @@ al. 2023). So +0.031 was measured at a probable trough. It was.
 `--min-ev 0.1`. Mean r over the EV>0.1 voxels, averaged over subjects:
 
     layer     cv      vs L12   n     holdout   vs L12   n
-    L0      0.1476   -0.0181  0/9    0.2914   -0.0357  0/9
-    L1      0.1523   -0.0134  0/9    0.3031   -0.0239  1/9
-    L2      0.1551   -0.0106  0/9    0.3049   -0.0222  1/9
-    L3      0.1587   -0.0070  1/9    0.3103   -0.0168  3/9
-    L4      0.1622   -0.0035  1/9    0.3178   -0.0093  3/9
-    L5      0.1658   +0.0002  4/9    0.3236   -0.0035  5/9
-    L6      0.1694   +0.0038  9/9    0.3281   +0.0011  5/9
-    L7      0.1727   +0.0071  9/9    0.3348   +0.0078  7/9
-    L8      0.1744   +0.0087  9/9    0.3394   +0.0123  8/9   <- peak, both evals
-    L9      0.1734   +0.0077  9/9    0.3363   +0.0092  8/9
-    L10     0.1713   +0.0057  9/9    0.3364   +0.0093  9/9
-    L11     0.1682   +0.0025  9/9    0.3328   +0.0058  8/9
-    L12     0.1657    —       0/9    0.3271    —       0/9   <- what the k sweep used
+    L0      0.1347   -0.0188  0/9    0.2584   -0.0401  0/9
+    L1      0.1394   -0.0141  0/9    0.2699   -0.0286  0/9
+    L2      0.1423   -0.0112  0/9    0.2731   -0.0255  0/9
+    L3      0.1458   -0.0077  0/9    0.2792   -0.0194  2/9
+    L4      0.1493   -0.0042  0/9    0.2871   -0.0115  2/9
+    L5      0.1529   -0.0006  4/9    0.2929   -0.0057  4/9
+    L6      0.1565   +0.0030  8/9    0.2981   -0.0004  5/9
+    L7      0.1599   +0.0064  9/9    0.3051   +0.0065  7/9
+    L8      0.1615   +0.0080  9/9    0.3101   +0.0116  8/9   <- peak, both evals
+    L9      0.1607   +0.0072  9/9    0.3075   +0.0089  8/9
+    L10     0.1588   +0.0053  9/9    0.3077   +0.0091  9/9
+    L11     0.1559   +0.0024  9/9    0.3044   +0.0058  9/9
+    L12     0.1535    —       0/9    0.2985    —       0/9   <- what the k sweep used
 
 **A clean inverted U peaking at L8 of 12 — two thirds of the way up.** The
-hourglass, measured. `--layers last` cost +0.0087 mean r. (This used to add
+hourglass, measured. `--layers last` cost +0.0080 mean r. (This used to add
 "about what the entire audio-layer effect buys over openSMILE (~+0.010)" — that
 was the misaligned audio band; the corrected figure is +0.065, so depth on the
-text side is a seventh of it, not a match for it.)
+text side is an eighth of it, not a match for it.)
 
-**L8 is the argmax in all nine subjects independently** on cv — not a group
-mean with a soft peak, nine separate maxima at the same layer. Holdout (all
-nine, complete) puts the peak at L8 in five subjects, L10 in two, L9 and L11
-in one each: the same shape, resolved less sharply, exactly as its ~4x larger
-standard errors predict. Read L8-L10 as a plateau there, and take the choice
-from cv as the rule says.
+**L8 is the argmax in eight of nine subjects independently** on cv, UTS03 at L9
+— not a group mean with a soft peak, eight separate maxima at the same layer.
+(The old-mask run had 9/9; the one defection is the price of UTS03's mask
+growing from 10-repeat to 5-repeat EV, and it is one layer away.) Holdout puts
+the peak at L8 in five subjects, L10 in two, L9 and L11 in one each — the
+*identical* distribution to the old masks, the same shape resolved less
+sharply, exactly as its ~4x larger standard errors predict. Read L8-L10 as a
+plateau there, and take the choice from cv as the rule says.
+
+**The mask change moved every absolute number and no conclusion.** Mean r falls
+about 0.013 on cv and 0.029 on holdout across the board — UTS01-03 are now
+scored over 3.7x more voxels, which are on average less reliable — but the
+profile is rigid: L8 peak on both evals, +0.0397 against `gpt2_mean` on cv to
+four decimals on both mask sets, and the `gpt2_k16` / `perlayer_gpt2_k16:12`
+identity still exact.
 
 **The peak is not near the bottom**, which settles the interpretive worry that
 motivated the sweep: at two thirds depth the band is not a lookup table, and
@@ -619,7 +665,7 @@ calling it semantic in `preference = r_text − r_audio` is defensible. Report
 the profile alongside the argmax anyway — the shape is the evidence.
 
 **Carry `perlayer_gpt2_k16:8` forward as the semantic band.** Against the
-original `gpt2_mean` it is +0.0397 cv (context +0.0310, depth another +0.0087),
+original `gpt2_mean` it is +0.0397 cv (context +0.0317, depth another +0.0080),
 9/9 subjects.
 
 Consistency check, built into the run: `gpt2_k16` (the flat store the context
@@ -766,7 +812,32 @@ Each band is chosen on **cv** over its own sweep. As of 2026-09-09:
     prosody    perlayer_base_emotion 11     +0.064 over openSMILE, 9/9
                                       (decided 2026-09-10; see above)
     semantic   perlayer_gpt2_k16 layer 8    +0.0397 over gpt2_mean, 9/9
-                                      (being re-scored on the current masks)
+                                      (re-scored on the current masks 2026-09-11)
+
+**Both bands are now on one set of masks, so they can finally be put side by
+side** — the thing this file forbade until 2026-09-11. Same nine subjects, same
+24 common stories, same `--min-ev 0.1 --max-repeats 5` EV masks, one runner
+each:
+
+    band                        cv      holdout
+    text   perlayer_gpt2_k16:8      0.1615    0.3101
+    audio  perlayer_base_emotion:11 0.1505    0.2908
+    preference = r_text - r_audio  +0.0111   +0.0193
+    text ahead in                     8/9       7/9
+
+**Text is ahead, modestly, and not unanimously.** UTS04 prefers audio on both
+evals and UTS05 on holdout, so "semantics beats prosody" is a group tendency
+here, not a fact about every listener — a sign test on 8/9 is p = 0.020, above
+the 1/512 floor every other group claim in this file clears. Note the two
+selection budgets push the *other* way (see below): audio was chosen over ~96
+configurations against text's ~19, so the cross-validated audio number is the
+more optimistic of the pair and the true text advantage is, if anything, a
+little larger than +0.011.
+
+These are marginal scores from single-band fits. They are not `preference` as
+the paper will report it, which comes per voxel out of the joint model — but
+they set the scale, and they say the two modalities are within ~7% of each
+other on the same voxels.
 
 This supersedes the L10-vs-L11 mismatch that used to be recorded here. The
 corrected sweep puts the peak at 9-11 (emotion) and L11 (robust), and the 45 old
@@ -780,12 +851,13 @@ duplicated stores, and it removes the class of error that produced that
 mismatch. The store's own `layers` attribute is read rather than assumed,
 because the two writers disagree about what index *i* means.
 
-**The semantic numbers are on the old EV masks.** Every semantic sweep predates
-`--max-repeats 5` (2026-09-09), so UTS01-03 were scored over masks built from 10
-repeats while every prosody number above comes from 5 — 1,776 voxels against
-6,555 for UTS01. A depth sweep at k=16 on the current masks is running; the old
-results are archived at `results/encoding/semantic_sweep_oldmask_20260909/`.
-**Until it lands, do not put a text number and an audio number side by side.**
+**CLOSED 2026-09-11: the semantic numbers are on the current EV masks.** Every
+semantic sweep used to predate `--max-repeats 5` (2026-09-09), so UTS01-03 were
+scored over masks built from 10 repeats while every prosody number came from 5 —
+1,776 voxels against 6,555 for UTS01 — and this section carried a standing ban
+on comparing a text number with an audio number. The depth sweep at k=16 has
+been re-run on the current masks (9/9, both evals) and the ban is lifted; the
+old results stay at `results/encoding/semantic_sweep_oldmask_20260909/`.
 
 **Selection budgets are unequal, and that biases `preference` on cv.** The audio
 band was chosen over ~96 configurations (4 stores x ~24 layers), the text band

@@ -73,7 +73,8 @@ from .permutation import (conjunction_pvalues, draper_stoneman_null,
 log = logging.getLogger("permutation")
 
 
-def load_observed_fit(root, subject: str, args) -> dict:
+def load_observed_fit(root, subject: str, args,
+                      train_stories=None) -> dict:
     """Load a run_encoding holdout fit: band weights, unimodal r, its mask.
 
     The permutations hold the joint model's band weights fixed (see
@@ -111,6 +112,28 @@ def load_observed_fit(root, subject: str, args) -> dict:
         theirs = stores.get(band)
         if theirs is not None and theirs != mine:
             mismatches.append(f"{band} band: fit with {theirs!r}, here {mine!r}")
+
+    # The training set, which nothing above would catch. `--stories-json`
+    # defaults to `all_stories.json` here and the sbatch passes
+    # `common_stories_all9.json`; forget it and this runs an 84-story design
+    # against band weights fitted on 24, with every other check passing. The
+    # voxel mask does not catch it either -- EV is a function of Y alone, so it
+    # is identical whatever the training stories were. Silent, and the kind of
+    # near-miss this project has already paid for twice.
+    theirs = meta.get("train_stories")
+    if theirs is not None and train_stories is not None:
+        if sorted(theirs) != sorted(train_stories):
+            only_fit = sorted(set(theirs) - set(train_stories))
+            only_now = sorted(set(train_stories) - set(theirs))
+            detail = f"fit on {len(theirs)} stories, here {len(train_stories)}"
+            if only_fit:
+                detail += f"; only in the fit: {', '.join(only_fit[:5])}"
+                detail += " ..." if len(only_fit) > 5 else ""
+            if only_now:
+                detail += f"; only here: {', '.join(only_now[:5])}"
+                detail += " ..." if len(only_now) > 5 else ""
+            mismatches.append(f"train_stories: {detail} "
+                              f"(--stories-json {args.stories_json!r})")
     if mismatches:
         raise RuntimeError(
             f"{subject}: --from-encoding does not describe this design:\n  "
@@ -275,7 +298,8 @@ def run_subject(subject: str, args, out_root: Path) -> None:
     log.info(f"  testing {mask.sum():,}/{ev.size:,} voxels (EV > {args.min_ev})")
     n_voxels = ev.size
 
-    loaded = (load_observed_fit(args.from_encoding, subject, args)
+    loaded = (load_observed_fit(args.from_encoding, subject, args,
+                                train_stories=train_stories)
               if args.from_encoding else None)
     if loaded is not None and args.shuffle_block == "both":
         raise RuntimeError(
@@ -472,7 +496,14 @@ def main(argv=None) -> None:
     stories_json = Path(ENCODING_SPLIT_DIR) / args.stories_json
     subjects = resolve_subjects(args.subjects, stories_json)
 
-    name = f"{args.text_features}__{args.audio_features}"
+    # Same `store:layer -> storeLlayer` convention as run_encoding, so the
+    # permutation of a fit sits next to the fit under a matching name. The
+    # colon is not merely ugly: these results get pulled back to a Windows
+    # OneDrive path, where ':' is not a legal filename character at all.
+    def _dirsafe(band: str) -> str:
+        return band.replace(":", "L")
+
+    name = f"{_dirsafe(args.text_features)}__{_dirsafe(args.audio_features)}"
     if args.shuffle_block != "both":
         # Otherwise a --shuffle-block conditional run lands in the same
         # directory as a previous --shuffle-block both run and its report.json
