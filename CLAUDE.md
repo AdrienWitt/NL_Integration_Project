@@ -941,8 +941,11 @@ each band was selected over.
 through one runner, nine subjects, both evals, ~40 min per subject on one GPU
 with no `eigh` fallbacks. The first run used `perlayer_gpt2_k16:8` before the k
 question was settled; it is kept as a cross-check and the numbers below are from
-it, so **every absolute value here moves when the k256 re-run lands** — what does
-not move is the structure, which is the point of recording it.
+it. The `perlayer_gpt2_k256:8` re-run has since completed (9/9, both evals,
+36-46 min per subject) and is the fit the permutation section below tests, so
+treat the table here as the superseded cross-check rather than the reported
+model. What did not move between the two is the structure, which is why it is
+recorded at all.
 
     eval       text    audio    joint     delta    pref   delta>0 voxels
     cv       0.1616   0.1505   0.1768   +0.0047  +0.0111      60-78%
