@@ -63,6 +63,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import sys
 import warnings
 from collections import defaultdict
@@ -174,6 +175,19 @@ def preflight(subject: str) -> list[str]:
     if not Path(FS_LICENSE).exists():
         problems.append(f"no FreeSurfer licence at {FS_LICENSE} "
                         f"(set FS_LICENSE=/path/to/license.txt)")
+
+    # The docstring has always promised --check covers this and it never did.
+    # pycortex shells out to `mri_surf2surf` by bare name, so a shell that has
+    # FREESURFER_HOME set but has not sourced SetUpFreeSurfer.sh -- any
+    # non-interactive one, which is every sbatch and every subprocess -- passes
+    # every check above and then dies at the projection itself, after the
+    # twenty-odd minutes of transform estimation that precede it.
+    if shutil.which("mri_surf2surf") is None:
+        home = os.environ.get("FREESURFER_HOME")
+        hint = (f"\n        fix: export PATH=\"$PATH:{home}/bin\""
+                if home else
+                "\n        fix: source $FREESURFER_HOME/SetUpFreeSurfer.sh")
+        problems.append(f"mri_surf2surf not on PATH{hint}")
     return problems
 
 
