@@ -604,6 +604,13 @@ Context still helps in 9/9; it is no longer the headline.
 k=16 and k=256 are indistinguishable; the dip at k=64 is noise.
 Choosing on cv: **k=16**, same score for a sixteenth of the context.
 
+> **SUPERSEDED 2026-09-15 — this whole grid ran at L12.** "k=16 and k=256 are
+> indistinguishable" is true at L12 and false at L8, where k=256 wins by
+> +0.0154 in 9/9 subjects. The k choice made here was measured at the one layer
+> that hides the interaction, exactly as the depth section below was measured at
+> the one layer least likely to win. See "k at L8, CLOSED" for the band that
+> replaces it.
+
 ## Stage-2 result: GPT-2 depth at k=16 (2026-09-08, re-scored 2026-09-11)
 
 > **Re-scored on the current `--max-repeats 5` masks and it held.** The table
@@ -679,7 +686,62 @@ Read it with:
     python scripts/summarise_sweep.py --root results/encoding/semantic_sweep/cv \
         --baseline gpt2_mean
 
-## Still open on the semantic band: k at L8
+## CLOSED 2026-09-15: k at L8 — depth and context do interact
+
+They interact, the effect is large, and it moves the semantic band. The k grid
+was run at L12 and the depth grid at k=16, so the one cell neither covered is
+the one that matters. Three context lengths, every layer, nine subjects,
+`common_stories_all9`, `--min-ev 0.1 --max-repeats 5`. Mean r over the EV>0.1
+voxels, averaged over subjects, cv:
+
+    layer      k16      k256      k512
+    L0      0.1347    0.1526    0.1508
+    L4      0.1493    0.1666    0.1657
+    L6      0.1565    0.1730    0.1718
+    L7      0.1599    0.1766    0.1764
+    L8      0.1615    0.1769    0.1770   <- argmax at every k, both evals
+    L9      0.1607    0.1746    0.1749
+    L10     0.1588    0.1707    0.1707
+    L12     0.1535    0.1530    0.1541   <- where the k grid was run
+
+**Read the bottom row against the middle one.** At L12 the three context
+lengths are within 0.0011 of each other, which is what the context sweep saw
+and why it chose k=16 — "same score for a sixteenth of the context". At L8 the
+same comparison is +0.0154 for k=256 over k=16, in **9/9 subjects** on cv and
+9/9 on holdout. The context effect is not small; it was measured at the layer
+where it is invisible.
+
+**Depth and context interact in magnitude, not in location.** L8 is the argmax
+at k=16, k=256 and k=512, on both evals — so the hourglass argument survives
+intact and only the height of the peak moves. That is the cheap outcome: had
+the argmax moved with k, every layer choice in this file would have needed
+redoing per context length.
+
+**Context saturates between 256 and 512, so k=256 is a ceiling and not an
+edge.** k512:8 - k256:8 is **+0.0001, 5/9 subjects** — a coin flip, on cv and
+holdout alike. This was worth measuring rather than assuming: k=256 was the
+largest context ever tested here, the profile was monotonic up to it, and a
+band chosen at the edge of its own grid is a band nobody can defend. GPT-2's
+1024-*token* window caps usable context at about 730 words (`extract/
+context_lm.py` warns and truncates past that), so k=512 is the last point that
+fits and the question cannot be pushed further on this backbone.
+
+**The semantic band is `perlayer_gpt2_k256:8`.** Against `gpt2_mean` that is
++0.0551 cv; against the `perlayer_gpt2_k16:8` this file carried until today,
++0.0154 in 9/9. The k=16 store stays on disk as the cross-check that produced
+the first joint model.
+
+The recipe that produced this, for the record — extraction is ~3 min per k on
+one GPU, not the ~20 min guessed here before, and the sweep is ~15 min per
+subject:
+
+    sbatch --array=0-1 --export=ALL,KS="4 256",LAYERS="0-12 0-12",PER_LAYER=1,\
+           OUTNAMES="perlayer_gpt2_k4 perlayer_gpt2_k256" \
+           scripts/extract_semantic.sbatch
+    sbatch --time=08:00:00 --export=ALL,LAYER_STORE=perlayer_gpt2_k256,\
+           TAGSUF=_k256layers scripts/semantic_sweep.sbatch
+
+### The old recipe, kept because the argument for it still holds
 
 Depth and context can interact, and the k sweep was run at L12, the one layer
 least likely to reveal it. Re-check k=4/16/256 at L8 before freezing the band.
@@ -811,33 +873,39 @@ Each band is chosen on **cv** over its own sweep. As of 2026-09-09:
 
     prosody    perlayer_base_emotion 11     +0.064 over openSMILE, 9/9
                                       (decided 2026-09-10; see above)
-    semantic   perlayer_gpt2_k16 layer 8    +0.0397 over gpt2_mean, 9/9
-                                      (re-scored on the current masks 2026-09-11)
+    semantic   perlayer_gpt2_k256 layer 8   +0.0551 over gpt2_mean, 9/9
+                                      (decided 2026-09-15; k at L8, see above)
 
 **Both bands are now on one set of masks, so they can finally be put side by
 side** — the thing this file forbade until 2026-09-11. Same nine subjects, same
 24 common stories, same `--min-ev 0.1 --max-repeats 5` EV masks, one runner
 each:
 
-    band                        cv      holdout
-    text   perlayer_gpt2_k16:8      0.1615    0.3101
-    audio  perlayer_base_emotion:11 0.1505    0.2908
-    preference = r_text - r_audio  +0.0111   +0.0193
-    text ahead in                     8/9       7/9
+    band                         cv      holdout
+    text   perlayer_gpt2_k256:8      0.1769    0.3298
+    audio  perlayer_base_emotion:11  0.1505    0.2908
+    preference = r_text - r_audio   +0.0264   +0.0390
+    text ahead in                      9/9       9/9
 
-**Text is ahead, modestly, and not unanimously.** UTS04 prefers audio on both
-evals and UTS05 on holdout, so "semantics beats prosody" is a group tendency
-here, not a fact about every listener — a sign test on 8/9 is p = 0.020, above
-the 1/512 floor every other group claim in this file clears. Note the two
-selection budgets push the *other* way (see below): audio was chosen over ~96
-configurations against text's ~19, so the cross-validated audio number is the
-more optimistic of the pair and the true text advantage is, if anything, a
-little larger than +0.011.
+**Text is ahead in every subject, on both evaluations.** A sign test on 9/9 is
+p = 0.002, the 1/512 floor, which is as strong as any group claim in this file
+gets. The margin is +0.0264 cv, about 18% of the audio band's own score.
+
+This is the second version of this table and the first one was materially
+different: at `perlayer_gpt2_k16:8` it read +0.0111 cv with text ahead in 8/9,
+UTS04 preferring audio on both evals and UTS05 on holdout. Fixing the semantic
+band did not just raise the text number, it removed every subject-level
+exception. Worth remembering when reading any "prosody wins here" claim from
+before 2026-09-15: the text band it was measured against was 0.0154 short.
+
+Note the two selection budgets push the *other* way (see below): audio was
+chosen over ~96 configurations against text's ~19 (now ~45 with the k x layer
+grid), so the cross-validated audio number is still the more optimistic of the
+pair.
 
 These are marginal scores from single-band fits. They are not `preference` as
 the paper will report it, which comes per voxel out of the joint model — but
-they set the scale, and they say the two modalities are within ~7% of each
-other on the same voxels.
+they set the scale.
 
 This supersedes the L10-vs-L11 mismatch that used to be recorded here. The
 corrected sweep puts the peak at 9-11 (emotion) and L11 (robust), and the 45 old
@@ -866,6 +934,68 @@ cross-validated audio score is the more optimistic of the two. The held-out stor
 is unaffected, since neither selection touched it — one more reason to report
 `preference` on holdout only, and to say in the methods how many configurations
 each band was selected over.
+
+## The joint model, first run (2026-09-15) — and what delta does on holdout
+
+`scripts/encoding_joint.sbatch` fits the two chosen bands and the joint model
+through one runner, nine subjects, both evals, ~40 min per subject on one GPU
+with no `eigh` fallbacks. The first run used `perlayer_gpt2_k16:8` before the k
+question was settled; it is kept as a cross-check and the numbers below are from
+it, so **every absolute value here moves when the k256 re-run lands** — what does
+not move is the structure, which is the point of recording it.
+
+    eval       text    audio    joint     delta    pref   delta>0 voxels
+    cv       0.1616   0.1505   0.1768   +0.0047  +0.0111      60-78%
+    holdout  0.3101   0.2908   0.3353   -0.0011  +0.0194      37-64%
+
+    delta > 0 in 9/9 subjects on cv, 4/9 on holdout
+
+**The joint model beats both unimodal bands in every subject on both evals** —
+0.1768 against 0.1616 and 0.1505 on cv. The nesting works.
+
+**But mean per-voxel `delta` is ~0 on holdout, and that is not a contradiction.**
+`delta = r_joint - max(r_text, r_audio)` takes the max *per voxel*, and the max
+of two noisy estimates is biased upward by roughly the noise scale. On 291 TRs
+the per-voxel standard errors are ~4x the cross-validated ones, so the max
+absorbs the joint model's advantage and delta collapses. On cv, where the same
+voxel is scored over 8,683 TRs, delta is positive in 9/9.
+
+So this file's standing line — "under banded ridge `delta >= 0` almost by
+construction" — is a statement about the *fit* nesting, not about a *noisy
+estimate* of r on one story. It holds on cv and fails on holdout. Do not read
+the holdout delta map as evidence against integration; read it as the reason the
+permutation test exists, because the Draper-Stoneman null carries exactly the
+same upward bias in its own max and therefore cancels it. Measured on the probe:
+UTS04's `delta_observed` mean is 0.00097 through `run_permutation` against
+0.0010 through `run_encoding` — the same quantity, two code paths.
+
+**The conditional contributions are large where delta is small.** UTS04, holdout:
+
+    delta_audio_given_text   mean +0.0410   (audio beyond text)
+    delta_text_given_audio   mean +0.0210   (text beyond audio)
+    delta (their per-voxel min)     +0.0010
+
+Both bands add substantially to the other, but rarely in the *same* voxel — which
+is what a small min against two large components means, and it is a result about
+the anatomy of the effect rather than a weakness of it.
+
+### What a permutation costs here, measured
+
+The `--n-perms 20` probe (`scripts/permutation.sbatch`, TAGSUF=_probe) exists
+because the cost was never measured and is mask-dependent by an order of
+magnitude. It is:
+
+    UTS04   1,706 voxels   1.4 s/perm    1000 x 2 directions ~ 46 min
+    UTS03  16,395 voxels   7.8 s/perm    1000 x 2 directions ~ 4.3 h
+
+So `--n-perms 1000` fits inside the 12 h `shared-gpu` limit on every subject with
+room to spare, and there is no need to trade p-value resolution for wall clock.
+Run the probe first anyway when the design changes: a timed-out task writes
+nothing at all, and the probe costs two minutes.
+
+A 20-permutation probe reports `n_significant: 0` everywhere. That is correct,
+not a failure — the smallest attainable p is 1/21 = 0.048 and nothing survives
+FDR across thousands of voxels. It is only a plumbing check.
 
 ## Code review, 2026-09-09 — what was wrong, and what was done
 
