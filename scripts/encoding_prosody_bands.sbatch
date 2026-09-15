@@ -61,9 +61,13 @@ set -e
 # `eigh failed` as this run's.
 #
 # Anchor on this line instead of on a timestamp:
-#     sed -n "/=== RUN $SLURM_JOB_ID /,\$p" logs/<file>
-echo "=== RUN ${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID:-0} started $(date -Is) on $(hostname) ==="
-echo "=== RUN ${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID:-0} started $(date -Is) on $(hostname) ===" >&2
+#     sed -n "/=== RUN <the id sbatch printed>_/,\$p" logs/<file>
+# SLURM_JOB_ID is the per-TASK id inside an array, not the id sbatch printed,
+# so anchoring on the submitted id never matched. SLURM_ARRAY_JOB_ID is that id;
+# fall back to SLURM_JOB_ID for a non-array run, where they are the same thing.
+RUN_ID="${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID:-0}"
+echo "=== RUN ${RUN_ID} started $(date -Is) on $(hostname) ==="
+echo "=== RUN ${RUN_ID} started $(date -Is) on $(hostname) ===" >&2
 mkdir -p logs
 
 PROJECT=$HOME/NL_Integration_Project
