@@ -45,7 +45,7 @@ from the same broken `tr_onsets`. Both `prep/make_finetune_targets.py` and
 window and label were wrong together, so the learned mapping — audio window to
 the acoustics of that same window — is unchanged.
 
-Rebuilt 2026-09-09 (`scripts/make_targets.sbatch`, 44 min, CPU only) and checked
+Rebuilt 2026-09-09 (`scripts/cluster/make_targets.sbatch`, 44 min, CPU only) and checked
 against both openSMILE stores on the same `[TR_PAD+trim : -trim]` slice:
 
     targets              vs new store    vs old store
@@ -415,7 +415,7 @@ keeps its directory name.
 ~~**The cheapest experiment is one run with a large `--save-total-limit`**~~ —
 superseded by the frozen probe above, which answered the same question for the
 cost of a CPU job: the optimum is at zero drift, because the destination holds
-nothing new. `scripts/finetune.sbatch` takes `SAVE_LIMIT` as an env var if a
+nothing new. `scripts/cluster/finetune.sbatch` takes `SAVE_LIMIT` as an env var if a
 future target ever justifies the curve.
 
 Note `--llrd` already exists in `finetune/optim.py` and has never been used: both
@@ -556,7 +556,7 @@ UTS01 at n_iter=200: 1 min 45 for each single-band model (the simplex is a
 point) and **over 3 h 54 for the two-band model, unfinished**. 5 x 23 x 200 =
 23,000 fits per model against a sweep's 500.
 
-**The inner CV size does not matter, measured** (`scripts/inner_cv_check.sbatch`,
+**The inner CV size does not matter, measured** (`scripts/cluster/inner_cv_check.sbatch`,
 2026-09-10). `base_emotion:11` on cv, alpha search leave-one-story-out against
 5-fold, three subjects spanning mask size:
 
@@ -737,9 +737,9 @@ subject:
 
     sbatch --array=0-1 --export=ALL,KS="4 256",LAYERS="0-12 0-12",PER_LAYER=1,\
            OUTNAMES="perlayer_gpt2_k4 perlayer_gpt2_k256" \
-           scripts/extract_semantic.sbatch
+           scripts/cluster/extract_semantic.sbatch
     sbatch --time=08:00:00 --export=ALL,LAYER_STORE=perlayer_gpt2_k256,\
-           TAGSUF=_k256layers scripts/semantic_sweep.sbatch
+           TAGSUF=_k256layers scripts/cluster/semantic_sweep.sbatch
 
 ### The old recipe, kept because the argument for it still holds
 
@@ -750,10 +750,10 @@ This needs new per-layer extractions at those k (only k=16 has one), so it is
 
     sbatch --array=0-1 --export=ALL,KS="4 256",LAYERS="0-12 0-12",PER_LAYER=1,\
            OUTNAMES="perlayer_gpt2_k4 perlayer_gpt2_k256" \
-           scripts/extract_semantic.sbatch
+           scripts/cluster/extract_semantic.sbatch
     sbatch --time=08:00:00 --dependency=afterok:<jobid> \
            --export=ALL,SOURCES="perlayer_gpt2_k4:8 perlayer_gpt2_k16:8 perlayer_gpt2_k256:8",\
-           TAGSUF=_kAtL8 scripts/semantic_sweep.sbatch
+           TAGSUF=_kAtL8 scripts/cluster/semantic_sweep.sbatch
 
 `gpt2_mean` is deliberately absent from SOURCES: the sbatch always passes it
 as `--baseline-features`, and naming it in both scores the same band twice.
@@ -937,7 +937,7 @@ each band was selected over.
 
 ## The joint model, first run (2026-09-15) — and what delta does on holdout
 
-`scripts/encoding_joint.sbatch` fits the two chosen bands and the joint model
+`scripts/cluster/encoding_joint.sbatch` fits the two chosen bands and the joint model
 through one runner, nine subjects, both evals, ~40 min per subject on one GPU
 with no `eigh` fallbacks. The first run used `perlayer_gpt2_k16:8` before the k
 question was settled; it is kept as a cross-check and the numbers below are from
@@ -984,7 +984,7 @@ the anatomy of the effect rather than a weakness of it.
 
 ### What a permutation costs here, measured
 
-The `--n-perms 20` probe (`scripts/permutation.sbatch`, TAGSUF=_probe) exists
+The `--n-perms 20` probe (`scripts/cluster/permutation.sbatch`, TAGSUF=_probe) exists
 because the cost was never measured and is mask-dependent by an order of
 magnitude. It is:
 
@@ -1064,6 +1064,694 @@ Read the maps back from:
 `delta_text_given_audio_*` the two components. Note the standing caveat that
 `run_permutation` FDR-corrects within the EV ROI and then pads to full brain with
 p = 1, so anything downstream must not correct a second time.
+
+
+### The null is calibrated, measured rather than assumed (2026-09-23)
+
+`stats/diagnose_permutation.py`, on the 1000-draw conditional run, nine
+subjects. Every saved draw is by hypothesis a sample from H0, so draw *i* is
+treated as if it were the observed statistic and given a p-value against the
+other 999 with the estimator the real test uses:
+
+    statistic                 FPR    nominal   KS dev
+    delta_audio_given_text   0.0469    0.05     0.029
+    delta_text_given_audio   0.0497    0.05     0.005
+    delta (the IU rule)      0.0068    0.05     0.215
+
+Per subject, `audio|text` spans 0.0438–0.0491 and `text|audio` 0.0494–0.0499 —
+no subject deviates, including the three whose masks differ by an order of
+magnitude. And `delta` comes out at 0.0068 against 0.05 nominal, which is the
+intersection–union test's conservativeness *measured*: the max of two p-values
+is stochastically larger than uniform, so the rule must under-reject, and it
+does, by a factor of 7.
+
+**Be honest about what this panel can and cannot see.** Null draws are
+exchangeable with each other by construction whatever the block length, so this
+validates the `(b+1)/(m+1)` estimator, the tie handling and the IU rule — not
+the assumption that the block shuffle preserves the data's autocorrelation.
+That assumption is what the next section tests, which is why both exist.
+
+Figure and numbers: `results/encoding/k256L8__base_emotionL11__conditional_diagnostics/`.
+
+### `--blocklen 10` sits on the plateau, and blocklen 1 would not have (2026-09-23)
+
+Five block lengths on three subjects spanning mask size (UTS03 16,395 voxels,
+UTS06 3,192, UTS04 1,706), 200 permutations each. **Read the null's width, not
+the significant-voxel counts** — at 200 draws the smallest attainable p is
+1/201 and FDR resolution dominates the counts, which is why UTS03 reports zero
+significant voxels at every blocklen ≥ 5 while the published 1000-draw run
+reports 1,118. Mean SD of the null:
+
+    statistic    subject     bl1     bl5    bl10    bl20    bl40   observed
+    audio|text   UTS03     0.0112  0.0142  0.0149  0.0151  0.0147  +0.0068
+                 UTS04     0.0173  0.0219  0.0232  0.0235  0.0227  +0.0285
+                 UTS06     0.0174  0.0215  0.0221  0.0219  0.0212  +0.0318
+    text|audio   UTS03     0.0614  0.0750  0.0770  0.0778  0.0778  +0.0796
+                 UTS04     0.0408  0.0522  0.0552  0.0552  0.0553  +0.0535
+                 UTS06     0.0590  0.0702  0.0717  0.0726  0.0705  +0.0663
+
+**blocklen 1 narrows the null by 20–25%**, which is the free row shuffle
+destroying the autocorrelation exactly as this file predicted when it ported
+the irony permutations — and it is visible in the counts too, where bl1 hands
+UTS03 2,133 significant `audio|text` voxels against 0 at bl5 on identical
+resolution. bl5 is still 4–5% narrow. **bl10, bl20 and bl40 agree to within
+1–3% and not monotonically, i.e. noise**, so 10 TRs is on the plateau and the
+plateau starts just below it. The published inference stands, and the HRF-width
+argument for the floor is now a measurement.
+
+## CLOSED 2026-09-23: integration grows with context — in temporal cortex only
+
+The k × integration grid (k = 4, 16, 256, 512 against `perlayer_base_emotion:11`,
+nine subjects, conditional and marginal, 1000 permutations, group maps under
+`results/group/k*L8__base_emotionL11__*`). At group level:
+
+    k       delta mean   perm FDR          FWE (n>=9)
+    k4       +0.0105    39,553  64.7%     1,237/3,337
+    k16      +0.0108    36,177  59.1%     1,046/3,337
+    k256     +0.0137    41,129  67.2%     1,811/3,337   <- max
+    k512     +0.0130    40,615  66.4%     1,762/3,337
+
+Integration rises with context and **saturates between 256 and 512, the same
+place the encoding score saturates** — one more reason `perlayer_gpt2_k256:8`
+is a ceiling rather than an edge.
+
+**The group mean averages two opposite behaviours, and only one of them is
+interpretable.** `scripts/roi_context_curve.py` (Desikan, written to
+`results/group/roi_context_curve.csv`), mean `delta`, left hemisphere:
+
+    ROI                  k4      k16     k256    k512
+    HeschlTransverse  -0.0004  -0.0018  0.0241  0.0234   <- 0% -> 100% sig
+    STG                0.0097   0.0128  0.0268  0.0257
+    precentral         0.0107   0.0139  0.0185  0.0185
+    supramarginal      0.0115   0.0132  0.0172  0.0164
+    IFG                0.0169   0.0157  0.0145  0.0139   <- falls
+    MTG                0.0140   0.0129  0.0092  0.0086   <- falls
+    inferiorparietal   0.0059   0.0050  0.0032  0.0030
+
+Meanwhile `delta_audio_given_text` **falls with k in every single ROI** (lh STG
+0.0713 -> 0.0464, lh IFG 0.0225 -> 0.0141) while `text|audio` rises. That is
+precisely the confound the script's docstring names in advance: "context
+absorbs prosody" and "a stronger text band absorbs prosody" predict the same
+thing. So:
+
+- **STG, Heschl, precentral, supramarginal grow against the bias** and the
+  growth is real. There the min is bound by the *text* term, and more context
+  releases it.
+- **IFG, MTG and inferior parietal fall with the bias** and cannot be read.
+  There the min is bound by the *audio* term, which erodes mechanically as the
+  text band strengthens. Do not write "context reduces integration in IFG".
+- **Heschl is the striking cell**: 0% of covered vertices significant at k4 and
+  k16, **100% at k256**, because `text|audio` there goes from 0.3% to 100%.
+  With 256 words of context the semantic band starts predicting primary
+  auditory cortex. Either top-down prediction or long-context embeddings
+  carrying low-level temporal structure — settle it before writing a sentence
+  about it.
+
+Coverage caveat, and it is not small: IFG is covered at 42% (lh) and 33% (rh)
+with ~5.9 subjects reaching it on average, and precentral at 7–11%. Those rows
+describe five subjects' periphery. `n_covered` and `coverage` are in every row
+of the CSV for exactly this reason.
+
+## The prediction band: surprisal, entropy, and the word-rate trap (2026-09-23)
+
+`extract/surprisal.py` writes three TR-aligned quantities off GPT-2's LM head —
+surprisal, entropy and word rate — plus `pe_gpt2_k<K>`, the 768-d
+prediction-error vector `E[emb | w_<t] - emb(w_t)` that is the naturalistic port
+of `../Clean_Irony`'s context–statement incongruence. Extracted 2026-09-22
+(job 13114585, five tasks, k = 0, 4, 16, 64, 256): **84 stories in all ten
+stores**, files counted rather than SLURM states trusted.
+
+Grid verified against the semantic stores before anything was fit:
+`surprisal_gpt2_k256`, `pe_gpt2_k256` and `perlayer_gpt2_k256` have identical
+`n_TRs` on every story checked, no NaNs, and the five all-zero rows sit at the
+head where `[TR_PAD + trim : -trim]` removes them — the post-realignment
+signature.
+
+### The stored band is mostly word rate, and at k=0 it is word rate exactly
+
+Both prediction columns are word-level signals resampled onto TR times with
+`lanczosinterp2D`, so their amplitude tracks how many words arrived. On the
+design slice, 84 stories, 28,088 TRs:
+
+    r with word_rate     k0      k4      k16     k64     k256
+    surprisal          +0.976  +0.841  +0.766  +0.742  +0.740
+    entropy            +1.000  +0.958  +0.935  +0.930  +0.928
+
+**`r(entropy, word_rate) = 1.000` at k=0 is not a rounding artefact**: with no
+context the per-word entropy is a constant, and a constant resampled by word
+arrival *is* the word-rate signal. The k=0 store is rank-deficient by
+construction.
+
+This also corrects the claim in `extract_surprisal.sbatch`'s own header that
+k=0 correlates with k=256 "at only r = 0.59, so contextual surprisal is
+demonstrably not word frequency". Per TR the raw figure is **0.805**; 0.59 is
+what you get *after* partialling out word rate (measured: 0.569). The
+conclusion survives, the number as written does not — and the gap between them
+is the whole problem.
+
+### So word rate gets its own band
+
+Banded ridge assigns one alpha per *band*, not per column, so a three-column
+store fit as one band shrinks the nuisance and the signal together and no
+contrast can separate them. `scripts/split_surprisal_bands.py` writes
+
+    wordrate           1 column, once, shared by every k (verified bit-identical
+                       across k on all 84 stories — the script raises otherwise)
+    surp_pred_k<K>     2 columns, [surprisal, entropy] at that context
+
+and then `r_joint − r_wordrate` is what prediction adds beyond word rate: the
+same conditional-contribution logic as the text/audio permutations, one level
+down, and the only form in which a surprisal claim survives the reviewer who
+says "that is just word rate".
+
+**The split is needed for the k comparison, not only for the interpretation.**
+word_rate is identical across k, so fit as one band every k would be handed the
+same strong nuisance and k=0 would be handed the most of it. The argmax would
+land on the least contextual model for the least contextual reason. Split,
+k=0 becomes what it was meant to be: the no-context floor.
+
+Surprisal and entropy stay together — they are the same distribution's first
+and second summaries and their partial correlation is 0.555 at k256 with word
+rate removed. Split them further only if something asks which of the two
+carries the effect.
+
+### What is running, and what is deliberately not
+
+`scripts/cluster/encoding_surprisal.sbatch`, one task per subject, the whole k
+grid inside each task, two bands (`wordrate`, `pred`) and three models
+(`wordrate`, `pred`, `joint`), cv and holdout, `--min-ev 0.1 --max-repeats 5`.
+Choose k on cv by `r_joint − r_wordrate`.
+
+**This is the selection sweep, not the reported model.** The reported claim is
+what prediction adds beyond the bands already carried
+(`perlayer_gpt2_k256:8` and `perlayer_base_emotion:11`) — a separate and far
+more expensive fit at the chosen k, and a permutation after it.
+
+The `pe_gpt2_k<K>` vectors are held back on purpose. They are a band of a
+different size and a different argument, and mixing them into the scalar grid
+would confound "which context length" with "scalar or vector".
+
+Note the sbatch lives at `scripts/cluster/` here and at `scripts/` on Baobab —
+the three-drawer reorganisation is local and unpushed, so the cluster still has
+the flat layout. Anything submitted there takes the flat path.
+
+## AVD: the per-dimension question, answered with p-values (2026-09-17)
+
+The affective sections above could only report **counts** — "9/9 subjects" —
+because `stats/run_permutation.py` was text/audio by construction. It no longer
+is, and the three dimensions now have per-voxel nulls. 1000 permutations, nine
+subjects, `--from-encoding results/encoding/bands_arousal-dominance-valence`, so
+the observed statistic is the published fit rather than a second search.
+
+### `run_permutation` takes N named bands
+
+`--band NAME=STORE` and `--models`, delegating to `run_encoding`'s own
+`resolve_band_stores` / `resolve_model_bands` so a permutation and the fit it
+tests cannot disagree about what a band is. New `--shuffle-block each`: one
+Draper-Stoneman null per band, that band shuffled with every other held aligned.
+The kept model is the `+`-joined subset named exactly as run_encoding names it
+(`arousal` -> `dominance+valence`), so `r_kept` is read from the fit.
+
+**The two-band path is byte-identical** — `resolve_design_bands` without
+`--band` returns `MODEL_BANDS` itself. Three things were two-band by assumption
+rather than by design and all three would have failed silently:
+
+- `observed["delta"] = joint - max(text, audio)` was unguarded, and is what the
+  first AVD probe died on. `delta` is now computed only when
+  `{text, audio, joint}` are all present: with three affective dimensions there
+  is no "the other modality" to max against, and synthesising one would redefine
+  this project's headline statistic under its own name.
+- The `--from-encoding` consistency check compared only the `text`/`audio`
+  stores against the fit's metadata, so an N-band run could have been aimed at
+  the wrong fit with every guard passing. It now checks every declared band.
+- `--shuffle-block both` **used to be** the expensive mode here (it refit all
+  seven models with fresh alpha searches: 22 min to 3 h 22 per subject) while
+  `each` reuses band weights (26 min to 5 h 25). It no longer searches — see
+  "Every permutation reuses the published alphas" below — and now costs under a
+  minute of compute per subject.
+
+That first probe reported `COMPLETED` in 1:32 having written **nothing**, and
+its log had been overwritten because two probes shared `logs/perm_%a_out`. Both
+rules in this file earned their keep: probe when the design changes, and check
+the output files rather than the SLURM exit states.
+
+### Every permutation reuses the published alphas (2026-09-21)
+
+**The rule, now without exception: search once, on the real data, per model —
+then freeze for inference.** Each model gets its own hyperparameters when its r
+is measured, and no model gains or loses capacity when it is tested.
+
+`--shuffle-block both` was the one mode that broke it, and the reason recorded
+here was wrong. This file said it "cannot reuse the published fit" because its
+null shuffles test-set predictions that `run_encoding` does not save. The first
+half is true and the second does not follow: needing a refit is not the same as
+needing a second alpha search. **Every model's band weights were already on
+disk** — `text_deltas.npy`, `audio_deltas.npy`, `joint_deltas.npy` and all seven
+of the AVD run's — and `load_observed_fit` read only the joint's while
+`fit_banded_fixed` computed test predictions at `banded.py:350` and threw them
+away.
+
+So: `fit_banded_fixed` gained `return_predictions`, `load_observed_fit` reads
+every model's weights, and `both` refits each model with **its own** published
+weights held fixed to recover its predictions. Measured on UTS04 against the
+k256 joint fit:
+
+    model    refit mean r    published    max |diff|
+    audio       0.3160        0.3160       2.2e-06
+    joint       0.3695        0.3695       8.8e-06
+    wall clock  0.8 min/subject  (was 22 min to 3 h 22)
+
+**The joint agrees to 1e-06, which was not the expectation.** `WeightedKernelRidge`
+with conjugate gradient converges to the same solution as `MultipleKernelRidgeCV`
+at the same deltas, so the estimator gap that forced the Draper-Stoneman path to
+use `ds["observed"]` is numerically negligible here. The observed r is still taken
+from the refits rather than from `*_corrs.npy`, because a permutation test may not
+straddle two estimators even when they agree — and the run logs both, so the gap
+is visible on every job instead of assumed.
+
+Why fixing is not merely cheaper but more correct: re-searching on each shuffle
+lets the model discover that the shuffled band is now useless and shrink it away,
+so the null describes a *well-tuned model on noise* while the observed statistic
+came from a model tuned to exploit a band that helps. The two sides stop sharing
+a capacity to overfit, and that capacity is exactly what has to cancel for the
+test to measure the band's contribution rather than its column count.
+
+The counter-argument deserves stating in the methods rather than being ignored:
+the textbook recipe for permuting a *pipeline* is to redo everything the pipeline
+does, hyperparameter selection included. That is right when H0 concerns the
+procedure's generalisation. It is wrong here because the statistic is a difference
+between **nested** models, which is only interpretable at constant capacity.
+
+Cost of the mistake, for the record: nothing. `conditional` and `each` always
+reused, so no published inference used a searched null. Only the two `both` runs
+did — `perlayer_gpt2_k256L8__..._marginal` and
+`bands_arousal-dominance-valence__marginal` — and both are being re-run under
+`__marginalfixed` rather than in place, so the old and new can be compared before
+anything is replaced.
+
+### What the second alpha search actually cost, measured (2026-09-21)
+
+Keeping the old runs instead of overwriting them is what made this measurable.
+UTS04, AVD, old `__marginal` against the new `__marginalfixed` and against the
+encoding fit both claim to test:
+
+    model                 old      new      fit    old - fit
+    arousal            0.1320   0.1320   0.1320     +0.0000
+    dominance          0.1275   0.1275   0.1275     -0.0000
+    valence            0.0061   0.0061   0.0061     +0.0000
+    joint              0.1227   0.1191   0.1191     +0.0036   <-
+    arousal+dominance  0.1134   0.1132   0.1132     +0.0002
+    arousal+valence    0.1355   0.1357   0.1357     -0.0002
+    dominance+valence  0.1250   0.1256   0.1256     -0.0006
+
+**The disagreement is zero for single-band models and grows with the number of
+bands.** With one band the weight simplex is a point, so two independent alpha
+searches land in the same place to four decimals. With a simplex to sample,
+`random_search` draws different points on different runs: 0.0002-0.0006 at two
+bands, **+0.0036 at three**.
+
+So the old AVD marginal was testing a joint model *better than the published
+one*, while the conditional analysis beside it used the published fit through
+`--from-encoding`. The two AVD tables in this file came from two different joint
+models. The new run reproduces the fit for all seven.
+
+No conclusion moves — the joint falls further below arousal alone (0.1320), which
+strengthens "arousal and dominance predict better alone and add nothing unique".
+What changes is that this file's own explanation for a nested joint scoring below
+its own subset, "a randomised band-weight search", stops being an assertion:
+**two draws on identical data differ by 0.004 at three bands.**
+
+The published conditional inference is untouched, having never made a second draw.
+
+### Only valence contributes uniquely, and the marginal run says why
+
+`delta_<dim>_given_<rest>`, holdout, mean over the EV mask and FDR-significant
+voxel count:
+
+    subject   arousal|D+V       dominance|A+V      valence|A+D
+    UTS01      -0.0006   918      -0.0065   679     +0.0122   923
+    UTS02      -0.0121   914      -0.0152   662     +0.0203  1478
+    UTS03      -0.0038  2195      -0.0074  1949     +0.0294  3600
+    UTS04      -0.0065   307      -0.0166   220     +0.0059   168
+    UTS05      -0.0200   386      -0.0208   301     +0.0562   749
+    UTS06      +0.0004   352      -0.0034   296     +0.0104   512
+    UTS07      -0.0216   144      -0.0127   167     +0.0165   438
+    UTS08      -0.0083   224      +0.0088   388     +0.0201     0
+    UTS09      -0.0266   196      -0.0240   170     +0.0291   279
+
+**Valence positive in 9/9, arousal and dominance negative in 8/9** (sign test
+p = 0.002, the 1/512 floor). This resolves the cv-vs-holdout sign disagreement
+recorded above — in the holdout direction, per voxel, against a real null
+instead of a count.
+
+The marginal run inverts the picture and explains it:
+
+    model      UTS01     UTS04     UTS09     valence FDR-significant voxels
+    arousal   +0.0948   +0.1320   +0.0626    0 in 7 of 9 subjects
+    dominance +0.0857   +0.1275   +0.0683    (only UTS05, 347)
+    valence   +0.0342   +0.0061   +0.0109
+    joint     +0.0960   +0.1227   +0.0735
+
+**Arousal and dominance predict two to three times better on their own and add
+nothing unique; valence predicts worst alone and is the only one that adds.**
+That is exactly what effective rank 2 looks like at arousal x dominance
+r = 0.963: the collinear pair is mutually redundant, valence is the orthogonal
+direction, and only the conditional test can see it. The earlier instruction to
+"report valence" is now measured rather than inferred.
+
+The one-sided test means arousal and dominance still have FDR-significant voxels
+against a negative mean — those are voxels where they genuinely do add.
+
+### At group level, on fsaverage (`results/group/avd__{conditional,marginal}/`)
+
+61,168 vertices covered by >=5 subjects, 3,337 by all nine.
+
+    conditional   mean r      perm FDR      prevalence FDR    FWE (n=9)
+    arousal      -0.0080    8,038  13.1%    9,210  15.1%          0
+    dominance    -0.0096    7,013  11.5%    8,234  13.5%          0
+    valence      +0.0215   29,091  47.6%   21,364  34.9%        186
+
+    marginal      mean r      perm FDR      prevalence FDR    FWE (n=9)
+    arousal      +0.0757   25,838           21,322            1,760
+    dominance    +0.0730   24,897           19,930            2,253
+    valence      +0.0362        0            5,352               13
+    joint        +0.0894   36,693           31,862            2,476
+
+**The inversion is complete and it is visible in one pair of rows.** Valence
+marginally clears *zero* vertices under the group permutation and is the weakest
+band on its own; conditionally it covers four times the cortex of either
+collinear dimension and is the only one with a positive mean or any FWE-
+significant vertices at all. Arousal and dominance are the mirror image.
+
+Valence's marginal 0-against-5,352 split between the permutation and prevalence
+is not a bug: the prediction-shuffle null for a *marginal* r on a 291-TR story
+has spread ~1/sqrt(291) = 0.059, wider than valence's observed 0.0362, while
+prevalence pools weak per-subject evidence across nine people. Two valid tests
+of two different hypotheses; report both.
+
+The valence map is bilateral superior temporal and temporo-parietal with strong
+prefrontal clusters. 32 figures across the four group directories.
+
+## The group maps: fsaverage, averaged over subjects, with p-values (2026-09-16)
+
+`scripts/group_maps.py`. Projects each subject's observed map **and its 1000-draw
+null** to fsaverage, then produces three group tests per statistic. Six
+statistics: `text`, `audio`, `joint` from a `--shuffle-block both` run, and
+`delta_audio_given_text`, `delta_text_given_audio`, `delta` from the conditional
+one. Both runs are on the final bands, 1000 perms, `--min-ev 0.1 --max-repeats 5`.
+
+The September permutation discarded its nulls (`--save-null` was never passed),
+so both were re-run. The conditional re-run reproduces the published per-subject
+table **exactly** — same seed, same numbers to four decimals and the same voxel
+counts. The `both` run was, at the time, an independent check: it could not
+use `--from-encoding` and refit with its own alpha search, and it landed on
+`r_text = 0.3297` / `r_audio = 0.2908` against the joint fit's
+`0.3298 / 0.2908`. That independence is gone by design as of 2026-09-21 — the
+mode now reuses the published weights and agrees to 1e-06 rather than to four
+decimals — so the numbers in the table below come from the last run that still
+searched. They are being re-run; expect movement in the fourth decimal only.
+
+    statistic              mean r      perm FDR      prevalence FDR    FWE (n=9)
+    text                  +0.3488   61,168 100.0%   61,163 100.0%    3,337 100.0%
+    audio                 +0.3077   61,151 100.0%   61,138 100.0%    3,337 100.0%
+    joint                 +0.3683   61,168 100.0%   61,163 100.0%    3,337 100.0%
+    delta_audio_given_text +0.0196  41,150  67.3%   32,854  53.7%    2,279  68.3%
+    delta_text_given_audio +0.0607  61,156 100.0%   61,080  99.9%    2,829  84.8%
+    delta (conjunction)    +0.0137  41,129  67.2%   32,693  53.4%    1,811  54.3%
+
+    preference = r_text - r_audio   +0.0411, text ahead at 84.7% of vertices
+
+**The group picture is far stronger than the within-subject one.** Integration
+cleared FDR in ~5% of voxels within subject and in only 7 of 9 subjects; at group
+level the conjunction is significant in 67% of covered vertices. That is what
+pooling buys, and it is why per-subject significance must **not** be intersected
+across subjects before averaging — a 9-way conjunction tests "an effect in every
+subject", a different and much stronger hypothesis than the one wanted, and the
+weakest subject alone would zero the map.
+
+### The three tests, and what each licenses
+
+- **`p_perm`** — group permutation. The nine subjects share `--seed 42` and have
+  the same 8,683 training TRs (verified in every `meta.json`), so null draw *i*
+  is the identical block shuffle for all nine and the per-draw group mean is a
+  valid null. Resolution 1/1001. **Fixed effects**: about these nine people and
+  this stimulus, not a population.
+- **`p_prevalence`** — binomial count (Allefeld, Görgen & Haynes 2016). Under H0
+  a permutation p is uniform, so the count of subjects significant at uncorrected
+  alpha is exactly Binomial(n_v, alpha); 3 of 9 already gives p = 0.008, 4 gives
+  6e-04. The per-subject p is recomputed *on the surface* from the projected
+  null, never by projecting the volume p-map — interpolating p-values is
+  smoothing and the result stops being uniform.
+- **`p_signflip_fwe`** — max-statistic over the 2^9 = 512 sign vectors. The only
+  **random-effects** test here, and the weakest. Each subject is centred on its
+  own null mean first; a raw `Delta r` is not symmetric about zero under H0,
+  which is the whole reason the nulls had to be kept.
+
+`delta` is the intersection-union of its two components, so its p is the
+per-vertex max of the two, computed within each family, no correction between
+them.
+
+### Calibration, checked rather than assumed
+
+`text_given_audio` is significant at 100.0% of covered vertices, which is the
+sort of number that is usually a broken null. It is not. Binned by how many
+subjects were individually significant at a vertex:
+
+    k of 9 subjects sig    vertices    group mean r    group significant
+    0                        11,701       -0.0006            9.1%
+    1                        12,031       +0.0045           49.9%
+    2                         8,876       +0.0105           85.8%
+
+(audio|text; the group test tracks the per-subject evidence monotonically and
+does not reject where there is none.) For text|audio only **5** vertices have
+zero subjects significant and the group test rejects at **0.0%** of them — the
+effect really is positive at 99.8% of covered vertices.
+
+### Two things that bite
+
+**Thin coverage is biased DOWNWARD, not upward — the open question in
+`project_to_fsaverage`'s docstring, now measured.** That docstring warns that the
+subjects reaching a vertex are the ones whose EV mask included it, so thin
+vertices are "*selected* for high r" and the group mean is "biased upward exactly
+where it is least supported". It is the reverse:
+
+    n_subj   vertices      text     audio   delta_audio|text
+       5       24,491    +0.3235   +0.2697      +0.0118
+       7       10,605    +0.3690   +0.3381      +0.0249
+       9        3,337    +0.4140   +0.4034      +0.0405
+
+    Spearman rho(mean r, n_subjects): text +0.461, audio +0.526, delta +0.391
+
+Vertices all nine reach are core auditory/language cortex where everyone has
+signal; vertices five reach are periphery, where r is *lower*. So `--min-subjects`
+is conservative in the right direction, and the variance argument for a floor was
+the only one that ever needed to hold.
+
+**Consequence for the FWE numbers:** the n>=9 family is not a random subsample,
+it is the strongest-signal ~1% of cortex (mean r 0.414 against 0.324 at n=5).
+"68% of the n>=9 family" describes the core and must **not** be read as 68% of
+cortex. Report perm/prevalence for extent, FWE for the core.
+
+**Coverage is the binding constraint, and it is not statistical.** Vertices
+reached by *k* subjects: 58,792 by one, 24,491 by five, and only **3,337 of
+327,684 by all nine**. Nine different `--min-ev 0.1` masks barely overlap once
+projected. 61,168 vertices clear the `--min-subjects 5` floor. A fuller group map
+needs a lower `--min-ev` **at fit time**; nothing downstream can recover it.
+
+**A max-statistic FWE is destroyed by thinly-covered vertices, and this cost a
+run to find.** Two compounding failures, both measured:
+
+1. *Plain max-t is set by the smallest dispersion, not the largest effect.* Nine
+   subjects who happen to agree closely give t -> infinity as sd -> 0. On the
+   first run the smallest attainable FWE p was **0.047** and nothing survived
+   anywhere. A simulation with known ground truth: t = 80.4 at no-effect
+   vertices whose variance had collapsed, against t = 14.5 where the effect was.
+   Fixed with a variance floor at the 25th percentile of observed sd — one
+   constant taken from the unflipped data and applied identically to every flip,
+   so the test stays exact. Detection went 0.7% -> 31.3% with zero false
+   positives at every setting.
+2. *The family matters more than the statistic.* Same data, same fixed test,
+   only the coverage floor changed:
+
+        family          audio|text        text|audio      delta
+        n>=5  61,168 vtx     19  (0.03%)      4  (0.01%)      0
+        n>=7  20,672 vtx    229  (1.11%)    674  (3.26%)      0
+        n>=8  10,067 vtx  2,980 (29.60%)  6,161 (61.20%)  1,561
+        n>=9   3,337 vtx  2,279 (68.29%)  2,829 (84.78%)  1,811
+
+   The p-values are valid at every floor; what changes is whether the test can
+   see anything. `--fwe-min-subjects` defaults to **9** — the only family with
+   homogeneous degrees of freedom — while `--min-subjects` (5) still governs the
+   mean, permutation and prevalence maps.
+
+### `preference` needs its own test, and the sign test cannot deliver it
+
+`preference = r_text - r_audio` has **no permutation of its own**, and cannot
+borrow one: the prediction-shuffle null behind `text` and `audio` is H0 "this
+model does not predict at all", under which *both* correlations go to ~0 and so
+does their difference. It tests for signal, not for one band beating the other.
+
+What is available without a new null is a **paired** test across subjects, which
+is the right shape anyway — the same subject contributes both numbers, so the
+difference removes that subject's data quality. `--contrasts` computes two:
+
+    mean preference   +0.0408      text ahead at 85.2% of covered vertices
+    sign-flip FWE     27 vertices of the 3,337-vertex n>=9 family
+    exact sign test   0 vertices survive BH
+
+**The sign test rejecting nothing is arithmetic, not absence of effect** — and it
+is this file's own n=9 argument, instantiated. Subjects favouring text, per
+vertex: 798 have 0 of 9, 18,473 have 5, and only **320 have 9 of 9**. The exact
+sign test floors at 1/512 = 0.00195, and BH over 61,168 vertices needs
+
+    0.00195 <= 0.05 * k / 61,168   ->   k >= 2,389 vertices pegged at the floor
+
+against the 320 that exist. Uncorrected, p < 0.05 at 19,315 vertices (31.6%).
+So report `preference` as an **effect-size map** with the FWE overlay, never as a
+sign-test map, and say why.
+
+### Figures
+
+`scripts/visualisation/plot_group_maps.py` renders every statistic in a group directory to an
+fsaverage flatmap, thresholded and unthresholded, over curvature.
+
+    python scripts/visualisation/plot_group_maps.py --root results/group/<run>
+    python scripts/visualisation/plot_group_maps.py --root results/group/<run> --test none
+
+Colour follows the job the map does. Magnitude maps (`r_*`, every `delta`) are
+**one hue, light to dark** — they are non-negative by construction, so a
+diverging scale would spend half its range on impossible values and imply a
+midpoint that does not exist. `preference` is the only signed map and gets **two
+hues with a neutral grey midpoint**, forced symmetric about zero, so that
+"neither band ahead" reads as absence of colour and neither modality is made to
+look stronger by an asymmetric scale. No rainbows, no hue at the midpoint.
+
+Two things learned rendering them:
+
+- **Both sequential ramps are truncated to start at a tinted step.** The pale end
+  of a full `Reds`/`Blues` ramp is the same lightness as the curvature
+  background, so the weakest suprathreshold vertices read as "no data" rather
+  than "small effect".
+- **ROI outlines need Inkscape**, which pycortex shells out to and which is not
+  installed here; the script warns and drops the outlines rather than raising
+  from inside `quickflat`. `apt-get install inkscape` restores them.
+
+What the figures show, and it is the expected anatomy: integration is bilateral
+and centred on superior temporal cortex with prefrontal and parietal clusters;
+`preference` is red (text ahead) almost everywhere with a blue (audio ahead)
+band running through superior temporal cortex — early auditory cortex being the
+one place the prosodic band wins.
+
+### The same maps elsewhere: inflated views, parcels, CONN (2026-09-21)
+
+A flatmap shows every vertex at once, which is what extent needs, and no
+recognisable anatomy, which is what a talk needs. Three scripts read a
+`results/group/<run>` directory and write beside it, so one run directory
+holds every rendering of the same numbers:
+
+    results/group/<run>/
+      *.npy               the maps, p-maps, coverage, null stacks
+      figures/            pycortex flatmaps        plot_group_maps.py
+      figures_inflated/   fsaverage lat/med views  plot_group_inflated.py
+      tables/             per-parcel CSVs          plot_group_inflated.py
+      export/conn/        CONN .surf.nii           export_group_conn.py
+      export/mni/         MNI152 2 mm .nii         export_group_mni.py
+
+Nothing is re-projected or re-tested anywhere below. The maps are already on
+fsaverage and already carry p-values; these only draw or re-container them.
+
+**`plot_group_inflated.py`** reimports the colormaps, labels and default tests
+from `plot_group_maps.py`, so the two cannot drift. It also writes a parcel
+table (Desikan by default, `--atlas a2009s` for Destrieux, or any
+`<hemi>.<name>.annot` under fsaverage/label): mean effect, % of covered
+vertices significant, and `pct_covered` — which answers "what about region X"
+with "not covered" rather than "no effect" when that is the truth.
+
+*Not* the pycortex ROI outlines, and it is worth recording why so nobody
+installs Inkscape expecting them to help: the fsaverage `overlays.svg` in this
+database is the Huth-lab retinotopy set (V1-V4, hMT, FFA, PPA, IPS0-5, VO1/2)
+plus a few sulci. For an auditory/language result it names almost nothing.
+
+**The parcel tables found something the flatmaps hid: the two conditional
+contributions are not in the same place.** Desikan means over covered
+vertices, `delta_*__parcels_aparc.csv`:
+
+    audio beyond text                  text beyond audio
+    lh transversetemporal  +0.086      lh parahippocampal    +0.097
+    rh transversetemporal  +0.080      rh superiorparietal   +0.092
+    rh superiortemporal    +0.052      lh precuneus          +0.086
+    lh superiortemporal    +0.049      rh isthmuscingulate   +0.083
+    rh precentral          +0.044      rh superiorfrontal    +0.078
+
+Heschl -> STG -> sensorimotor against precuneus, parahippocampal, superior
+parietal, superior frontal. That is the mechanism behind the conjunction being
+restricted to ~5% of voxels within subject: the min is small because the two
+components overlap little, not because either is weak. The conjunction sits
+where they do overlap — STG bilaterally, banks of the STS, Heschl, 97-100% of
+those parcels' covered vertices significant.
+
+The AVD inversion is anatomical too. Arousal and dominance marginally peak in
+*primary auditory* cortex (transversetemporal +0.318/+0.294) — acoustics
+wearing an affective label — while valence's unique contribution is left
+inferior frontal and lateral orbitofrontal (parsorbitalis +0.0525, 90%
+significant; parsopercularis, parstriangularis, lateralorbitofrontal).
+
+**`export_group_conn.py` is the right way into CONN, not a volume.** CONN's
+surface space *is* fsaverage, so the vertices transfer with no resampling:
+`42 x 83 x 47 = 163,842` exactly, which is what identifies those dimensions
+(`conn_surf_dims(8)`), both hemispheres stacked lh-then-rh along the third
+axis as `[42 83 94]`, MATLAB column-major reshape. **Not** `[42 83 47 2]`,
+which the first version wrote (fixed 2026-09-23, checked against CONN's own
+`conn_surf_write` / `conn_surf_dimscheck`): `dimscheck` reads only the first
+three dimensions, so that file is loaded as a volume, not a surface. Vertex counts in the written files reproduce the published table
+exactly, which is a free check that nothing was scrambled.
+
+Two conventions cannot be tested from here — hemisphere order and reshape
+order — and getting either wrong writes a file of exactly the right size full
+of noise. So each output folder also gets `_check_curvature.surf.nii`,
+fsaverage's own curvature in the same layout: open it first, and if it renders
+as a folded brain with light gyri and dark sulci the layout is right and every
+other file in the folder is right with it.
+
+**`export_group_mni.py` is the fallback, and it is a forward conversion, not a
+recovery.** These maps were never volumetric: each subject is fitted in their
+own functional space and the group average exists only on fsaverage, because
+the nine functional volumes are in nine different spaces — the LeBel pipeline
+is subject-native plus pycortex and never normalises to MNI. The script goes
+`mri_surf2vol` through fsaverage's ribbon, applies the constant MNI305->MNI152
+affine, and resamples onto the 79x95x79 2 mm SPM/CONN grid (`--grid` to match
+another). Consequences: nothing exists outside the cortical ribbon, and **peak
+coordinates off these volumes are not trustworthy** the way a volumetric
+analysis's are — two resamplings and one affine. Render with them; quote
+numbers from the surface or the parcel tables.
+
+### Practical
+
+    sbatch --export=ALL,TEXT=perlayer_gpt2_k256:8,N_PERMS=1000,\
+           SHUFFLE=conditional,SAVE_NULL=1,TAGSUF=_null scripts/cluster/permutation.sbatch
+    sbatch --export=ALL,TEXT=perlayer_gpt2_k256:8,N_PERMS=1000,\
+           SHUFFLE=both,SAVE_NULL=1,TAGSUF=_marginal scripts/cluster/permutation.sbatch
+
+    python scripts/group_maps.py --perm-dir <run>/permutation --out results/group/<name>
+
+    # then, on the same directory, any of:
+    python scripts/visualisation/plot_group_maps.py     --root results/group/<name>   # flatmaps
+    python scripts/visualisation/plot_group_inflated.py --root results/group/<name>   # + parcels
+    python scripts/visualisation/export_group_conn.py   --root results/group/<name>   # CONN
+    python scripts/visualisation/export_group_mni.py    --root results/group/<name>   # volumes
+
+`scripts/cluster/permutation.sbatch` now takes `SAVE_NULL` and passes
+`--from-encoding` in **every** mode, `both` included. Nulls are ~1.3 GB for both runs
+and are kept off OneDrive. Projection needs FreeSurfer on `PATH`
+(`/usr/local/freesurfer/7.4.1/bin`) and runs **locally** — the 2.4 GB pycortex
+database is at `data/ds003020/derivative/pycortex-db` and is not on the cluster.
+Cost: ~20 min per run, 122 ms per projected map, 9,000 maps per statistic pair.
+
+Each statistic saves `__mean`, `__p_perm(_fdr)`, `__p_prevalence(_fdr)`,
+`__p_signflip_fwe`, `__n_subjects`, `__k_significant`, `__fwe_family` and
+`__centred_stack` (9 x 327,684, ~12 MB). The stack exists so
+`--recompute-fwe` can retune the family or the variance floor in seconds instead
+of re-projecting for 20 minutes.
 
 ## Code review, 2026-09-09 — what was wrong, and what was done
 
@@ -1286,7 +1974,7 @@ these are pure cost:
   inherently rank-deficient at p < n, which is what forces the svd fallback —
   worth revisiting if that fallback starts firing on most fits.
 
-## Running an array this wide: two traps
+## Running an array this wide: three traps
 
 - **himalaya's progress bar kills array jobs.** It redraws stdout thousands of
   times per fit; under SLURM stdout is a file, and 36 concurrent tasks got
@@ -1297,6 +1985,17 @@ these are pure cost:
   cosmetic: tasks that had already written `sweep.csv` were marked FAILED
   because the closing `echo` could not reach the log, so "rerun the failures"
   redoes finished work. **Check the output files, not the SLURM exit states.**
+- **A subject directory is not a finished fit, and counting them is not a
+  completeness check.** `run_encoding` creates
+  `banded/holdout/<SUBJ>/` when it *starts* that subject, so
+  `ls banded/holdout | wc -l` returns 9 while five fits are still running. A
+  permutation launched on that count skipped five of nine subjects
+  (2026-09-21, k4 marginal): `load_observed_fit` raised
+  `FileNotFoundError` on the missing `meta.json`, `run_subject` caught it per
+  subject and logged "skipped", the array exited 0, and **sacct reported
+  COMPLETED for every task** — three of them in 23 to 35 seconds. Count
+  `*/meta.json` for an encoding run and `*/report.json` for a permutation run,
+  or chain with `--dependency=afterok:` and never count at all.
 
 ## Open questions — noted 2026-08-28, not acted on
 
@@ -1348,3 +2047,21 @@ not a drop-in.
 - `config.py` is the only place paths live; every one is env-overridable.
 - Features: one `<story>.hf5` per story, dataset `data`, shape `(n_TRs, n_dim)`.
 - Run with `python -m <package>.<module>` from the project root.
+- `scripts/` holds the things that are *run*, in three drawers (2026-09-21):
+
+      scripts/                 one-off analysis utilities, run locally
+        group_maps.py            group means + p-values from the nulls
+        project_to_fsaverage.py  subject volume -> fsaverage
+        avd_contrast.py  split_avd_bands.py  summarise_sweep.py
+        make_common_stories.py  check_consistency.py  bench_solvers.py
+        run_pipeline.sh          end-to-end driver (assumes scripts/, one
+                                 level under the root -- do not move it)
+      scripts/cluster/         every *.sbatch, plus setup_cluster.sh
+      scripts/visualisation/   everything that turns a group directory into
+                               something to look at or hand to another tool
+
+  The visualisation scripts import `plot_group_maps.py` for colormaps, labels
+  and default tests, so they sit in one directory on purpose; they reach the
+  project root two levels up, and `plot_group_maps.py` loads
+  `project_to_fsaverage.py` from the parent. Moving any of the three drawers
+  needs those three path assumptions checked.
