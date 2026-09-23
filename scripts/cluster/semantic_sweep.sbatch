@@ -16,12 +16,12 @@
 # ===========================================================================
 #
 # Context length (the default grid):
-#   sbatch --dependency=afterok:<extract_jobid> scripts/semantic_sweep.sbatch
+#   sbatch --dependency=afterok:<extract_jobid> scripts/cluster/semantic_sweep.sbatch
 #
 # Depth at the chosen k, off the 3-D per-layer store. Twice the configurations
 # of the context grid, hence the longer wall clock:
 #   sbatch --time=08:00:00 --export=ALL,LAYER_STORE=perlayer_gpt2_k16,\
-#          TAGSUF=_layers scripts/semantic_sweep.sbatch
+#          TAGSUF=_layers scripts/cluster/semantic_sweep.sbatch
 #
 # Why depth is worth a sweep of its own
 # -------------------------------------
@@ -120,7 +120,7 @@ for S in $SOURCES; do
     # the part before the colon is a directory.
     if [ ! -d "data/features/${S%%:*}" ]; then
         echo "ERROR: missing feature store data/features/${S%%:*}"
-        echo "       run scripts/extract_semantic.sbatch first"
+        echo "       run scripts/cluster/extract_semantic.sbatch first"
         exit 1
     fi
 done

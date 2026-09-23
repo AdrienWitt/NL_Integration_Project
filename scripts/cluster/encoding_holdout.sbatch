@@ -59,7 +59,7 @@
 
 set -e
 
-# logs/ is a symlink to scratch; see scripts/prosody_sweep_all.sbatch for why.
+# logs/ is a symlink to scratch; see scripts/cluster/prosody_sweep_all.sbatch for why.
 mkdir -p logs
 
 module load GCCcore/10.3.0 Python/3.9.5
@@ -98,7 +98,7 @@ SUBJ=${SUBJECTS[$((SLURM_ARRAY_TASK_ID % NSUBJ))]}
 # on the same 24-25 stories. Run both; they answer different questions.
 #
 #   STORIES_JSON=common_stories_25.json TAG_SUFFIX=_c25 \
-#       sbatch scripts/encoding_holdout.sbatch
+#       sbatch scripts/cluster/encoding_holdout.sbatch
 STORIES_JSON=${STORIES_JSON:-all_stories.json}
 TAG_SUFFIX=${TAG_SUFFIX:-}
 

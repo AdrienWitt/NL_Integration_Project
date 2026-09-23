@@ -13,7 +13,7 @@
 # The 3-d affective band: arousal, dominance, valence per TR.
 # ===========================================================================
 #
-#   sbatch scripts/extract_avd.sbatch
+#   sbatch scripts/cluster/extract_avd.sbatch
 #
 # Same model the encoding already uses -- audeering/wav2vec2-large-robust-12-
 # ft-emotion-msp-dim -- but read at the head instead of the hidden states. Its
@@ -63,7 +63,7 @@ RUN_ID="${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID:-0}"
 echo "=== RUN ${RUN_ID} started $(date -Is) on $(hostname) ==="
 echo "=== RUN ${RUN_ID} started $(date -Is) on $(hostname) ===" >&2
 
-# logs/ is a symlink to scratch; see scripts/prosody_sweep_all.sbatch for why.
+# logs/ is a symlink to scratch; see scripts/cluster/prosody_sweep_all.sbatch for why.
 mkdir -p logs
 
 PROJECT=$HOME/NL_Integration_Project

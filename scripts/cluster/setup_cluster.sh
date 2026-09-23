@@ -1,6 +1,6 @@
 #!/bin/sh
 # One-time setup on the Baobab LOGIN node (compute nodes have no internet).
-#   sh scripts/setup_cluster.sh
+#   sh scripts/cluster/setup_cluster.sh
 set -e
 
 PROJECT=$HOME/NL_Integration_Project

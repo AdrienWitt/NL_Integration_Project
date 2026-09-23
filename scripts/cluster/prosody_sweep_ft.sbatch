@@ -121,7 +121,7 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 #
 #   sbatch --time=01:00:00 \
 #          --export=ALL,MAXSTORIES=20,CFG_FT_ROBUST=20,CFG_FT_EMOTION= \
-#          scripts/prosody_sweep_ft.sbatch
+#          scripts/cluster/prosody_sweep_ft.sbatch
 #
 # An empty config list skips that store entirely. The skip uses `if`, not
 # `[ ... ] && run_sweep`: under `set -e` a false test there returns non-zero

@@ -61,10 +61,11 @@ import numpy as np
 from config import ENCODING_OUT, HELD_OUT_STORY, ensure_dirs
 from common.io import load_response_repeats, save_results
 from encoding.banded import (default_solver_params, fit_banded,
-                             set_himalaya_backend)
+                             fit_banded_fixed, set_himalaya_backend)
 from encoding.cv import explainable_variance, plan_folds
 from encoding.preprocess import build_design, prepare_responses, trim_response
-from encoding.run_encoding import (MODEL_BANDS, load_aligned_response,
+from encoding.run_encoding import (MODEL_BANDS, resolve_band_stores,
+                                   resolve_model_bands, load_aligned_response,
                                    load_bands, resolve_stories,
                                    resolve_subjects, _subset_bands)
 from .permutation import (conjunction_pvalues, draper_stoneman_null,
@@ -107,8 +108,10 @@ def load_observed_fit(root, subject: str, args,
         if theirs is not None and theirs != mine:
             mismatches.append(f"{key}: fit with {theirs!r}, here {mine!r}")
     stores = meta.get("band_stores") or {}
-    for band, mine in (("text", args.text_features),
-                       ("audio", args.audio_features)):
+    mine_stores = (resolve_band_stores(args) if getattr(args, "band", None)
+                   else {"text": args.text_features,
+                         "audio": args.audio_features})
+    for band, mine in mine_stores.items():
         theirs = stores.get(band)
         if theirs is not None and theirs != mine:
             mismatches.append(f"{band} band: fit with {theirs!r}, here {mine!r}")
@@ -149,31 +152,66 @@ def load_observed_fit(root, subject: str, args,
             f"fit_banded_fixed with a primal path."
         )
 
+    wanted = getattr(args, "model_bands", None) or MODEL_BANDS
     corrs = {}
-    for name in MODEL_BANDS:
+    for name in wanted:
         path = d / f"{name}_corrs.npy"
         if not path.exists():
             raise FileNotFoundError(
                 f"{path} missing — the encoding run must have fit "
-                f"--models {' '.join(MODEL_BANDS)}.")
+                f"--models {' '.join(wanted)}.")
         corrs[name] = np.load(path)
 
-    deltas_path = d / "joint_deltas.npy"
-    if not deltas_path.exists():
+    # Every model's band weights, not only the joint's. The Draper-Stoneman
+    # null needs the joint's; the prediction-shuffle null needs one refit per
+    # model to recover the test predictions run_encoding does not save, and
+    # each of those refits must use *its own* model's weights -- an alpha
+    # chosen for the joint design is not the alpha the unimodal fit reported.
+    # Single-band models save a (1, n_voxels) array, which is exactly what
+    # WeightedKernelRidge wants for a one-kernel model.
+    # Missing per-model files are tolerated here and raised at the point of
+    # use: the Draper-Stoneman path needs only the joint's weights, and making
+    # a run that has them fail over a `text_deltas.npy` it will never open
+    # would break fits that were valid before this loader learned to read
+    # more than one file.
+    deltas = {}
+    for name in wanted:
+        path = d / f"{name}_deltas.npy"
+        if path.exists():
+            deltas[name] = np.load(path)
+
+    if "joint" in wanted and "joint" not in deltas:
         raise FileNotFoundError(
-            f"{deltas_path} missing, so there are no band weights to reuse. "
-            f"Refit the joint model, or drop --from-encoding and accept a "
-            f"second alpha search.")
+            f"{d / 'joint_deltas.npy'} missing, so there are no band weights "
+            f"to reuse. Refit the joint model, or drop --from-encoding and "
+            f"accept a second alpha search.")
 
     mask_path = d / "voxel_mask.npy"
     return {
         "corrs": corrs,
-        "deltas": np.load(deltas_path),
+        "deltas": deltas.get("joint"),
+        "deltas_by_model": deltas,
         "voxel_mask": (np.load(mask_path).astype(bool) if mask_path.exists()
                        else None),
         "folds": meta.get("folds", "unrecorded fold plan"),
         "meta": meta,
     }
+
+
+def resolve_design_bands(args) -> tuple:
+    """``(band order, {model: [bands]})`` for this run.
+
+    Delegates to `run_encoding` so a permutation and the fit it tests cannot
+    disagree about what a band or a model is. Without `--band` this returns
+    exactly the historical text/audio/joint triple, so every existing recipe is
+    unchanged.
+    """
+    stores = resolve_band_stores(args)
+    order = list(stores)
+    if not getattr(args, "band", None):
+        return order, dict(MODEL_BANDS)
+    models = args.models or [*order, "joint"]
+    return order, resolve_model_bands(stores, models)
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -183,6 +221,13 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--subjects", default="all")
     p.add_argument("--text-features", default="gpt2_mean")
     p.add_argument("--audio-features", default="opensmile")
+    p.add_argument("--band", action="append", metavar="NAME=STORE",
+                   help="named band, repeatable. Mirrors run_encoding: "
+                        "with --band the design is whatever was named, "
+                        "without it the historical text/audio pair.")
+    p.add_argument("--models", nargs="*", default=None,
+                   help="models the encoding run fit, e.g. arousal "
+                        "valence dominance arousal+valence joint")
     p.add_argument("--stories-json", default="all_stories.json")
     p.add_argument("--held-out-story", default=HELD_OUT_STORY)
     p.add_argument("--max-stories", type=int, default=None)
@@ -193,11 +238,13 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--n-comps", type=float, default=0.90)
 
     p.add_argument("--shuffle-block", default="both",
-                   choices=["both", "text", "audio", "conditional"],
+                   choices=["both", "text", "audio", "conditional", "each"],
                    help="'both' = prediction-shuffle null, valid for r>0. "
                         "'text'/'audio' = one Draper-Stoneman conditional "
                         "null. 'conditional' = both, plus the conjunction "
-                        "that tests delta properly")
+                        "that tests delta properly. 'each' = one DS null per "
+                        "named band, shuffled with all the others held "
+                        "aligned -- the N-band generalisation")
     p.add_argument("--from-encoding", default=None, metavar="DIR",
                    help="a run_encoding result root. The observed fit is then "
                         "LOADED from it -- band weights and unimodal r -- "
@@ -250,6 +297,7 @@ def parse_args(argv=None) -> argparse.Namespace:
 
 
 def run_subject(subject: str, args, out_root: Path) -> None:
+    band_order, model_bands = args.band_order, args.model_bands
     t0 = time.time()
     stories_json = Path(args.stories_json)
     if not stories_json.is_absolute():
@@ -267,7 +315,9 @@ def run_subject(subject: str, args, out_root: Path) -> None:
 
     all_stories = train_stories + [held_out]
     features = load_bands(args, all_stories)
-    feature_lengths = {s: features["text"][s].shape[0] for s in all_stories}
+    first_band = next(iter(features))
+    feature_lengths = {s: features[first_band][s].shape[0]
+                       for s in all_stories}
 
     train_features = {
         band: {s: a for s, a in feats.items() if s in train_stories}
@@ -301,12 +351,6 @@ def run_subject(subject: str, args, out_root: Path) -> None:
     loaded = (load_observed_fit(args.from_encoding, subject, args,
                                 train_stories=train_stories)
               if args.from_encoding else None)
-    if loaded is not None and args.shuffle_block == "both":
-        raise RuntimeError(
-            "--shuffle-block both needs the observed model's test-set "
-            "predictions, which run_encoding does not save. Use a "
-            "Draper-Stoneman null (text / audio / conditional) with "
-            "--from-encoding, which is the one that tests delta anyway.")
     if (loaded is not None and loaded["voxel_mask"] is not None
             and not np.array_equal(loaded["voxel_mask"], mask)):
         raise RuntimeError(
@@ -341,17 +385,64 @@ def run_subject(subject: str, args, out_root: Path) -> None:
         # are what the permutations hold fixed, so taking them from the run
         # being tested is what makes "observed" and "null" the same estimator
         # by construction instead of by agreement between two call sites.
-        for model_name in MODEL_BANDS:
+        for model_name in model_bands:
             observed[model_name] = loaded["corrs"][model_name][mask]
         joint_deltas = loaded["deltas"][:, mask]
         log.info(f"  observed fit loaded from {args.from_encoding} "
                  f"({loaded['folds']}) — no alpha search here")
+
+        if args.shuffle_block == "both":
+            # The prediction-shuffle null needs test predictions, which
+            # run_encoding does not save -- the one thing on this path that
+            # cannot simply be read off disk. But needing a refit is not the
+            # same as needing a second alpha search: every model's band
+            # weights ARE on disk, so each model is refit with its own
+            # weights held fixed and the predictions fall out of that.
+            #
+            # The correlations are taken from those refits and NOT from the
+            # published maps, deliberately. These predictions come from
+            # WeightedKernelRidge while `*_corrs.npy` came from
+            # MultipleKernelRidgeCV, and a permutation test may not straddle
+            # two estimators -- the same rule the Draper-Stoneman path follows
+            # by using `ds["observed"]`. The published r is logged beside it,
+            # so the gap between the two estimators is visible on every run
+            # instead of being assumed small.
+            fixed_params = {"max_iter": args.ds_max_iter,
+                            "n_targets_batch": args.ds_targets_batch}
+            missing = [m for m in model_bands
+                       if m not in loaded["deltas_by_model"]]
+            if missing:
+                raise FileNotFoundError(
+                    f"{subject}: --shuffle-block both refits every model with "
+                    f"its own published band weights, and "
+                    f"{', '.join(f'{m}_deltas.npy' for m in missing)} is "
+                    f"missing from {args.from_encoding}. Re-run the encoding "
+                    f"fit, or drop --from-encoding to search alphas again.")
+            for model_name, band_names in model_bands.items():
+                published = observed[model_name]
+                model_deltas = loaded["deltas_by_model"][model_name][:, mask]
+                log.info(f"  refitting {model_name} with its published band "
+                         f"weights (no alpha search) for its predictions")
+                corrs_fixed, preds = fit_banded_fixed(
+                    X_train=design.X, Y_train=Y_train_fit,
+                    X_test=design_test.X, Y_test=Y_test_fit,
+                    bands=_subset_bands(design.bands, band_names),
+                    deltas=model_deltas,
+                    solver_params=fixed_params,
+                    return_predictions=True,
+                )
+                observed[model_name] = corrs_fixed
+                predictions[model_name] = preds
+                gap = float(np.max(np.abs(corrs_fixed - published)))
+                log.info(f"    {model_name}: mean r {corrs_fixed.mean():.4f} "
+                         f"(published {published.mean():.4f}, "
+                         f"max |diff| {gap:.2e})")
     else:
         log.warning(
             "no --from-encoding: refitting the observed model, whose alpha "
             "search (%s) must match the run being tested or the 'observed' r "
             "is not the published r.", plan.describe())
-        for model_name, band_names in MODEL_BANDS.items():
+        for model_name, band_names in model_bands.items():
             log.info(f"  fitting {model_name}")
             result = fit_banded(
                 X_train=design.X, Y_train=Y_train_fit,
@@ -366,8 +457,16 @@ def run_subject(subject: str, args, out_root: Path) -> None:
             if model_name == "joint":
                 joint_deltas = result.deltas
 
-    observed["delta"] = (observed["joint"]
-                         - np.maximum(observed["text"], observed["audio"]))
+    # delta = r_joint - max(r_text, r_audio) is defined only for the two-band
+    # modality design. With N named bands there is no "the other modality" to
+    # take a max against, and inventing one (say, the best single band) would
+    # silently redefine the project's headline statistic. So it is computed
+    # when, and only when, both modality models are present.
+    has_pair = {"text", "audio", "joint"} <= set(observed)
+    if has_pair:
+        observed["delta"] = (observed["joint"]
+                             - np.maximum(observed["text"],
+                                          observed["audio"]))
 
     save_dir = out_root / subject
     payload, report = {}, {}
@@ -404,18 +503,23 @@ def run_subject(subject: str, args, out_root: Path) -> None:
             blocklen=args.blocklen, seed=args.seed, logger=log,
             progress_every=max(1, args.n_perms // 10),
         )
-        for name in ("text", "audio", "joint"):
+        for name in model_bands:
             _record(name, observed[name], null[name])
         # Named to be un-mistakable. This null drives all three correlations to
         # ~0, so it cannot test a statistic that banded ridge makes positive by
         # construction; a purely unimodal voxel passes it. Kept only because it
         # is what the earlier runs reported.
-        _record("delta_naive", observed["delta"], null["delta"])
+        if has_pair and "delta" in null:
+            _record("delta_naive", observed["delta"], null["delta"])
 
     # ---- Draper-Stoneman conditional nulls: what delta actually needs ------
-    ds_bands = {"conditional": ["audio", "text"]}.get(
-        args.shuffle_block, [args.shuffle_block])
-    ds_bands = [b for b in ds_bands if b in ("text", "audio")]
+    if args.shuffle_block == "each":
+        ds_bands = list(band_order)
+    elif args.shuffle_block == "conditional":
+        ds_bands = [b for b in ("audio", "text") if b in band_order]
+    else:
+        ds_bands = [args.shuffle_block] if args.shuffle_block in band_order \
+            else []
 
     if ds_bands and joint_deltas is None:
         raise RuntimeError(
@@ -423,11 +527,24 @@ def run_subject(subject: str, args, out_root: Path) -> None:
             f"a Draper-Stoneman refit cannot reuse them."
         )
 
-    other = {"audio": "text", "text": "audio"}
+    # The model that holds everything except the shuffled band. With two bands
+    # this is just the other one, reproducing `delta_audio_given_text`; with N
+    # it is the `+`-joined subset, named exactly as run_encoding names it, so
+    # `r_kept` is read from the same fit rather than refitted here.
+    def kept_model(band: str) -> str:
+        return "+".join(b for b in band_order if b != band)
+
     ds_pvals = {}
-    joint_bands = _subset_bands(design.bands, MODEL_BANDS["joint"])
+    joint_bands = _subset_bands(design.bands, model_bands["joint"])
     for band in ds_bands:
-        kept = other[band]
+        kept = kept_model(band)
+        if kept not in observed:
+            raise RuntimeError(
+                f"{subject}: shuffling '{band}' needs the observed r of the "
+                f"model '{kept}', which this run does not have. Refit the "
+                f"encoding run with --models including '{kept}' (every "
+                f"leave-one-band-out subset), or pass it in --models."
+            )
         label = f"delta_{band}_given_{kept}"
         log.info(f"  {args.n_perms} Draper-Stoneman permutations, shuffling "
                  f"'{band}', keeping '{kept}' aligned")
@@ -452,7 +569,7 @@ def run_subject(subject: str, args, out_root: Path) -> None:
         _record(label, obs_ds, null_ds)
 
     # ---- the conjunction: an exact test of delta > 0 -----------------------
-    if len(ds_pvals) == 2:
+    if len(ds_pvals) == 2 and {"audio", "text"} <= set(ds_pvals):
         from .permutation import fdr_correct
         p_conj = conjunction_pvalues(ds_pvals["audio"], ds_pvals["text"])
         reject, p_fdr = fdr_correct(p_conj, alpha=args.alpha)
@@ -492,6 +609,14 @@ def main(argv=None) -> None:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s | %(levelname)-7s | %(message)s")
 
+    # Resolved once and carried on args, because load_observed_fit, the design
+    # build and the DS loop all need the same answer and deriving it three
+    # times is how they drift apart.
+    args.band_order, args.model_bands = resolve_design_bands(args)
+    if getattr(args, "band", None):
+        log.info(f"bands: {', '.join(args.band_order)} | models: "
+                 f"{', '.join(args.model_bands)}")
+
     from config import ENCODING_SPLIT_DIR
     stories_json = Path(ENCODING_SPLIT_DIR) / args.stories_json
     subjects = resolve_subjects(args.subjects, stories_json)
@@ -503,7 +628,10 @@ def main(argv=None) -> None:
     def _dirsafe(band: str) -> str:
         return band.replace(":", "L")
 
-    name = f"{_dirsafe(args.text_features)}__{_dirsafe(args.audio_features)}"
+    if getattr(args, "band", None):
+        name = "bands_" + "-".join(_dirsafe(b) for b in args.band_order)
+    else:
+        name = f"{_dirsafe(args.text_features)}__{_dirsafe(args.audio_features)}"
     if args.shuffle_block != "both":
         # Otherwise a --shuffle-block conditional run lands in the same
         # directory as a previous --shuffle-block both run and its report.json

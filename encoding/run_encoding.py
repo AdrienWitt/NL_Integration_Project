@@ -603,6 +603,12 @@ def run_subject(subject: str, args, out_root: Path) -> None:
         "use_pca": args.use_pca,
         "n_comps": args.n_comps,
         "eval": args.eval,
+        # Which solver produced these numbers. `--backend both` writes banded
+        # and huth to separate directories, so the path already says it -- but
+        # a meta.json copied, moved or read on its own did not, and "is this
+        # the banded fit or the conservative single-alpha check" is not a
+        # question to answer from a directory name six months later.
+        "backend": args.backend,
         "n_folds": None if plan.evaluation is None else len(plan.evaluation),
         # The inner loop is part of the estimator, not of the design, so two
         # runs that disagree here are not strictly comparable even with

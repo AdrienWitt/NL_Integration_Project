@@ -22,7 +22,7 @@ two paths agree on the scores before we act on the timing.
 Run it where a GPU is: the ordering can change between CPU and GPU because the
 dual path's cost is dominated by an eigendecomposition that GPUs like.
 
-    sbatch scripts/bench_solvers.sbatch
+    sbatch scripts/cluster/bench_solvers.sbatch
 """
 
 import time

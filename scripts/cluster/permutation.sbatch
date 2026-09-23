@@ -16,12 +16,12 @@
 # ===========================================================================
 #
 #   # size it first -- see "Run the probe" below
-#   sbatch --export=ALL,N_PERMS=20,TAGSUF=_probe scripts/permutation.sbatch
+#   sbatch --export=ALL,N_PERMS=20,TAGSUF=_probe scripts/cluster/permutation.sbatch
 #
 #   # then the real thing
-#   sbatch --export=ALL,N_PERMS=1000 scripts/permutation.sbatch
+#   sbatch --export=ALL,N_PERMS=1000 scripts/cluster/permutation.sbatch
 #
-# Reads the joint fit written by `scripts/encoding_joint.sbatch` and tests it.
+# Reads the joint fit written by `scripts/cluster/encoding_joint.sbatch` and tests it.
 # Nothing here re-searches alphas: `--from-encoding` loads that run's band
 # weights, its three correlation maps and its voxel mask, so the observed
 # statistic is literally the published one rather than a second fit that
@@ -124,34 +124,70 @@ AUDIO=${AUDIO:-perlayer_base_emotion:11}
 N_PERMS=${N_PERMS:-1000}
 BLOCKLEN=${BLOCKLEN:-10}
 SHUFFLE=${SHUFFLE:-conditional}
+# BANDS/MODELS drive the N-band form (e.g. the three affective
+# dimensions). Space-separated "name=store" pairs and model names; when
+# BANDS is empty everything below is the historical text/audio pair.
+BANDS=${BANDS:-}
+MODELS=${MODELS:-}
+FROM_DIR=${FROM_DIR:-}
 STORIES_JSON=${STORIES_JSON:-common_stories_all9.json}
 TAGSUF=${TAGSUF:-}
+SAVE_NULL=${SAVE_NULL:-}
 
 # The encoding run being tested. Built the same way run_encoding builds it --
 # `store:layer` with the colon turned into an L -- so the two stay in step if
 # the bands ever change.
-FROM=results/encoding/$(echo "$TEXT" | tr ':' 'L')__$(echo "$AUDIO" | tr ':' 'L')
+if [ -n "$FROM_DIR" ]; then
+    FROM="$FROM_DIR"
+else
+    FROM=results/encoding/$(echo "$TEXT" | tr ':' 'L')__$(echo "$AUDIO" | tr ':' 'L')
+fi
+
+BAND_ARGS=()
+for b in $BANDS; do BAND_ARGS+=(--band "$b"); done
+if [ -n "$MODELS" ]; then BAND_ARGS+=(--models $MODELS); fi
 
 if [ ! -d "$FROM/banded/holdout/$SUBJ" ]; then
     echo "ERROR: $FROM/banded/holdout/$SUBJ does not exist." >&2
-    echo "Run scripts/encoding_joint.sbatch first (--eval holdout)." >&2
+    echo "Run scripts/cluster/encoding_joint.sbatch first (--eval holdout)." >&2
     exit 1
 fi
 
 echo "=== $SUBJ | $SHUFFLE | $N_PERMS perms | blocklen $BLOCKLEN ==="
 echo "=== observed fit: $FROM ==="
 
+# Every mode reuses the published hyperparameters, including --shuffle-block
+# both. That mode still has to refit, because its null holds the model's
+# test-set predictions fixed and run_encoding saves correlations, alphas and
+# band weights but not predictions. Needing a refit is not the same as needing
+# a second alpha search: each model is refit with its OWN published band
+# weights held fixed, and the predictions fall out of that in a fraction of the
+# time. Its observed r is then read from those refits rather than from the
+# published maps, because the refits come from WeightedKernelRidge and the
+# published maps from MultipleKernelRidgeCV -- the run logs both so the gap
+# between the two estimators is visible rather than assumed.
+FROM_ARG=(--from-encoding "$FROM")
+
+# SAVE_NULL=1 keeps the full (n_perms, n_masked_voxels) null arrays. They are
+# what a GROUP test needs: every subject draws the same block shuffle from the
+# same seed on the same 8,683 training TRs, so null draw i is the identical
+# permutation for all nine and the per-draw group mean is a valid group null.
+# Without them only per-subject p-values survive and the group level is stuck
+# with counting. ~66 MB per statistic on the largest mask.
+
 python3 -m stats.run_permutation \
     --subjects "$SUBJ" \
     --text-features "$TEXT" \
     --audio-features "$AUDIO" \
+    "${BAND_ARGS[@]}" \
     --stories-json "$STORIES_JSON" \
-    --from-encoding "$FROM" \
+    "${FROM_ARG[@]}" \
     --shuffle-block "$SHUFFLE" \
     --n-perms "$N_PERMS" \
     --blocklen "$BLOCKLEN" \
     --min-ev 0.1 \
     --max-repeats 5 \
+    ${SAVE_NULL:+--save-null} \
     ${TAGSUF:+--tag "${TAGSUF#_}"}
 
 echo "=== $SUBJ done in $((SECONDS / 60)) min ==="

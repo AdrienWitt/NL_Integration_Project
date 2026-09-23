@@ -15,7 +15,7 @@
 # The three prosody bands, side by side, through ONE runner.
 # ===========================================================================
 #
-#   sbatch scripts/encoding_prosody_bands.sbatch
+#   sbatch scripts/cluster/encoding_prosody_bands.sbatch
 #
 #   band                    dim    columns
 #   emotion_avd               3         12    affect, named
@@ -45,7 +45,7 @@
 # `--band NAME=STORE --models NAME` is a single-band banded ridge -- same solver,
 # same alpha grid, same folds as every other row, which is the condition the
 # banded.py docstring sets for the unimodal fits. Note this is deliberately NOT
-# the `joint` model of scripts/encoding_avd.sbatch: there the three affective
+# the `joint` model of scripts/cluster/encoding_avd.sbatch: there the three affective
 # dimensions each get their own alpha, which is the right model for asking where
 # each dimension lives, but a richer one than a single 3-column band. This job
 # supplies the apples-to-apples row.

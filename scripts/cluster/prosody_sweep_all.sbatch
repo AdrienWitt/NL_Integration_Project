@@ -81,7 +81,7 @@ set -e
 #
 #   mkdir -p /srv/beegfs/scratch/users/$USER/prosody_sweep_logs
 #   ln -sfn /srv/beegfs/scratch/users/$USER/prosody_sweep_logs logs
-#   sbatch scripts/prosody_sweep_all.sbatch
+#   sbatch scripts/cluster/prosody_sweep_all.sbatch
 #
 # (the scratch path is /srv/beegfs/scratch/users/<initial>/<user> on Baobab)
 mkdir -p logs

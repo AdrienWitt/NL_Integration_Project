@@ -310,6 +310,7 @@ def fit_banded_fixed(
     deltas: np.ndarray,
     solver: str = "conjugate_gradient",
     solver_params: Optional[dict] = None,
+    return_predictions: bool = False,
 ) -> np.ndarray:
     """Refit with the band weights held fixed; return test correlations.
 
@@ -331,6 +332,15 @@ def fit_banded_fixed(
     It is also the only affordable option: the alpha search is the expensive
     part of a fit, and a thousand permutations of it per subject per direction
     is not a computation anyone runs.
+
+    `return_predictions` hands back the test predictions beside the
+    correlations, as `(corrs, Y_pred)`. They were always computed here and
+    thrown away; the prediction-shuffle null needs them, and getting them this
+    way is what lets that null reuse a published fit instead of searching for
+    alphas it already has on disk. Note that the correlations returned here are
+    the ones a caller must report as "observed" when it uses these predictions:
+    they come from `WeightedKernelRidge`, while the published maps come from
+    `MultipleKernelRidgeCV`, and a permutation test may not straddle the two.
     """
     from himalaya.backend import get_backend
     from himalaya.kernel_ridge import WeightedKernelRidge
@@ -351,7 +361,10 @@ def fit_banded_fixed(
     corrs = backend.to_numpy(
         correlation_score(np.asarray(Y_test, dtype=np.float32), Y_pred)
     )
-    return np.asarray(corrs, dtype=np.float64)
+    corrs = np.asarray(corrs, dtype=np.float64)
+    if return_predictions:
+        return corrs, np.asarray(backend.to_numpy(Y_pred), dtype=np.float32)
+    return corrs
 
 
 def fit_banded_cv(

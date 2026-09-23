@@ -12,7 +12,7 @@
 # Rebuild the eGeMAPS fine-tuning targets on the corrected window grid.
 # ===========================================================================
 #
-#   sbatch scripts/make_targets.sbatch
+#   sbatch scripts/cluster/make_targets.sbatch
 #
 # Why: `tr_onsets` returned the SCANNER clock until 2026-09-09, so the targets
 # written on 2026-08-20 describe the audio of wav window [2i, 2i+2) where the

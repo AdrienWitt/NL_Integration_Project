@@ -14,7 +14,7 @@
 # Re-extract every audio band after the tr_onsets fix (2026-09-09).
 # ===========================================================================
 #
-#   sbatch scripts/reextract_audio.sbatch
+#   sbatch scripts/cluster/reextract_audio.sbatch
 #
 # Why this exists: `tr_onsets` returned the SCANNER clock and used it to index
 # the wav, so every audio window covered wav [2i, 2i+2) where it should have
@@ -55,7 +55,7 @@ exec > "$LOG" 2>&1
 # envs/prosody does not exist and GCCcore/12.3.0 is not the toolchain the
 # packages were built against: transformers lives in the user site-packages
 # and only resolves its dependencies under Python/3.9.5. This is the same
-# environment scripts/extract_semantic.sbatch uses, which is the one that has
+# environment scripts/cluster/extract_semantic.sbatch uses, which is the one that has
 # actually run successfully.
 module load GCCcore/10.3.0 Python/3.9.5
 . "$PROJECT/envs/py39/bin/activate"

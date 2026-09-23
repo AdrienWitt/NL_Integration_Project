@@ -15,8 +15,8 @@
 # Arousal / dominance / valence as three bands of one banded ridge.
 # ===========================================================================
 #
-#   sbatch --dependency=afterok:<avd jobid> scripts/encoding_avd.sbatch
-#   EVALS="cv holdout" sbatch scripts/encoding_avd.sbatch
+#   sbatch --dependency=afterok:<avd jobid> scripts/cluster/encoding_avd.sbatch
+#   EVALS="cv holdout" sbatch scripts/cluster/encoding_avd.sbatch
 #
 # One task per subject. Each fits five models from ONE design matrix and ONE
 # set of folds, which is what makes the contrasts about dimensions rather than
@@ -75,7 +75,7 @@
 # unbounded inner loop (x4.6) -- each argued for on its own merits.
 #
 # The inner loop stays leave-one-story-out, matching every other final model
-# here; scripts/inner_cv_check.sbatch measured 5-fold against it at |diff| =
+# here; scripts/cluster/inner_cv_check.sbatch measured 5-fold against it at |diff| =
 # 0.0001, so bounding it would be defensible too, but consistency with
 # encoding_prosody_bands.sbatch is worth more than the 4.6x.
 #

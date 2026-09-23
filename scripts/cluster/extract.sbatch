@@ -11,9 +11,9 @@
 #
 # Inference only — no bf16, so no compute-capability constraint needed here.
 #
-#   sbatch --export=ALL,ARM=base    scripts/extract.sbatch   # frozen control
-#   sbatch --export=ALL,ARM=robust  scripts/extract.sbatch   # after fine-tuning
-#   sbatch --export=ALL,ARM=emotion scripts/extract.sbatch
+#   sbatch --export=ALL,ARM=base    scripts/cluster/extract.sbatch   # frozen control
+#   sbatch --export=ALL,ARM=robust  scripts/cluster/extract.sbatch   # after fine-tuning
+#   sbatch --export=ALL,ARM=emotion scripts/cluster/extract.sbatch
 
 set -e
 ARM=${ARM:-base}
@@ -27,7 +27,7 @@ mkdir -p logs
 # envs/prosody does not exist and GCCcore/12.3.0 is not the toolchain the
 # packages were built against: transformers lives in the user site-packages
 # and only resolves its dependencies under Python/3.9.5. This is the same
-# environment scripts/extract_semantic.sbatch uses, which is the one that has
+# environment scripts/cluster/extract_semantic.sbatch uses, which is the one that has
 # actually run successfully.
 module load GCCcore/10.3.0 Python/3.9.5
 . "$PROJECT/envs/py39/bin/activate"

@@ -15,7 +15,7 @@
 # Does the inner CV size move the score? One band, two settings, three subjects.
 # ===========================================================================
 #
-#   sbatch scripts/inner_cv_check.sbatch
+#   sbatch scripts/cluster/inner_cv_check.sbatch
 #
 # run_prosody_sweep bounds the alpha-selection loop to --n-splits; run_encoding
 # leaves it at leave-one-story-out. Both are nested -- the inner search runs on

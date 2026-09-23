@@ -30,8 +30,8 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 # Everything that varies between arms is an env var, so a sweep does not need
 # a copy of this file per arm:
 #
-#   sbatch --export=ALL,MODEL=emotion,EPOCHS=30,SAVE_LIMIT=40 scripts/finetune.sbatch
-#   sbatch --export=ALL,MODEL=emotion,EXTRA="--l2sp 1e-2" scripts/finetune.sbatch
+#   sbatch --export=ALL,MODEL=emotion,EPOCHS=30,SAVE_LIMIT=40 scripts/cluster/finetune.sbatch
+#   sbatch --export=ALL,MODEL=emotion,EXTRA="--l2sp 1e-2" scripts/cluster/finetune.sbatch
 #
 # SAVE_LIMIT is worth raising above the default 3. The damage fine-tuning does
 # to brain prediction grows with how far the weights travel, so the drift/damage

@@ -12,20 +12,20 @@
 #
 # Override the grid to add points or re-extract one at a different stride:
 #   sbatch --array=0-2 --export=ALL,KS="32 128 64",STRIDES="0.1 0.1 0.001",\
-#          OUTNAMES="gpt2_k32 gpt2_k128 gpt2_k64_s1" scripts/extract_semantic.sbatch
+#          OUTNAMES="gpt2_k32 gpt2_k128 gpt2_k64_s1" scripts/cluster/extract_semantic.sbatch
 #
 # The depth sweep at the chosen k is ONE task, not thirteen: a forward pass
 # computes every hidden state, so --per-layer keeps them all from the passes
 # the k=16 extraction was already going to make. Thirteen separate tasks would
 # repeat the same 140k passes thirteen times for nothing.
 #   sbatch --array=0-0 --export=ALL,KS="16",LAYERS="0-12",PER_LAYER=1,\
-#          OUTNAMES="perlayer_gpt2_k16" scripts/extract_semantic.sbatch
+#          OUTNAMES="perlayer_gpt2_k16" scripts/cluster/extract_semantic.sbatch
 #
 # ===========================================================================
 # The semantic context-length bands: one store per k, all 84 stories.
 # ===========================================================================
 #
-#   sbatch scripts/extract_semantic.sbatch
+#   sbatch scripts/cluster/extract_semantic.sbatch
 #
 # One task per context length. k=0 embeds each word alone, which reproduces
 # the isolated-word baseline the current `gpt2_mean` band is; every larger k

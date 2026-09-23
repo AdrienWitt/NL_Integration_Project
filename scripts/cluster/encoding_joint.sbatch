@@ -15,7 +15,7 @@
 # THE final model: the chosen semantic band against the chosen prosodic band.
 # ===========================================================================
 #
-#   sbatch scripts/encoding_joint.sbatch
+#   sbatch scripts/cluster/encoding_joint.sbatch
 #
 #   text   perlayer_gpt2_k16:8        768d   3,072 columns
 #   audio  perlayer_base_emotion:11  1024d   4,096 columns
@@ -116,8 +116,15 @@ EVALS=${EVALS:-"cv holdout"}
 STORIES_JSON=${STORIES_JSON:-common_stories_all9.json}
 TEXT=${TEXT:-perlayer_gpt2_k16:8}
 AUDIO=${AUDIO:-perlayer_base_emotion:11}
+# banded is primary; huth is the single-shared-alpha conservative check. They
+# write to separate directories (out_root/<backend>/<eval>/<subject>), so a
+# huth run never touches a published banded fit. Keep huth on --eval holdout:
+# under --eval cv it picks alphas by LOO over all training stories and reuses
+# them inside the CV it reports, which makes the "conservative lower bound"
+# optimistically biased instead.
+BACKEND=${BACKEND:-banded}
 
-echo "=== $SUBJ | text=$TEXT | audio=$AUDIO | seed=$SEED ==="
+echo "=== $SUBJ | text=$TEXT | audio=$AUDIO | backend=$BACKEND | seed=$SEED ==="
 
 for EV in $EVALS; do
     echo "########## $SUBJ | --eval $EV : t+$((SECONDS / 60)) min"
@@ -133,7 +140,7 @@ for EV in $EVALS; do
         --text-features "$TEXT" \
         --audio-features "$AUDIO" \
         --stories-json "$STORIES_JSON" \
-        --backend banded \
+        --backend "$BACKEND" \
         --eval "$EV" \
         --min-ev 0.1 \
         --max-repeats 5 \
