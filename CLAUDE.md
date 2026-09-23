@@ -1237,7 +1237,7 @@ carries the effect.
 
 ### What is running, and what is deliberately not
 
-`scripts/cluster/encoding_surprisal.sbatch`, one task per subject, the whole k
+`scripts/cluster/encoding_surprisal.sbatch` ran 2026-09-23, one task per subject, the whole k
 grid inside each task, two bands (`wordrate`, `pred`) and three models
 (`wordrate`, `pred`, `joint`), cv and holdout, `--min-ev 0.1 --max-repeats 5`.
 Choose k on cv by `r_joint − r_wordrate`.
@@ -1254,6 +1254,58 @@ would confound "which context length" with "scalar or vector".
 Note the sbatch lives at `scripts/cluster/` here and at `scripts/` on Baobab —
 the three-drawer reorganisation is local and unpushed, so the cluster still has
 the flat layout. Anything submitted there takes the flat path.
+
+### DONE 2026-09-24: prediction adds beyond word rate in 9/9, at every k
+
+Nine subjects x five context lengths x both evals, `common_stories_all9`,
+`--min-ev 0.1 --max-repeats 5`. Read with
+`PYTHONPATH=. python3 scripts/summarise_surprisal_sweep.py`. Mean r over each
+subject's EV mask, averaged over the nine:
+
+    k      wordrate     pred     joint   joint-wr    n      holdout(joint-wr)
+    0        0.0640    0.0740    0.0739   +0.0099   9/9        +0.0077  8/9
+    4        0.0640    0.0716    0.0798   +0.0158   9/9        +0.0094  7/9
+    16       0.0640    0.0698    0.0750   +0.0110   9/9        -0.0002  6/9
+    64       0.0640    0.0724    0.0773   +0.0133   9/9        +0.0041  6/9
+    256      0.0640    0.0754    0.0798   +0.0158   9/9        +0.0020  5/9
+
+**Surprisal and entropy add to word rate in every subject at every context
+length.** That is the first thing this had to establish and it is not a given:
+the band is two columns against a nuisance they correlate with at +0.74 to
++0.98.
+
+**The split paid for itself twice over.** `wordrate` reads 0.0640 on every row,
+which is the check that these rows are one comparison — and `pred` *alone*
+ranks k=0 second (0.0740, above k4, k16 and k64), exactly the artefact the
+split was built to prevent. Marginal selection would have promoted the store
+whose entropy column is word rate with r = 1.000.
+
+**cv is an exact tie between k=4 and k=256** — 0.01581 both, to five decimals,
+with the per-subject argmax at k256 in five subjects and k4 in four, and
+`k256 - k4` a coin flip (+0.0001, 5/9). Holdout prefers k4 (+0.0094 against
++0.0020) but holdout does not select here, and this file has the receipt: over
+36 prosody sweeps the cv and holdout argmaxes agreed in 1, and selecting on
+holdout would have inflated the reported score by +0.0083.
+
+**DECIDED: k=256, and the tie is broken on interpretability, not on score.**
+The semantic band is `perlayer_gpt2_k256:8`. Matching its context makes
+`r_joint - r_(text+audio+wordrate)` a contrast between the *head* and the
+*hidden state* of one model reading one context — the AVD precedent exactly,
+where the affective band was chosen because it is the head of the checkpoint
+the encoding already uses. At k=4 a positive result would confound
+"prediction adds something" with "short context is a different signal from
+long context", which is not the question. It is also the harder test: at
+matched context the scalar is maximally redundant with the 768 dimensions it
+was computed from, so a positive result there is worth more and a null is
+clean.
+
+**The dip at k=16 is reproducible and unexplained.** Every one of the nine
+subjects scores k16 below both k4 and k64 on cv — 9/9, on a shared design and
+one seed, so it is a property of the `surp_pred_k16` features and not sampling
+noise. Do not smooth it over as a wobble; it is 0.005 deep, a third of the
+effect. Nothing in the extraction obviously singles k16 out (k0, k4 and k16
+share one forward-pass regime, k64 and k256 another), so this is recorded as
+an open oddity rather than a finding.
 
 ## AVD: the per-dimension question, answered with p-values (2026-09-17)
 
@@ -1739,6 +1791,15 @@ numbers from the surface or the parcel tables.
     python scripts/visualisation/plot_group_inflated.py --root results/group/<name>   # + parcels
     python scripts/visualisation/export_group_conn.py   --root results/group/<name>   # CONN
     python scripts/visualisation/export_group_mni.py    --root results/group/<name>   # volumes
+    python scripts/visualisation/conn_figures.py       --root results/group/<name>   # CONN mosaic8
+                                                        # -> publication SVG/PNG/PDF
+
+`conn_figures.py` runs after `export_group_conn.py`: it launches MATLAB itself
+(switching the Windows default printer away from the Horizon "(vdi)" driver
+that crashes `matlab -batch`, and restoring it), prints each map with CONN's
+own mosaic8 printer via `print_group_conn.m`, and lays the result out with
+the neural_integration `figtools` into `<run>/figures_conn/`. Never launch
+MATLAB with `-WindowStyle Hidden` for this: the camera views come out wrong.
 
 `scripts/cluster/permutation.sbatch` now takes `SAVE_NULL` and passes
 `--from-encoding` in **every** mode, `both` included. Nulls are ~1.3 GB for both runs
