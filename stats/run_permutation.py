@@ -211,7 +211,15 @@ def resolve_design_bands(args) -> tuple:
     if not getattr(args, "band", None):
         return order, dict(MODEL_BANDS)
     models = args.models or [*order, "joint"]
-    return order, resolve_model_bands(stores, models)
+    # resolve_model_bands always seeds one single-band model per band, while
+    # run_encoding fits only the models it was *named*. Keep only those, or a
+    # fit run with `--models joint text+audio+wordrate` is refused for lacking
+    # a `text_corrs.npy` it was never asked to write -- and refused per
+    # subject, so the array still exits COMPLETED having tested nothing.
+    # `joint` stays regardless: the Draper-Stoneman refit needs its weights.
+    wanted = set(models) | {"joint"}
+    model_bands = resolve_model_bands(stores, models)
+    return order, {m: b for m, b in model_bands.items() if m in wanted}
 
 
 def parse_args(argv=None) -> argparse.Namespace:
