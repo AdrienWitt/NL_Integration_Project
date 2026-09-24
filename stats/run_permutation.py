@@ -238,13 +238,17 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--n-comps", type=float, default=0.90)
 
     p.add_argument("--shuffle-block", default="both",
-                   choices=["both", "text", "audio", "conditional", "each"],
+                   metavar="{both,conditional,each,<band>}",
                    help="'both' = prediction-shuffle null, valid for r>0. "
-                        "'text'/'audio' = one Draper-Stoneman conditional "
-                        "null. 'conditional' = both, plus the conjunction "
-                        "that tests delta properly. 'each' = one DS null per "
-                        "named band, shuffled with all the others held "
-                        "aligned -- the N-band generalisation")
+                        "'conditional' = the text and audio DS nulls plus the "
+                        "conjunction that tests delta properly. 'each' = one "
+                        "DS null per named band, shuffled with all the others "
+                        "held aligned -- the N-band generalisation. Or the "
+                        "NAME OF ONE BAND ('text', 'audio', or any --band "
+                        "name): a single DS null, which is what to use when "
+                        "the claim concerns one band and 'each' would pay for "
+                        "N of them. Validated against the declared bands "
+                        "after parsing, not by a fixed list")
     p.add_argument("--from-encoding", default=None, metavar="DIR",
                    help="a run_encoding result root. The observed fit is then "
                         "LOADED from it -- band weights and unimodal r -- "
@@ -616,6 +620,24 @@ def main(argv=None) -> None:
     if getattr(args, "band", None):
         log.info(f"bands: {', '.join(args.band_order)} | models: "
                  f"{', '.join(args.model_bands)}")
+
+    # --shuffle-block takes a band NAME as well as the three modes, and which
+    # names are legal depends on --band, so argparse cannot police it with a
+    # fixed `choices`. Unvalidated, a typo or a band that is not in this design
+    # falls through `ds_bands = [] if ... else []` at the DS loop and the run
+    # completes, writes a report and tests NOTHING -- the same silent-success
+    # shape that made a 45-task array report COMPLETED while doing nothing.
+    modes = ("both", "conditional", "each")
+    if args.shuffle_block not in modes and args.shuffle_block not in args.band_order:
+        raise SystemExit(
+            f"--shuffle-block {args.shuffle_block!r}: expected one of "
+            f"{', '.join(modes)}, or a band of this design "
+            f"({', '.join(args.band_order)}).")
+    if args.shuffle_block == "conditional" and not {"text", "audio"} <= set(args.band_order):
+        raise SystemExit(
+            f"--shuffle-block conditional needs bands named 'text' and "
+            f"'audio'; this design has {', '.join(args.band_order)}. Use "
+            f"'each', or name one band.")
 
     from config import ENCODING_SPLIT_DIR
     stories_json = Path(ENCODING_SPLIT_DIR) / args.stories_json
