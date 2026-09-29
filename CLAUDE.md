@@ -1307,6 +1307,56 @@ effect. Nothing in the extraction obviously singles k16 out (k0, k4 and k16
 share one forward-pass regime, k64 and k256 another), so this is recorded as
 an open oddity rather than a finding.
 
+### Prediction adds nothing beyond text + audio + word rate (2026-09-24)
+
+Four-band fit at k=256 (`bands_text-audio-pred-wordrate__predk256`, 9/9 both
+evals) and `--shuffle-block pred`, 1000 perms: `delta_pred_given_text+audio+
+wordrate` has **0 FDR-significant voxels in 9/9 subjects**, means -0.0007 to
++0.0017. Surprisal/entropy beat word rate alone but not the carried bands.
+
+**At group level it is not nothing** (`results/group/k256L8__base_emotionL11__
+pred_given_rest/`, 61,168 covered vertices): perm FDR 1,376 (2.2%),
+prevalence FDR 525, FWE 22 of the n>=9 family. Small (+0.0056 mean where
+significant) and **left-lateralised in superior temporal cortex**: of the
+perm-significant vertices 642 lh STG, 329 lh banks STS, 105 lh MTG, only 66
+rh STG, plus ~80 in lh pars opercularis/triangularis. Prevalence is 99% lh
+STG + banks STS; all three tests agree there. The classic surprisal network,
+visible only by pooling. Write it as "a small, localised unique contribution
+in left STG/STS", not as a null.
+
+### Surprisal is already in the audio band (2026-09-28)
+
+Stimulus-side check before any `audio x surprisal` interaction band
+(`scripts/surprisal_prominence.py --k 256`, 84 stories, 28,088 TRs on the
+design slice, out-of-sample r, folds by story, alpha on an inner split):
+
+    target            opensmile 88d    base_emotion:11 1024d
+    word_rate            0.759              0.930
+    surprisal            0.682              0.820
+    surprisal | wr       0.189              0.581   (R2 0.34)
+    entropy | wr         0.092              0.463   (R2 0.21)
+
+**Named prosodic prominence barely carries surprisal** once word rate is
+out: partial r median 0.038, max 0.20, and the top features are formant
+amplitudes and voicing rates, not F0 or loudness. Aylett & Turk-style
+accenting is not visible at TR resolution.
+
+**The learned audio band does carry it**: a third of the rate-independent
+surprisal variance is linearly decodable from `emotion:11`. Most likely
+lexical identity leaking through a speech model's mid-stack (function words
+are short and reduced), not prosody. Two consequences:
+
+- `audio x surprisal` would be partly `audio x g(audio)` -- a nonlinearity of
+  the audio band. If the interaction is built, modulate by the part of
+  surprisal the audio *cannot* see: `s_perp = s - s_hat(audio)`, cross-fitted
+  by story. That is also the theoretically right modulator (the top-down
+  component). Linear orthogonalisation only; nonlinear leakage remains.
+- Part of why `pred` adds nothing may be the audio band, not only the text
+  band. The four-band null does not say which absorbed it.
+
+Word rate at r = 0.93 from the audio band is worth remembering when reading
+any audio-vs-text contrast.
+
 ## AVD: the per-dimension question, answered with p-values (2026-09-17)
 
 The affective sections above could only report **counts** — "9/9 subjects" —
