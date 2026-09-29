@@ -110,6 +110,11 @@ CONJUNCTIONS = {
 # and across subjects that is a paired test on the per-subject difference.
 CONTRASTS = {
     "preference": ("text", "audio"),
+    # In the arousal+valence model the joint term cancels exactly, as for
+    # preference: (r_av - r_a) - (r_av - r_v) = r_v - r_a. So this is the
+    # unique-contribution contrast with dominance -- the arousal twin at
+    # r = 0.963 -- left out, not a comparison against the 3-band leftovers.
+    "valence_vs_arousal": ("valence", "arousal"),
 }
 
 
