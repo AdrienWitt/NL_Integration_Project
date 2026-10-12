@@ -92,9 +92,19 @@ SIGNED = ("preference",)
 DEFAULT_TEST = {"preference": "p_signflip_fwe"}
 FALLBACK_TEST = "p_perm_fdr"
 
+
+def p_path(root: Path, stat: str, test: str) -> Path:
+    """`<root>/<stat>__<test>.npy`, else the same name under `<root>/clusters/`,
+    where `group_clusters.py` writes its maps (`--test p_tfce_perm_fwe`)."""
+    path = root / f"{stat}__{test}.npy"
+    alt = root / "clusters" / path.name
+    return path if path.exists() or not alt.exists() else alt
+
 LABELS = {
-    "text": "Semantic band (GPT-2 k256 L8), r",
-    "audio": "Prosodic band (emotion L11), r",
+    # band-neutral: the same names are used by every text/audio run
+    # (GPT-2 or Llama text; emotion or openSMILE audio)
+    "text": "Text band, r",
+    "audio": "Audio band, r",
     "joint": "Joint model, r",
     "preference": "preference = r(text) - r(audio)",
     "delta": "Integration: delta = min of both conditional contributions",
@@ -109,6 +119,10 @@ LABELS = {
         "Dominance beyond arousal+valence, delta r",
     "delta_valence_given_arousal+dominance":
         "Valence beyond arousal+dominance, delta r",
+    "delta_emotion_given_opensmile": "Emotion L11 beyond openSMILE, delta r",
+    "delta_opensmile_given_emotion": "openSMILE beyond emotion L11, delta r",
+    "delta_opensmile_given_avd": "openSMILE beyond AVD, delta r",
+    "delta_avd_given_opensmile": "AVD beyond openSMILE, delta r",
 }
 
 
@@ -143,9 +157,9 @@ def make_one(cortex, root: Path, stat: str, test: str, alpha: float,
 
     variants = [("unthresholded", mean, None)]
     if test != "none":
-        p_path = root / f"{stat}__{test}.npy"
-        if p_path.exists():
-            p = np.load(p_path)
+        pp = p_path(root, stat, test)
+        if pp.exists():
+            p = np.load(pp)
             masked = np.where(np.isfinite(p) & (p < alpha), mean, np.nan)
             variants.append((test, masked, int(np.isfinite(masked).sum())))
         else:

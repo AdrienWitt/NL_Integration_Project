@@ -98,6 +98,57 @@ def row(section, label, d, stat, kind, min_subj, n_top):
     }
 
 
+# Within-subject scores: mean r over each subject's EV mask, from the encoding
+# fits (`within_subject_scores.csv`, one row per run/eval/subject/model, pulled
+# from Baobab's results/encoding/<run>/banded/<eval>/<SUBJ>/<model>_corrs.npy).
+LL = "perlayer_llama8b_k1024L13__"
+SCORES = [  # (label, run, model)
+    ("openSMILE", "bands_emotion-opensmile", "opensmile"),
+    ("emotion L11", "bands_emotion-opensmile", "emotion"),
+    ("AVD", "bands_opensmile-avd", "avd"),
+    ("arousal", "bands_arousal-dominance-valence", "arousal"),
+    ("dominance", "bands_arousal-dominance-valence", "dominance"),
+    ("valence", "bands_arousal-dominance-valence", "valence"),
+    ("Llama text", LL + "perlayer_base_emotionL11", "text"),
+    ("Llama + emotion (joint)", LL + "perlayer_base_emotionL11", "joint"),
+    ("Llama + openSMILE (joint)", LL + "opensmile", "joint"),
+]
+CONTRASTS = [  # (label, (run, model) - (run, model))
+    ("emotion - openSMILE", ("bands_emotion-opensmile", "emotion"), ("bands_emotion-opensmile", "opensmile")),
+    ("AVD - openSMILE", ("bands_opensmile-avd", "avd"), ("bands_opensmile-avd", "opensmile")),
+    ("valence | A+D  (joint - A+D)", ("bands_arousal-dominance-valence", "joint"), ("bands_arousal-dominance-valence", "arousal+dominance")),
+    ("arousal | D+V", ("bands_arousal-dominance-valence", "joint"), ("bands_arousal-dominance-valence", "dominance+valence")),
+    ("dominance | A+V", ("bands_arousal-dominance-valence", "joint"), ("bands_arousal-dominance-valence", "arousal+valence")),
+    ("text - emotion (preference)", (LL + "perlayer_base_emotionL11", "text"), (LL + "perlayer_base_emotionL11", "audio")),
+    ("emotion | text  (joint - text)", (LL + "perlayer_base_emotionL11", "joint"), (LL + "perlayer_base_emotionL11", "text")),
+    ("text | emotion  (joint - audio)", (LL + "perlayer_base_emotionL11", "joint"), (LL + "perlayer_base_emotionL11", "audio")),
+    ("openSMILE | text", (LL + "opensmile", "joint"), (LL + "opensmile", "text")),
+    ("text | openSMILE", (LL + "opensmile", "joint"), (LL + "opensmile", "audio")),
+]
+
+
+def within_subject(path):
+    d = pd.read_csv(path)
+    p = d.pivot_table(index=["run", "model", "subject"], columns="eval",
+                      values="mean_r")
+    rows = []
+    for label, run, model in SCORES:
+        x = p.loc[(run, model)]
+        rows.append({"band": label, "n_subjects": len(x),
+                     "cv": round(x["cv"].mean(), 4),
+                     "holdout": round(x["holdout"].mean(), 4)})
+    scores = pd.DataFrame(rows)
+    rows = []
+    for label, a, b in CONTRASTS:
+        diff = p.loc[a] - p.loc[b]
+        rows.append({"contrast": label,
+                     "cv": round(diff["cv"].mean(), 4),
+                     "cv_n_pos": f"{int((diff['cv'] > 0).sum())}/{len(diff)}",
+                     "holdout": round(diff["holdout"].mean(), 4),
+                     "holdout_n_pos": f"{int((diff['holdout'] > 0).sum())}/{len(diff)}"})
+    return scores, pd.DataFrame(rows)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--out", type=Path, default=G / "paper_table")
@@ -114,6 +165,19 @@ def main(argv=None):
             f.write(f"\n### {sec}\n\n" + sub[cols].to_markdown(index=False) + "\n")
     with pd.option_context("display.width", 250, "display.max_colwidth", 80):
         print(df[["section"] + cols].to_string(index=False))
+    ws = a.out / "within_subject_scores.csv"
+    if ws.exists():
+        scores, contrasts = within_subject(ws)
+        scores.to_csv(a.out / "within_subject_bands.csv", index=False)
+        contrasts.to_csv(a.out / "within_subject_contrasts.csv", index=False)
+        with open(a.out / "paper_table.md", "a") as f:
+            f.write("\n### Within subject: mean r over the EV mask, 9 subjects\n\n"
+                    + scores.to_markdown(index=False) + "\n\n"
+                    + contrasts.to_markdown(index=False) + "\n")
+        print(scores.to_string(index=False))
+        print(contrasts.to_string(index=False))
+    else:
+        print(f"no {ws}: within-subject section skipped")
     print(f"-> {a.out}")
 
 

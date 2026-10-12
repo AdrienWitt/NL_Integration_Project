@@ -58,7 +58,7 @@ sys.path.insert(0, str(_HERE))
 import config  # noqa: E402
 from plot_group_maps import (  # noqa: E402
     DEFAULT_TEST, DIVERGING, FALLBACK_TEST, LABELS, SEQUENTIAL, SIGNED,
-    discover, limits,
+    discover, limits, p_path,
 )
 
 log = logging.getLogger("plot_group_inflated")
@@ -116,7 +116,7 @@ def masked_map(root: Path, stat: str, test: str, alpha: float):
     shown = np.where(covered, mean, 0.0)
     if test == "none":
         return shown, covered, np.zeros(0, dtype=bool)
-    pmap = root / f"{stat}__{test}.npy"
+    pmap = p_path(root, stat, test)
     if not pmap.exists():
         raise SystemExit(f"{pmap.name} not in {root}")
     p = np.load(pmap)
@@ -182,7 +182,7 @@ def parcel_table(stat: str, root: Path, surfaces: dict, fsdir: Path,
     if test == "none":
         sig = np.zeros_like(covered)
     else:
-        p = np.load(root / f"{stat}__{test}.npy")
+        p = np.load(p_path(root, stat, test))
         sig = np.isfinite(p) & (p < alpha) & covered
 
     rows = []
@@ -269,7 +269,7 @@ def main(argv=None) -> int:
 
     for stat in discover(root, args.stats):
         test = args.test or DEFAULT_TEST.get(stat, FALLBACK_TEST)
-        if test != "none" and not (root / f"{stat}__{test}.npy").exists():
+        if test != "none" and not p_path(root, stat, test).exists():
             log.warning("%s: no %s, drawing unthresholded", stat, test)
             test = "none"
         values, covered, sig = masked_map(root, stat, test, args.alpha)

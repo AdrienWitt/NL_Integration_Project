@@ -1107,6 +1107,18 @@ paper_table.{csv,md}`, in the paper's order. Nothing is re-tested there.
 openSMILE|emotion keeps 5 z>3.09 clusters (A1/belt, 5,944 TFCE vertices) at a
 raw gain of +0.005: not an effect, see above.
 
+Also 2026-10-12: `paper_table.py` adds a within-subject section (cv/holdout
+per band and the key contrasts with n/9) from `paper_table/within_subject_
+scores.csv`, pulled from the encoding fits on Baobab. TFCE-FWE figures for
+every paper map: `plot_group_maps.py` / `plot_group_inflated.py --test
+p_tfce_perm_fwe` now find the map under `<run>/clusters/`
+(`/root/prosody_nulls/run_figs_paper.sh`). Selection-curve figure (audio depth,
+text depth, text context; cv and holdout):
+`scripts/visualisation/plot_selection_curves.py` ->
+`results/group/paper_table/selection/`. These are EV-mask means, not
+inference; the carried bands' maps with permutations are the marginalfixed
+group maps.
+
 ## Inference: what the irony project did, and what carries over (2026-09-08)
 
 `../Clean_Irony/permutation_test.py` and `diagnostic_permutations.py` are the
