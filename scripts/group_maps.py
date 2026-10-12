@@ -46,6 +46,17 @@ different questions and are reported side by side rather than one being picked:
     fixed linear map applied identically to observed and null, so recomputing
     after it preserves exchangeability vertex by vertex.
 
+4.  ``p_tfce_fwe`` -- the same sign-flip over TFCE of the moderated t
+    (Smith & Nichols 2009; E=1, H=2, FreeSurfer's average vertex area), run
+    afterwards from the saved stacks with ``--tfce``. Random effects like (2),
+    but it borrows strength from neighbouring vertices, so it can see weak
+    extended effects that (2) only sees in the n>=9 core. Its family is n>=7
+    and a subject missing at a family vertex is filled with 0, its own null
+    mean -- conservative and exact. Significance means "part of a significant
+    region", not a localised vertex: localisation stays with (1)-(3) and the
+    parcel tables. Vertices in small isolated patches of the family cannot
+    borrow strength and are systematically missed.
+
 Coverage
 --------
 A vertex is not reached by every subject: the slab does not cover all cortex,
@@ -225,6 +236,160 @@ def sign_flip_fwe(centred: np.ndarray, valid: np.ndarray,
     out = np.full(centred.shape[1], np.nan, dtype=np.float64)
     out[valid] = p
     return out
+
+
+def fsaverage_mesh():
+    """Vertex adjacency and vertex area over both hemispheres, lh-then-rh.
+
+    The same order `project_to_fsaverage.Projector.to_fsaverage` concatenates
+    in, asserted against the surface. Area is FreeSurfer's
+    `?h.white.avg.area.mgh` -- each vertex's white-surface area averaged over
+    the subjects fsaverage was built from -- which is what PALM and
+    FreeSurfer's own TFCE use on fsaverage, where the template's triangles are
+    far from uniform and a vertex count would weight dense regions twice.
+    """
+    import nibabel as nib
+    import nibabel.freesurfer.io as fsio
+    from scipy import sparse
+
+    sys.path.insert(0, str(_HERE / "visualisation"))
+    from plot_group_inflated import fsaverage_dir
+    fsdir = fsaverage_dir()
+
+    rows, cols, areas, offset = [], [], [], 0
+    for hemi in ("lh", "rh"):
+        coords, faces = fsio.read_geometry(fsdir / "surf" / f"{hemi}.white")
+        area = np.asarray(nib.load(fsdir / "surf" /
+                                   f"{hemi}.white.avg.area.mgh").get_fdata()
+                          ).ravel()
+        if area.size != coords.shape[0]:
+            raise SystemExit(f"{hemi}: {area.size} areas for "
+                             f"{coords.shape[0]} vertices")
+        for a, b in ((0, 1), (1, 2), (2, 0)):
+            rows.append(faces[:, a] + offset)
+            cols.append(faces[:, b] + offset)
+        areas.append(area)
+        offset += coords.shape[0]
+    r, c = np.concatenate(rows), np.concatenate(cols)
+    adj = sparse.coo_matrix((np.ones(r.size, dtype=np.int8), (r, c)),
+                            shape=(offset, offset)).tocsr()
+    adj = ((adj + adj.T) > 0).astype(np.int8)
+    return adj, np.concatenate(areas)
+
+
+def tfce(values: np.ndarray, adj, area: np.ndarray, dh: float,
+         E: float = 1.0, H: float = 2.0) -> np.ndarray:
+    """Threshold-free cluster enhancement of the positive tail (Smith &
+    Nichols 2009): TFCE(v) = sum_h e(h, v)^E * h^H * dh, with e the area of the
+    suprathreshold component containing v at height h.
+
+    E=1, H=2 are the surface defaults (FSL/PALM); the volumetric E=0.5 assumes
+    three-dimensional clusters and under-weights extent on a 2-d sheet.
+    `adj` and `area` must already be restricted to the vertices of `values`.
+    """
+    from scipy.sparse.csgraph import connected_components
+
+    out = np.zeros(values.size, dtype=np.float64)
+    top = np.nanmax(values) if values.size else 0.0
+    h = dh
+    while h <= top:
+        above = np.flatnonzero(values >= h)
+        _, labels = connected_components(adj[above][:, above], directed=False)
+        extent = np.bincount(labels, weights=area[above])
+        out[above] += extent[labels] ** E * h ** H * dh
+        h += dh
+    return out
+
+
+def sign_flip_tfce(centred: np.ndarray, valid: np.ndarray, adj,
+                   area: np.ndarray, var_floor_pct: float = 25.0,
+                   n_steps: int = 50, E: float = 1.0, H: float = 2.0):
+    """FWE p on TFCE of the moderated t, max-statistic over every sign vector.
+
+    Returns (p, tfce_observed), full length, NaN outside `valid`.
+
+    Unlike `sign_flip_fwe` this cannot let *n* vary by vertex: TFCE integrates
+    t over neighbours, so a vertex backed by five subjects would lend its
+    noisier t to the cluster around it. A subject missing at a family vertex is
+    therefore filled with 0 -- in a stack centred on each subject's own null
+    mean, exactly "this subject contributes the null here". That is
+    conservative (it pulls the mean toward 0 and widens the sd) and it keeps
+    the test exact, because the fill is the same under every flip.
+
+    The t is the same moderated one as `sign_flip_fwe`, for the same reason: an
+    unmoderated t explodes where nine subjects happen to agree, and TFCE would
+    then build clusters out of collapsed variance.
+    """
+    n_subj = centred.shape[0]
+    data = np.nan_to_num(centred[:, valid], nan=0.0).astype(np.float64)
+    sub_adj = adj[valid][:, valid]
+    sub_area = area[valid]
+    n_filled = int(np.isnan(centred[:, valid]).sum())
+    log.info(f"      {int(valid.sum()):,} vertices, {n_filled:,} missing "
+             f"subject-vertex values filled with the null (0)")
+
+    sd_obs = data.std(axis=0, ddof=1)
+    sd_floor = np.percentile(sd_obs[sd_obs > 0], var_floor_pct)
+
+    def tstat(signed):
+        sd = np.maximum(signed.std(axis=0, ddof=1), sd_floor)
+        return signed.mean(axis=0) / (sd / np.sqrt(n_subj))
+
+    t_obs = tstat(data)
+    # One step size for every flip, fixed from the observed map, so each null
+    # map is integrated on the same grid as the one it is compared with.
+    dh = max(float(np.max(t_obs)), 1e-6) / n_steps
+    tfce_obs = tfce(t_obs, sub_adj, sub_area, dh, E, H)
+
+    maxima = np.empty(2 ** n_subj, dtype=np.float64)
+    for b, signs in enumerate(product((1.0, -1.0), repeat=n_subj)):
+        t = tstat(data * np.asarray(signs)[:, None])
+        maxima[b] = tfce(t, sub_adj, sub_area, dh, E, H).max()
+        if b and b % 128 == 0:
+            log.info(f"      {b}/{2 ** n_subj} flips")
+
+    # The identity flip is in the null, as in sign_flip_fwe.
+    p = (maxima[None, :] >= tfce_obs[:, None]).mean(axis=1)
+    p_full = np.full(centred.shape[1], np.nan)
+    t_full = np.full(centred.shape[1], np.nan)
+    p_full[valid], t_full[valid] = p, tfce_obs
+    return p_full, t_full
+
+
+def run_tfce(out_dir: Path, alpha: float, tfce_min_subjects: int,
+             var_floor_pct: float, n_steps: int, E: float, H: float) -> None:
+    """TFCE sign-flip FWE for every statistic in a group directory, from the
+    saved centred stacks; no projection. Conjunctions take the per-vertex max
+    of their components' p, as for every other family."""
+    stacks = sorted(out_dir.glob("*__centred_stack.npy"))
+    if not stacks:
+        raise SystemExit(f"no *__centred_stack.npy under {out_dir}")
+    adj, area = fsaverage_mesh()
+    done = {}
+    for path in stacks:
+        name = path.name[: -len("__centred_stack.npy")]
+        centred = np.load(path)
+        if centred.shape[1] != area.size:
+            raise SystemExit(f"{name}: {centred.shape[1]} vertices, mesh has "
+                             f"{area.size}")
+        count = np.load(out_dir / f"{name}__n_subjects.npy")
+        family = count >= min(tfce_min_subjects, int(count.max()) or 1)
+        log.info(f"  {name}: TFCE family n>={tfce_min_subjects}")
+        p, enhanced = sign_flip_tfce(centred, family, adj, area,
+                                     var_floor_pct, n_steps, E, H)
+        np.save(out_dir / f"{name}__p_tfce_fwe.npy", p)
+        np.save(out_dir / f"{name}__tfce.npy", enhanced.astype(np.float32))
+        np.save(out_dir / f"{name}__tfce_family.npy", family)
+        done[name] = p
+        log.info(f"    p<{alpha}: {int(np.nansum(p < alpha)):,} of "
+                 f"{int(family.sum()):,} vertices")
+
+    for conj, (a, b) in CONJUNCTIONS.items():
+        if a in done and b in done:
+            p = np.fmax(done[a], done[b])
+            np.save(out_dir / f"{conj}__p_tfce_fwe.npy", p)
+            log.info(f"  {conj}: p<{alpha}: {int(np.nansum(p < alpha)):,} "
+                     f"vertices")
 
 
 def fdr(pvals: np.ndarray, alpha: float) -> np.ndarray:
@@ -432,6 +597,15 @@ def main(argv=None):
     ap.add_argument("--recompute-fwe", action="store_true",
                     help="redo only the sign-flip FWE in --out, from the "
                          "saved centred stacks; no projection")
+    ap.add_argument("--tfce", action="store_true",
+                    help="TFCE sign-flip FWE in --out, from the saved centred "
+                         "stacks; no projection")
+    ap.add_argument("--tfce-min-subjects", type=int, default=7,
+                    help="coverage floor for the TFCE family; missing "
+                         "subjects inside it count as the null")
+    ap.add_argument("--tfce-steps", type=int, default=50)
+    ap.add_argument("--tfce-E", type=float, default=1.0)
+    ap.add_argument("--tfce-H", type=float, default=2.0)
     ap.add_argument("--var-floor-pct", type=float, default=25.0)
     ap.add_argument("--perm-dir", required=False, type=Path,
                     help="a run's permutation/ directory (subject subdirs)")
@@ -456,6 +630,10 @@ def main(argv=None):
     if args.recompute_fwe:
         recompute_fwe(args.out, args.alpha, args.fwe_min_subjects,
                       args.var_floor_pct)
+        return 0
+    if args.tfce:
+        run_tfce(args.out, args.alpha, args.tfce_min_subjects,
+                 args.var_floor_pct, args.tfce_steps, args.tfce_E, args.tfce_H)
         return 0
     if args.perm_dir is None:
         raise SystemExit("--perm-dir is required unless --recompute-fwe")

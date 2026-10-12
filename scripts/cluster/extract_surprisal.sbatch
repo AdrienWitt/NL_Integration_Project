@@ -72,7 +72,7 @@ export PYTHONUNBUFFERED=1
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"
 export DATA_DIR=$PROJECT/data
-export HF_HOME=$HOME/.cache/huggingface
+export HF_HOME=${HF_HOME:-$HOME/.cache/huggingface}
 export HF_HUB_OFFLINE=1
 
 # Space-separated and index-aligned with the array, never comma-delimited:
@@ -82,6 +82,9 @@ export HF_HUB_OFFLINE=1
 read -r -a KS_A <<< "${KS:-0 4 16 64 256}"
 read -r -a ST_A <<< "${STRIDES:-}"
 read -r -a ON_A <<< "${OUTNAMES:-}"
+# Another LM: MODEL=NousResearch/Meta-Llama-3.1-8B with HF_HOME=$HOME/scratch/hf
+# and --gres VramPerGpu:40G. Same model for every task in the array.
+MODEL=${MODEL:-gpt2}
 
 K=${KS_A[$SLURM_ARRAY_TASK_ID]}
 STRIDE=${ST_A[$SLURM_ARRAY_TASK_ID]:-0.1}
@@ -94,12 +97,13 @@ if [ "${PE_VECTOR:-1}" = "0" ]; then
     PE_FLAG=""
 fi
 
-echo "=== task $SLURM_ARRAY_TASK_ID : context-words $K, stride-frac $STRIDE, "\
+echo "=== RUN ${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID} started $(date -Iseconds) on $(hostname) ==="
+echo "=== task $SLURM_ARRAY_TASK_ID : $MODEL, context-words $K, stride-frac $STRIDE, "\
      "out $OUT ${PE_FLAG:-(scalars only)} ==="
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
 python -m extract.surprisal \
-    --model gpt2 \
+    --model "$MODEL" \
     --context-words "$K" \
     --stride-frac "$STRIDE" \
     $PE_FLAG \

@@ -23,6 +23,11 @@
 #   sbatch --time=08:00:00 --export=ALL,LAYER_STORE=perlayer_gpt2_k16,\
 #          TAGSUF=_layers scripts/cluster/semantic_sweep.sbatch
 #
+# Another model's depth profile, with the carried band as a reference row:
+#   sbatch --time=12:00:00 --export=ALL,LAYER_STORE=perlayer_llama3b_k256,\
+#          LAYER_LIST="$(seq -s ' ' 0 28)",EXTRA_SOURCES=perlayer_gpt2_k256:8,\
+#          TAGSUF=_llama3b_k256 scripts/cluster/semantic_sweep.sbatch
+#
 # Why depth is worth a sweep of its own
 # -------------------------------------
 # The context grid ran at --layers last, which on a causal LM is the layer
@@ -110,6 +115,13 @@ if [ -n "${LAYER_STORE:-}" ]; then
     fi
 fi
 
+# Reference rows scored beside a depth sweep, on the same folds and mask --
+# e.g. EXTRA_SOURCES="perlayer_gpt2_k256:8" puts the carried semantic band in
+# every Llama table, so "does scale help" is read off one table, not two runs.
+if [ -n "${EXTRA_SOURCES:-}" ]; then
+    SOURCES="$EXTRA_SOURCES $SOURCES"
+fi
+
 RESP="data/ds003020/derivative/preprocessed_data/$SUBJ"
 if [ ! -d "$RESP" ]; then
     echo "ERROR: no responses for $SUBJ at $RESP"
@@ -125,6 +137,7 @@ for S in $SOURCES; do
     fi
 done
 
+echo "=== RUN ${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID} started $(date -Iseconds) on $(hostname) ==="
 echo "=== task $SLURM_ARRAY_TASK_ID : $SUBJ ==="
 echo "    sources: $SOURCES"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader

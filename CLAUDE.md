@@ -172,6 +172,16 @@ Layer choice is empirical; sweep it with `--layers` and different `--out-name`s.
 
 ## Gotchas that cost real time
 
+- **Check what already exists before computing anything.** This file lags the
+  cluster: runs finish on Baobab before they are written up here (the Llama
+  `wordrate` fit and null, 13417892/13417894, were done a day before this file
+  still called the test open). Before submitting or launching, inventory both
+  sides and compute only what is missing:
+  Baobab `squeue -u $USER`, `sacct -S <recent> -X`,
+  `ls -dt results/encoding/*/ | head`, and count `*/meta.json` / `*/report.json`;
+  locally `ls -lt results/group/ /root/prosody_nulls/` and the exact output dir.
+  Never rerun a model that has already run.
+
 - **Fine-tuned checkpoints must be unwrapped.** `train_model` saves an
   `AudioEncoderForProsody` whose weights nest under `encoder.`.
   Loading that directory straight into `Wav2Vec2Model` silently drops them and
@@ -758,6 +768,345 @@ This needs new per-layer extractions at those k (only k=16 has one), so it is
 `gpt2_mean` is deliberately absent from SOURCES: the sbatch always passes it
 as `--baseline-features`, and naming it in both scores the same band twice.
 
+## Llama vs GPT-2: the backbone sweep (2026-10-02)
+
+TRIBE's text backbone is Llama-3.2-3B, so the semantic band was re-swept on the
+Llama family. Llama-3.2-1B (16 blocks, 2048-d), -3.2-3B (28, 3072-d), -3.1-8B
+(32, 4096-d), k = 256 and 1024 words. Every layer, nine subjects,
+`common_stories_all9`, `--min-ev 0.1 --max-repeats 5`, both evals, and
+`perlayer_gpt2_k256:8` scored **inside every task** as a paired reference row.
+Read with `PYTHONPATH=. python scripts/summarise_model_sweep.py --tags
+llama1b_k256 llama3b_k256 llama8b_k256 llama1b_k1024 llama3b_k1024
+llama8b_k1024 --profile`. Layer chosen on cv, holdout at that layer:
+
+    model    k      best  depth    cv     vs gpt2  n     holdout  vs gpt2  n
+    1B       256    L8    0.50   0.1928  +0.0159  9/9   0.3469  +0.0171  9/9
+    3B       256    L13   0.46   0.1938  +0.0169  9/9   0.3483  +0.0185  9/9
+    8B       256    L13   0.41   0.1953  +0.0184  9/9   0.3474  +0.0177  8/9
+    1B       1024   L8    0.50   0.1932  +0.0163  9/9   0.3489  +0.0191  9/9
+    3B       1024   L13   0.46   0.1944  +0.0175  9/9   0.3514  +0.0217  9/9
+    8B       1024   L13   0.41   0.1962  +0.0193  9/9   0.3523  +0.0225  8/9
+
+**Switching family is the effect; size within it is small.** Every Llama beats
+GPT-2 small in 9/9 subjects on cv, by +0.016 to +0.019 -- about as much as
+k=16 -> k=256 bought. 1B -> 8B adds only +0.0030 (k1024, 7/9); 3B -> 8B
++0.0018 (6/9). k=1024 over k=256 is +0.0004 to +0.0009 at matched size: context
+is saturated by 256 words here too, despite TRIBE's no-plateau claim.
+
+**The peak sits lower than GPT-2's**: 41-50% of depth against L8/12 = 67%. Same
+inverted U, flat-ish around the peak (8B L11-L15 within 0.0025).
+
+Weights: `NousResearch/Llama-3.2-1B` and `NousResearch/Meta-Llama-3.1-8B`
+(every file SHA-identical to meta-llama), `unsloth/Llama-3.2-3B` (weights
+SHA-identical; tokenizer.json re-serialised, merges equal after format
+normalisation). No HF token needed. Models in `~/scratch/hf` on Baobab
+(`HF_HOME=$HOME/scratch/hf`), stores in `~/scratch/NL_features` symlinked from
+`data/features/`, 25 common stories only (`STORIES=common_stories_all9.json`),
+fp32 extraction.
+
+**gpu050 gave wrong numbers.** The three tasks that completed there shifted
+every row, the fixed reference rows included, by -0.0007 to -0.0011 cv, while
+184 runs elsewhere agree to 1e-8. Re-run with `--exclude=gpu050`; the deviant
+outputs are kept as `results/encoding/semantic_sweep/*/_gpu050__*`. The
+summariser's reference-row check is what caught it -- keep a shared reference
+row in any multi-run comparison.
+
+### DECIDED 2026-10-03: the semantic band is `perlayer_llama8b_k1024:13`
+
+Chosen on cv per the rule. It replaces `perlayer_gpt2_k256:8`, which stays on
+disk as the cross-check, and every downstream fit is being redone on it.
+
+**No PCA -- tested, not assumed** (`scripts/cluster/pca_check.sbatch`,
+`scripts/summarise_pca_check.py`). Single-band text fits, nine subjects, paired
+against the unprojected 4096-d band:
+
+    PCA              variance   cv vs none   PCA ahead   holdout vs none
+    1024 comps         0.84     -0.0004        0/9         -0.0005  3/9
+    0.90 (1404)        0.90     -0.0003        1/9         -0.0002  ~coin
+    256 comps          0.57     -0.0013        0/9         -0.0012  3/9
+
+Worse on cv in essentially every subject *despite* cv flattering PCA (it is
+fitted once on all 24 training stories before the outer folds, so it is
+transductive there); a coin flip on holdout, where it is clean. Banded ridge
+gives each band its own alpha, so 4096 vs 1024 does not need equalising, and
+the dual solver's cost is set by TRs, not columns.
+
+**Joint model** (`encoding_joint.sbatch`, TEXT=perlayer_llama8b_k1024:13),
+nine subjects, mean over EV>0.1 voxels:
+
+    eval      band     text    audio   joint   joint-text   delta     pref
+    cv        llama   0.1965  0.1505  0.2084   +0.0120   +0.0070 9/9  +0.0460 9/9
+    cv        gpt2    0.1770  0.1505  0.1882   +0.0113   +0.0059 9/9  +0.0265 9/9
+    holdout   llama   0.3535  0.2908  0.3721   +0.0186   +0.0031 7/9  +0.0627 9/9
+    holdout   gpt2    0.3297  0.2908  0.3495   +0.0197   +0.0032 6/9  +0.0390 9/9
+
+**What audio adds beyond text did not shrink** (+0.0120 vs +0.0113 cv) against a
+text band 0.02 stronger. The prosodic contribution is not something a better LM
+already carries -- the cleanest answer yet to "is prosody just lexical
+information the text band was too weak to capture". `preference` roughly
+doubles; it now has a ~190-configuration selection budget on the text side
+against ~96 for audio, so the winner's curse runs toward text on cv. Report
+`preference` on holdout.
+
+Permutation cost on this band (20-perm probe): UTS04 2.3 s/perm (was 1.4),
+UTS03 10.6 s/perm (was 7.8) -- 1000 x 2 directions ~6 h on the largest mask,
+inside the 12 h limit.
+
+### Inference on the Llama band (2026-10-05)
+
+Conditional (13357509) and marginal `both` (13357510), 1000 perms,
+`--from-encoding`, nulls saved; group maps in `results/group/
+llama8bk1024L13__base_emotionL11__{conditional,marginalfixed}/`, nulls at
+`/root/prosody_nulls/llama8b_{conditional,marginal}/`. Marginal refits match
+the joint fit to 1e-5 in 9/9. Neither band uses PCA, here or in the GPT-2 runs
+compared against.
+
+Within subject (holdout, FDR within EV mask), llama vs gpt2:
+
+    audio|text   +0.0186  20% of voxels   (gpt2 +0.0197  26%)
+    text|audio   +0.0813  76%             (gpt2 +0.0587  72%)
+    delta        +0.0031   4%, 4/9 subj   (gpt2 +0.0032   9%, 7/9)
+
+Group (61,168 vertices, n>=5):
+
+    statistic      mean     perm FDR   prev FDR   FWE n=9
+    audio|text   +0.0196    34,925     23,034     2,076   (gpt2 41,150 / 2,279)
+    text|audio   +0.0881    61,133     60,967     2,701
+    delta        +0.0123    34,870     22,157     1,451   (gpt2 41,129 / 1,811)
+    preference   +0.0674    text ahead 85.8%      FWE 13   (gpt2 +0.0408, 85.2%)
+
+**Why fewer audio voxels at an unchanged effect: the null moved, not the
+observed.** Shuffling audio now costs the joint less (null mean -0.007 vs
+-0.012 on UTS01/04/09; null SD unchanged at ~0.018) -- banded ridge shrinks a
+useless audio band more efficiently beside a stronger text band, so the margin
+over the null is ~15% smaller. A calibration effect, not noise.
+
+**Parcels (Desikan) say audio did not lose anything where it lives:**
+audio|text *rises* in Heschl (lh 0.086 -> 0.094) and STG (0.049 -> 0.052).
+What falls is **text|audio in Heschl (0.024 -> 0.014)** -- Llama predicts
+primary auditory cortex *less* than GPT-2 k256 did. Evidence on the open
+Heschl question in "integration grows with context": GPT-2's long-context
+Heschl signal looks like low-level temporal structure rather than semantic
+prediction, since a better LM drops it. A clue, not a test -- the test is the
+`wordrate` band in the same fit. Delta falls in Heschl for that reason, and in
+MTG/IFG/supramarginal because text|audio jumped (0.060 -> 0.089) and the min is
+now audio-bound (the same confound as the k grid: do not write "integration
+decreases in IFG"). Banks of STS is where delta grows (rh 0.027 -> 0.030).
+
+### k=1024 survives the onset clock (2026-10-05)
+
+`encoding_onset.sbatch`, `TEXT_FMT=perlayer_llama8b_k{K}:13`,
+`TAGPRE=llamaonset`, nine subjects (13377132). Adding the time-since-onset band
+barely dents the Llama context gain, unlike GPT-2's (where it halved):
+
+    eval      contrast         text alone      with onset (joint)
+    cv        k256 - k16     +0.0222  9/9     +0.0171  9/9
+    cv        k1024 - k256   +0.0009  7/9     +0.0011  8/9
+    holdout   k256 - k16     +0.0260  9/9     +0.0189  9/9
+    holdout   k1024 - k256   +0.0049  8/9     +0.0043  8/9
+
+So k=1024's small lead is not the onset clock, and the band stays
+`perlayer_llama8b_k1024:13`. **DECIDED: no onset band in the reported
+models** -- it was a check on the k choice, not a nuisance regressor. Downstream submitted 2026-10-05, all
+`--exclude=gpu050`: grid joints k4/k16/k256 (13382270/274/309), each with
+conditional `_null` and `_marginalfixed` perms chained `aftercorr`;
+prediction four-band `TAG=llamapredk1024` (13382312) and interaction
+`TAG=llamainterpc20` (13382313), each with a UTS03 20-perm `_llamaprobe`
+(13382331/2) before the 1000-perm nulls. The prediction fit first failed in 3 s on every
+task: `encoding_prediction.sbatch` requires `K` even when `PRED` and `TAG` are
+given -- resubmitted with `K=1024` (13393156, probe 13393157). Interaction
+probe: ~21 s/perm on UTS03 (~6 h for 1000); full null `_llamanull` 13393164.
+
+Status 2026-10-06 07:55, from output files: grid conditional `_null` 9/9 at
+k4/k16/k256; prediction fit `llamapredk1024` 9/9 both evals, its probe done,
+full 1000-perm `_llamanull` submitted (13399681). **Interaction on the Llama
+band is still null:** `delta_inter_given_text+audio` has 0 FDR voxels in 9/9
+(means -0.0004 to +0.0027, slightly positive in 7/9 where GPT-2's were
+negative in 7/9). Note `group_maps.py --contrasts` is a post-step on an
+existing group dir: passed with `--perm-dir` it computes only preference and
+returns, silently skipping the projection.
+
+### Integration x context on Llama: the GPT-2 grid replicates (2026-10-06)
+
+Group maps `results/group/llama8bk{4,16,256,1024}L13__base_emotionL11__
+{conditional,marginalfixed}`, nulls at `/root/prosody_nulls/llama8b_k*_*`.
+(Store names differ: k4/k16 are `llama8b_k*` single-layer stores, k256/k1024
+`perlayer_llama8b_k*`; same model, layer 13.)
+
+    k       audio|text  text|audio   delta    perm FDR   prev FDR   FWE n=9
+    k4       +0.0220     +0.0417    +0.0088    36,693     18,501    1,047
+    k16      +0.0218     +0.0599    +0.0097    33,715     18,093      903
+    k256     +0.0194     +0.0837    +0.0121    35,849     21,759    1,310
+    k1024    +0.0196     +0.0881    +0.0123    34,870     22,157    1,451
+
+Same shape as GPT-2: delta rises with k and saturates past 256; audio|text
+erodes as text|audio grows. ROI curve (`roi_context_curve_llama.csv`, lh mean
+delta, k4/k16/k256/k1024):
+
+    Heschl       -0.0041 -0.0082  0.0086  0.0136   sig 0% / 1% / 95% / 97%
+    STG           0.0092  0.0105  0.0190  0.0214   sig 67% / 66% / 95% / 95%
+    precentral    0.0110  0.0164  0.0184  0.0201
+    IFG           0.0137  0.0147  0.0117  0.0117   <- falls with the bias
+    MTG           0.0112  0.0116  0.0089  0.0093   <- falls with the bias
+
+**The Heschl switch replicates on a different LM family**: text|audio in
+Heschl goes from negative at k<=16 to +0.009/+0.014 at k256/k1024, the same
+0% -> ~100% transition GPT-2 showed, at about half GPT-2 k256's magnitude
+(0.024). So "a better LM drops Heschl" (2026-10-05 parcels) was too strong:
+Llama reduces it but the long-context Heschl signal is a property of long
+context, not of GPT-2. The `wordrate` test in the prediction fit is still what
+decides between temporal structure and semantic prediction. The STG/precentral
+growth (interpretable, against the bias) and the IFG/MTG decline
+(confounded) are unchanged from GPT-2.
+
+Marginal (`--shuffle-block both`), group means; audio 0.3077 at every k, the
+check that the four runs share one design:
+
+    k       text     joint    preference   text ahead   pref FWE n=9
+    k4     0.3275   0.3494     +0.0189       70.3%          0
+    k16    0.3458   0.3676     +0.0375       79.5%          0
+    k256   0.3719   0.3913     +0.0632       85.8%          9
+    k1024  (see "Inference on the Llama band": +0.0674, 85.8%, FWE 13)
+
+Interaction group map (`llama8bk1024L13__base_emotionL11__inter_pc20`): mean
++0.0015, perm FDR 0, prevalence 0, FWE 0. Additive, on Llama too.
+
+### Prediction on Llama: the left-STG term is gone (2026-10-06)
+
+`--shuffle-block pred` against the four-band `llamapredk1024` fit (pred =
+`surp_pred_llama8b_k1024`, Llama's own surprisal), 1000 perms (13399681),
+group map `results/group/llama8bk1024L13__base_emotionL11__pred_given_rest`.
+Within subject: 0 FDR voxels in 9/9, means -0.0020 to +0.0007.
+
+**The group counts look larger than GPT-2's and mean less.** Same anatomy
+(lh STG 1,371, banks STS 735, rh STG 370, lh MTG/IFG), but split raw vs
+null-centred where significant:
+
+                      n      raw Δr    centred   null mean
+    llama perm FDR  3,835   -0.0001   +0.0026    -0.0027
+    llama prev FDR    662   +0.0000   +0.0034    -0.0034
+    llama FWE n=9      69   -0.0021   +0.0009    -0.0030
+    gpt2  perm FDR  1,376   +0.0056   +0.0053    +0.0003
+
+On GPT-2 the joint model really scored above `text+audio+wordrate` in left
+STG. On Llama the observed Δr is **zero**. Vertices clear the test only
+because the shuffled pred band *lowers* the joint (null mean -0.003), so pred
+beats its own permuted copy but adds nothing over the model without it. The
+Draper-Stoneman test is valid for its H0 (pred exchangeable). That H0 is just
+not "pred improves prediction". **Write it as: with a Llama text band, surprisal
+and entropy add nothing measurable. The GPT-2 left-STG term was prediction
+information GPT-2 small's hidden state lacked.** Do not quote the 3,835.
+
+General lesson: whenever a conditional-null map has a mean near zero, report
+raw Δr next to `mean_centred`. A significant count with raw Δr ≤ 0 means the
+null was shifted down, not that the band adds anything.
+
+### Llama downstream: clusters, k contrasts, partition (2026-10-08)
+
+Run locally from the existing nulls (`/root/prosody_nulls/run_llama_downstream.sh`).
+Outputs: `llama8bk{4,16,256}L13__..._conditional/clusters/` (k1024 was done
+2026-10-07), `context_contrast_llama/`, `integration_grid_llama/`,
+`context_clusters_report_llama.html`, `llama8bk1024L13__..._partition/`.
+
+Group-null TFCE FWE vertices (family 61,168), and z>3.09 extent for delta:
+
+    k      a|t     t|a     delta   | z3.09 delta  clusters
+    4    39,162  52,793  35,974    |   16,325        24
+    16   37,941  53,081  34,784    |   15,708        28
+    256  37,681  56,641  37,612    |   19,306        28
+    1024 35,682  56,627  35,622    |   19,879        27
+    (gpt2 k256: 38,982 / 56,246 / 38,920 | 27,784, 30)
+
+Paired sign-flip k contrasts (TFCE FWE, `up` = larger at the larger k):
+
+    pair       delta              audio|text          text|audio
+    4:16     -0.0007   0 / 0    -0.0085   0 / 4,003  +0.0203  8,552 / 0
+    4:256    +0.0019 3,468 / 0  -0.0208   0 / 12,097 +0.0613 13,763 / 0
+    16:256   +0.0026 3,120 / 0  -0.0123   0 / 9,903  +0.0410 12,766 / 0
+    256:1024 +0.0006 1,515 / 0  +0.0009 1,816 / 0    +0.0013      0 / 0
+    (gpt2: 4:256 +0.0064 4,355 up; 16:256 +0.0073 4,015 up; 256:512 3,376 DOWN)
+
+Same structure as GPT-2: integration grows from short to long context while
+audio|text erodes and text|audio grows, so only regions where delta rises
+against that bias are interpretable. The growth is about a third of GPT-2's
+in mean. 256 -> 1024 does not reverse the way GPT-2's 256 -> 512 did; it adds
+a small rise in delta (1,515 TFCE vertices) carried by audio|text, not text.
+
+Partition (k1024): unique text 61,133, unique audio 34,925, both 34,895,
+audio-only 30 vertices. Wherever audio adds, text adds too.
+
+### Word rate does not explain the text band (2026-10-07, read 2026-10-08)
+
+`encoding_wordrate.sbatch` (13417892, `bands_text-audio-wordrate__llamawordrate`)
+and `--shuffle-block text` null keeping `audio+wordrate` (13417894,
+`..._shuffle_text__llamawrnull`), 9/9 both evals, 1000 perms. Mean over EV mask:
+
+    eval      t|a      t|(a+wr)  ratio   wr|(t+a)
+    cv       +0.0582  +0.0589   1.012   +0.0011  9/9 > 0
+    holdout  +0.0817  +0.0829   1.014   +0.0016  9/9 > 0
+
+Text given audio+wordrate is FDR-significant in 65-85% of each subject's mask.
+Mask-wide, word rate absorbs none of the text contribution.
+
+**Heschl, read 2026-10-09: word rate does not explain it either.** Group map
+`results/group/llama8bk1024L13__base_emotionL11__text_given_audio_wordrate`
+(nulls `/root/prosody_nulls/llama8b_wordrate/`): mean +0.0902, perm FDR 61,134,
+FWE 2,722. Desikan, t|(a+wr) against t|a from the k1024 conditional run:
+
+    parcel                  t|a      t|(a+wr)   sig (wr)
+    lh transversetemporal  0.0136    0.0129      98.1%
+    rh transversetemporal  0.0166    0.0147     100.0%
+    lh superiortemporal    0.0428    0.0455     100.0%
+    lh bankssts            0.0629    0.0658     100.0%
+
+Heschl loses 5% (lh) / 12% (rh) and stays ~100% significant; everywhere else
+t|(a+wr) is at or slightly above t|a (a different three-band fit, so
+fourth-decimal moves are fit noise). So the long-context Heschl signal is not
+word-arrival timing. Low-level temporal structure beyond word rate (syllable
+rate, phrase boundaries) is not excluded by this test.
+
+### openSMILE as the audio band, and the audio bands against each other (2026-10-12)
+
+Jobs 13451040-42 (Llama k1024 L13 x `opensmile`: fit, conditional, marginal)
+and 13452773-76 (`scripts/cluster/encoding_bands.sbatch`, two-band fits
+`emotion=perlayer_base_emotion:11 opensmile=opensmile` and
+`opensmile=opensmile avd=emotion_avd`, each with `--shuffle-block each`),
+1000 perms, nulls saved, all 9/9. Group maps (n>=5 family 61,168):
+
+    run / statistic              mean    perm FDR  prev FDR  FWE n=9
+    osm marginal  audio        +0.1191   46,563    41,013    2,812
+    osm cond.     audio|text   +0.0108   18,677    15,042      543
+                  text|audio   +0.2679   61,166    61,165    2,974
+                  delta        +0.0095   18,672    15,015      224
+    emo vs osm    emo|osm      +0.1869   61,161    61,125    3,287
+                  osm|emo      -0.0017    1,857     1,585       10
+    osm vs avd    osm|avd      +0.0460   42,023    30,767    2,367
+                  avd|osm      +0.0178   29,417    20,749      447
+
+- **Integration with openSMILE is Heschl-centred**: audio|text and delta peak
+  in transversetemporal (0.061 / 0.035, 100% sig), then STG. Within subject
+  the conjunction is significant in 8/9 subjects (6.3% of voxels) against 4/9
+  (4%) with the emotion band, despite audio|text being half as large.
+- **openSMILE adds nothing beyond the emotion band.** Within subject 0 FDR
+  voxels in 9/9; at group level the 1,857 vertices have raw Δr +0.0051 (centred
+  +0.0354), almost all right Heschl. The emotion band contains what openSMILE
+  explains.
+- **Affect adds beyond acoustics**: AVD|openSMILE positive in 9/9 subjects,
+  group 29,417 vertices, strongest in lh pars orbitalis/triangularis, banks of
+  STS and superior frontal -- the valence anatomy, not auditory cortex.
+  openSMILE|AVD is the reverse: Heschl, STG, sensorimotor.
+
+Clusters for every paper map: `/root/prosody_nulls/run_clusters_paper.sh`,
+using `group_clusters.py --stats` (added 2026-10-12: any statistic, no
+conjunction) for everything except the two text/audio conditional runs.
+All seven done 2026-10-12 (AVD marginal re-run by hand after the session
+running it was killed). `PYTHONPATH=. python3 scripts/paper_table.py` collects
+every paper map -- mean, perm FDR, TFCE FWE, z>3.09 extent clusters and the
+largest ones by peak Glasser area -- into `results/group/paper_table/
+paper_table.{csv,md}`, in the paper's order. Nothing is re-tested there.
+openSMILE|emotion keeps 5 z>3.09 clusters (A1/belt, 5,944 TFCE vertices) at a
+raw gain of +0.005: not an effect, see above.
+
 ## Inference: what the irony project did, and what carries over (2026-09-08)
 
 `../Clean_Irony/permutation_test.py` and `diagnostic_permutations.py` are the
@@ -875,6 +1224,10 @@ Each band is chosen on **cv** over its own sweep. As of 2026-09-09:
                                       (decided 2026-09-10; see above)
     semantic   perlayer_gpt2_k256 layer 8   +0.0551 over gpt2_mean, 9/9
                                       (decided 2026-09-15; k at L8, see above)
+
+> **SUPERSEDED 2026-10-03: semantic is now `perlayer_llama8b_k1024:13`**
+> (+0.0193 cv over `perlayer_gpt2_k256:8`, 9/9). Every GPT-2 number below is
+> the previous band; see "Llama vs GPT-2" and "DECIDED 2026-10-03".
 
 **Both bands are now on one set of masks, so they can finally be put side by
 side** — the thing this file forbade until 2026-09-11. Same nine subjects, same
@@ -1356,6 +1709,45 @@ are short and reduced), not prosody. Two consequences:
 
 Word rate at r = 0.93 from the audio band is worth remembering when reading
 any audio-vs-text contrast.
+
+## CLOSED 2026-10-02: text x audio interaction adds nothing — combination is additive
+
+Band `inter` = pairwise products of the top 20 PCs of `perlayer_gpt2_k256:8`
+and `perlayer_base_emotion:11` (400 columns, PCA fit on the 24 training
+stories only; `scripts/make_interaction_band.py`). Three-band fit
+(`bands_text-audio-inter__interpc20`, `scripts/cluster/encoding_interaction.sbatch`,
+2-3 h per subject), then `--shuffle-block inter`, 1000 perms, kept model
+`text+audio`, alphas from `--from-encoding`. pc50 (2,500 columns) was probed
+on UTS04 and was worse than pc20 on both evals, so it was not run further.
+
+    subject  voxels   mean    FDR   p<.05 unc   cv joint - text+audio
+    UTS01     6555  -0.0015    0      3.6%          -0.0007
+    UTS02    11254  -0.0005    0      6.7%          -0.0007
+    UTS03    16395  -0.0008    0      3.0%          -0.0006
+    UTS04     1706  -0.0018    0      1.2%          -0.0006
+    UTS05     1736  -0.0026    0      1.3%          -0.0009
+    UTS06     3192  +0.0003    0      2.9%          -0.0005
+    UTS07     2489  -0.0020    0      2.5%          -0.0005
+    UTS08     2608  +0.0000    0      3.7%          -0.0006
+    UTS09     4092  -0.0028    0      1.1%          -0.0006
+
+**0 FDR voxels in 9/9, cv below `text+audio` in 9/9**, and uncorrected
+p<.05 rates at or under chance. Group (`results/group/k256L8__base_emotionL11__
+inter_pc20`, 61,168 vertices): mean -0.0011, perm FDR 0, prevalence FDR 0,
+4 of 3,337 FWE vertices — isolated single vertices with |mean| <= 0.0034, one
+of them negative, i.e. the variance floor at work, not a cluster. Unlike `pred`,
+pooling does not reveal anything. The alpha grid was not binding: the
+inter band's alpha has a median of ~1e10.4, so ridge switches the band off,
+and the ~5% of voxels where its penalty is comparable to text/audio did not
+survive either.
+
+So within what a low-rank multiplicative term can express, **text and audio
+combine additively** — the integration measured by `delta` is two bands
+adding in the same voxels, not a gain-modulation of one by the other.
+Caveat for the paper: a null for 20x20 PC products is not a null for every
+non-linearity.
+
+Permutation output and nulls: `/root/prosody_nulls/bands_text-audio-inter__shuffle_inter__null/`.
 
 ## AVD: the per-dimension question, answered with p-values (2026-09-17)
 

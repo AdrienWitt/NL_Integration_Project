@@ -55,6 +55,7 @@ text -- the same trade `extract.wav2vec --per-layer` makes on the audio side::
 """
 
 import argparse
+import json
 import logging
 from pathlib import Path
 from typing import List, Optional
@@ -99,6 +100,22 @@ def parse_layers(spec: str, n_layers: int) -> List[int]:
         else:
             out.append(int(part))
     return out
+
+
+def parse_stories(spec: str) -> List[str]:
+    """Comma-separated names, or a JSON file: a list, or a dict holding one
+    under `common_stories` (what scripts/make_common_stories.py writes).
+
+    A 30-layer, 3072-d per-layer store is ~10 GB over 84 stories and ~3 GB over
+    the 25 every subject heard, which is all a sweep on common stories reads.
+    """
+    path = Path(spec)
+    if path.suffix == ".json" and path.exists():
+        data = json.loads(path.read_text())
+        if isinstance(data, dict):
+            data = data["common_stories"]
+        return [str(s) for s in data]
+    return [s.strip() for s in spec.split(",") if s.strip()]
 
 
 def tokenize_words(words: List[str], tokenizer) -> List[Optional[List[int]]]:
@@ -220,10 +237,17 @@ def main(argv=None) -> None:
                         "sweep costs disk rather than another pass over the "
                         "text; run_semantic_sweep reads it as 'store:<layer>'")
     p.add_argument("--out-name", default=None)
-    p.add_argument("--stories", default=None)
+    p.add_argument("--stories", default=None,
+                   help="comma-separated story names, or a path to a JSON "
+                        "list / a common_stories_*.json file. Default: all")
     p.add_argument("--device", default=None, choices=["cuda", "cpu"])
     p.add_argument("--fp16", action="store_true",
                    help="half precision; worth it for models above ~1B")
+    p.add_argument("--bf16", action="store_true",
+                   help="bfloat16 -- the dtype Llama 3 was trained in, and "
+                        "safer than --fp16 for it: its outlier activations "
+                        "can leave float16's range. Needs compute capability "
+                        ">= 8.0")
     p.add_argument("--max-tokens", type=int, default=None,
                    help="cap the forward-pass window (default: the model's own "
                         "limit, capped at 4096 for memory)")
@@ -242,12 +266,21 @@ def main(argv=None) -> None:
 
     device = torch.device(args.device or
                           ("cuda" if torch.cuda.is_available() else "cpu"))
+    if args.fp16 and args.bf16:
+        raise SystemExit("--fp16 and --bf16 are exclusive")
+    dtype = torch.float32
+    if device.type == "cuda":
+        if args.bf16:
+            if not torch.cuda.is_bf16_supported():
+                raise SystemExit(f"--bf16 on {torch.cuda.get_device_name()}, "
+                                 f"which does not support it")
+            dtype = torch.bfloat16
+        elif args.fp16:
+            dtype = torch.float16
+
     tokenizer = AutoTokenizer.from_pretrained(args.model)
-    model = AutoModel.from_pretrained(
-        args.model,
-        torch_dtype=torch.float16 if (args.fp16 and device.type == "cuda")
-        else torch.float32,
-    ).to(device).eval()
+    model = AutoModel.from_pretrained(args.model, torch_dtype=dtype
+                                      ).to(device).eval()
 
     cfg = model.config
     n_layers = getattr(cfg, "num_hidden_layers", None) or cfg.n_layer
@@ -282,8 +315,7 @@ def main(argv=None) -> None:
     out_dir = Path(FEATURES_DIR) / (args.out_name or default_name)
     ensure_dirs(out_dir)
 
-    stories = ([s.strip() for s in args.stories.split(",") if s.strip()]
-               if args.stories
+    stories = (parse_stories(args.stories) if args.stories
                else sorted(q.stem for q in Path(TEXTGRID_DIR).glob("*.TextGrid")))
 
     log.info(f"Model  : {args.model} ({n_layers} layers, {dim}-d) on {device}")

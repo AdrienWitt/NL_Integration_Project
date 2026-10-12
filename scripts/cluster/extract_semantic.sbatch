@@ -21,6 +21,17 @@
 #   sbatch --array=0-0 --export=ALL,KS="16",LAYERS="0-12",PER_LAYER=1,\
 #          OUTNAMES="perlayer_gpt2_k16" scripts/cluster/extract_semantic.sbatch
 #
+# Another model: MODELS, index-aligned like KS. Llama is gated -- accept the
+# licence on the hub and `huggingface-cli login` on the login node, then
+# pre-download there (jobs run offline). PRECISION=bf16 for anything above ~1B,
+# and STORIES to keep a per-layer store to the 25 stories a common-story sweep
+# reads (a 29 x 3072 store is ~3 GB there, ~10 GB over all 84):
+#   sbatch --array=0-5 --gres=gpu:1,VramPerGpu:40G \
+#          --constraint="COMPUTE_CAPABILITY_8_0|COMPUTE_CAPABILITY_8_6|COMPUTE_CAPABILITY_8_9|COMPUTE_CAPABILITY_9_0" \
+#          --export=ALL,MODELS="...",KS="...",LAYERS="...",PER_LAYER=1,\
+#          PRECISION=bf16,STORIES=common_stories_all9.json,OUTNAMES="..." \
+#          scripts/cluster/extract_semantic.sbatch
+#
 # ===========================================================================
 # The semantic context-length bands: one store per k, all 84 stories.
 # ===========================================================================
@@ -63,7 +74,7 @@ export PYTHONUNBUFFERED=1
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"
 export DATA_DIR=$PROJECT/data
-export HF_HOME=$HOME/.cache/huggingface
+export HF_HOME=${HF_HOME:-$HOME/.cache/huggingface}
 export HF_HUB_OFFLINE=1
 
 # KS / STRIDES / OUTNAMES are space-separated and index-aligned with the array.
@@ -77,11 +88,27 @@ read -r -a KS_A <<< "${KS:-0 1 4 16 64 256}"
 read -r -a ST_A <<< "${STRIDES:-}"
 read -r -a ON_A <<< "${OUTNAMES:-}"
 read -r -a LY_A <<< "${LAYERS:-}"
+read -r -a MO_A <<< "${MODELS:-}"
 
 K=${KS_A[$SLURM_ARRAY_TASK_ID]}
 STRIDE=${ST_A[$SLURM_ARRAY_TASK_ID]:-0.1}
 OUT=${ON_A[$SLURM_ARRAY_TASK_ID]:-gpt2_k${K}}
 LAYER=${LY_A[$SLURM_ARRAY_TASK_ID]:-last}
+MODEL=${MO_A[$SLURM_ARRAY_TASK_ID]:-gpt2}
+
+PREC_FLAG=""
+if [ -n "${PRECISION:-}" ]; then
+    PREC_FLAG="--${PRECISION}"
+fi
+# A bare common_stories_*.json name resolves where the encoders look for it.
+STORIES_FLAG=""
+if [ -n "${STORIES:-}" ]; then
+    SPEC="$STORIES"
+    if [ ! -e "$SPEC" ] && [ -e "data/derivative/$SPEC" ]; then
+        SPEC="data/derivative/$SPEC"
+    fi
+    STORIES_FLAG="--stories $SPEC"
+fi
 
 # `[ x ] && y` is the wrong shape under `set -e`: a false test makes the whole
 # line return 1 and kills the job before it starts.
@@ -90,16 +117,17 @@ if [ "${PER_LAYER:-0}" = "1" ]; then
     PER_LAYER_FLAG="--per-layer"
 fi
 
-echo "=== task $SLURM_ARRAY_TASK_ID : context-words $K, stride-frac $STRIDE, "\
+echo "=== RUN ${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID} started $(date -Iseconds) on $(hostname) ==="
+echo "=== task $SLURM_ARRAY_TASK_ID : $MODEL, context-words $K, stride-frac $STRIDE, "\
      "layers $LAYER ${PER_LAYER_FLAG:-(averaged)} ==="
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
 python -m extract.context_lm \
-    --model gpt2 \
+    --model "$MODEL" \
     --context-words "$K" \
     --stride-frac "$STRIDE" \
     --layers "$LAYER" \
-    $PER_LAYER_FLAG \
+    $PER_LAYER_FLAG $PREC_FLAG $STORIES_FLAG \
     --out-name "$OUT"
 
 echo "=== task $SLURM_ARRAY_TASK_ID done in $((SECONDS / 60)) min ==="

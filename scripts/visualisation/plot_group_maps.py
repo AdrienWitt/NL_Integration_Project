@@ -31,6 +31,8 @@ Usage
     python scripts/visualisation/plot_group_maps.py --root results/group/<run> --test none
     python scripts/visualisation/plot_group_maps.py --root results/group/<run> --stats delta \\
         --test p_signflip_fwe
+    python scripts/visualisation/plot_group_maps.py --root results/group/<run> \\
+        --test p_tfce_fwe        # after `group_maps.py --tfce`
 """
 from __future__ import annotations
 
