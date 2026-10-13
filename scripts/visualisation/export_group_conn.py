@@ -74,7 +74,7 @@ sys.path.insert(0, str(_HERE.parent.parent))
 sys.path.insert(0, str(_HERE))
 
 import config  # noqa: E402
-from plot_group_maps import DEFAULT_TEST, FALLBACK_TEST, discover  # noqa: E402
+from plot_group_maps import DEFAULT_TEST, FALLBACK_TEST, discover, p_path  # noqa: E402
 
 log = logging.getLogger("export_group_conn")
 
@@ -122,7 +122,7 @@ def masked_values(root: Path, stat: str, test: str, alpha: float) -> np.ndarray:
     out = np.where(np.isfinite(mean), mean, 0.0).astype(np.float32)
     if test == "none":
         return out
-    p = np.load(root / f"{stat}__{test}.npy")
+    p = np.load(p_path(root, stat, test))
     sig = np.isfinite(p) & (p < alpha) & np.isfinite(mean)
     return np.where(sig, out, 0.0).astype(np.float32)
 
@@ -159,7 +159,7 @@ def main(argv=None) -> int:
 
     for stat in discover(args.root, args.stats):
         test = args.test or DEFAULT_TEST.get(stat, FALLBACK_TEST)
-        if test != "none" and not (args.root / f"{stat}__{test}.npy").exists():
+        if test != "none" and not p_path(args.root, stat, test).exists():
             log.warning("%s: no %s, writing unthresholded", stat, test)
             test = "none"
         values = masked_values(args.root, stat, test, args.alpha)

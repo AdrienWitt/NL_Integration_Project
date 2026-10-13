@@ -1119,6 +1119,19 @@ text depth, text context; cv and holdout):
 inference; the carried bands' maps with permutations are the marginalfixed
 group maps.
 
+2026-10-13: null calibration on the final models (`stats.diagnose_permutation`,
+outputs in `<run>/diagnostics/`): Llama x emotion FPR 0.0469 / 0.0499 / IU
+0.0053, Llama x openSMILE 0.0490 / 0.0499 / IU 0.0032, nominal 0.05 -- same
+as the GPT-2 run. CONN surfaces thresholded at TFCE FWE written for every
+paper map (`export_group_conn.py --test p_tfce_perm_fwe`, which now also looks
+in `clusters/`; `/root/prosody_nulls/run_diag_conn.sh`); vertex counts match
+the paper table. Rendering is done on the MATLAB machine from
+`results/group/paper_table/PROMPT_conn_figures.md`.
+Valence vs arousal: the inferential map is valence|A+D (TFCE). The direct
+difference r_valence - r_arousal has no null of its own and favours arousal
+at most vertices (consistent >=8/9: valence 9 vertices, arousal 2,184), so it
+is a supplementary effect map only.
+
 ## Inference: what the irony project did, and what carries over (2026-09-08)
 
 `../Clean_Irony/permutation_test.py` and `diagnostic_permutations.py` are the
