@@ -102,5 +102,5 @@ python3 scripts/paper_table.py > $N/paper_table.log 2>&1
 python3 scripts/paper_tables.py > $N/paper_tables.log 2>&1
 # S5 needs the CONN renders of k64/k512 (MATLAB, by hand); the other figures re-assemble.
 python3 scripts/visualisation/assemble_paper_figures.py > $N/assemble.log 2>&1 || echo "assemble: see $N/assemble.log (S5 waits for the CONN renders)"
-python3 scripts/visualisation/assemble_paper_figures.py --test z3.09_extent__p_fwe > $N/assemble_z309.log 2>&1 || echo "assemble z3.09: see $N/assemble_z309.log"
+# (cluster-extent figures dropped from the paper 2026-10-14: TFCE only)
 echo ALLDONE2

@@ -7,8 +7,11 @@ re-tested here):
     mean       group mean over vertices covered by >= --min-subjects subjects
     perm FDR   vertices with group-permutation p < .05 after BH
     TFCE FWE   vertices with group-permutation TFCE p < .05 (group_clusters.py)
-    clusters   significant z>3.09 extent clusters, and the largest few with
-               their peak Glasser area
+    clusters   connected components of the TFCE-significant vertices (what
+               the figures show), and the largest few with their peak Glasser
+               area
+    extent     vertices significant by cluster-extent FWE at z > 3.09, the
+               other reading of the same permutation null (reported only)
 
 Integration rows use the conjunction: `delta` for mean/perm FDR, the
 conjunction TFCE map, and the integration cluster table.
@@ -80,9 +83,10 @@ def row(section, label, d, stat, kind, min_subj, n_top):
     cov = (nsub >= min_subj) & np.isfinite(mean)
     tfce = load(gd / "clusters" / f"{stat}__p_tfce_perm_fwe.npy")
     if kind == "integration":
-        csv = gd / "clusters" / "integration__z3.09_extent.csv"
+        csv = gd / "clusters" / "integration__tfce.csv"
     else:
-        csv = gd / "clusters" / f"{stat}__z3.09_extent__clusters.csv"
+        csv = gd / "clusters" / f"{stat}__tfce__clusters.csv"
+    ext = load(gd / "clusters" / f"{stat}__z3.09_extent__p_fwe.npy")
     n_cl, desc = top_clusters(csv, n_top)
     sig = cov & (fdr < 0.05) if fdr is not None else None
     return {
@@ -93,8 +97,9 @@ def row(section, label, d, stat, kind, min_subj, n_top):
                            if sig is not None and sig.any() else np.nan),
         "perm_fdr": int(sig.sum()) if sig is not None else np.nan,
         "tfce_fwe": int((cov & (tfce < 0.05)).sum()) if tfce is not None else np.nan,
-        "z3.09_clusters": n_cl,
+        "clusters": n_cl,
         "largest_clusters": desc,
+        "extent_fwe": int((cov & (ext < 0.05)).sum()) if ext is not None else np.nan,
     }
 
 
@@ -159,7 +164,7 @@ def main(argv=None):
     a.out.mkdir(parents=True, exist_ok=True)
     df.to_csv(a.out / "paper_table.csv", index=False)
     cols = ["map", "mean", "mean_where_sig", "perm_fdr", "tfce_fwe",
-            "z3.09_clusters", "largest_clusters"]
+            "clusters", "largest_clusters", "extent_fwe"]
     with open(a.out / "paper_table.md", "w") as f:
         for sec, sub in df.groupby("section", sort=False):
             f.write(f"\n### {sec}\n\n" + sub[cols].to_markdown(index=False) + "\n")

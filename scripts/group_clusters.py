@@ -55,7 +55,9 @@ Outputs, under `<group-dir>/clusters/`, method = tfce | z<thr>_{extent,mass}:
     <stat>__z.npy, __tfce_perm.npy, __p_tfce_perm_fwe.npy   (327,684 long)
     <stat>__<method>__p_fwe.npy, <stat>__z<thr>__cluster_id.npy
     delta__<method>__p_fwe.npy, delta__<method>__cluster_id.npy
-    <stat>__<method>__clusters.csv       significant component clusters
+    <stat>__<method>__clusters.csv       significant component clusters (for
+                                         tfce: components of the significant
+                                         vertices, descriptive)
     integration__<method>.csv            integration clusters, ranked by delta
     summary.json
 Then `scripts/visualisation/group_report.py --root <group-dir>` for the HTML.
@@ -336,6 +338,33 @@ def integration_table(p_conj, adj, area_mm2, hemi_split, glasser, maps,
     return table, conj_id, dropped
 
 
+def tfce_table(p_tfce, z, adj, area_mm2, hemi_split, glasser, maps, alpha,
+               min_area):
+    """Connected components of the TFCE-significant vertices of one map.
+
+    TFCE gives a p-value per vertex, not per cluster, so these components are
+    a description of the thresholded map (what the figures show), not a
+    further test: p_fwe is the smallest vertex p in the component, and the
+    peak is the vertex of largest z. Components under `min_area` mm2 are left
+    out, as for integration."""
+    sig = np.nan_to_num(p_tfce, nan=1.0) < alpha
+    idx = np.flatnonzero(sig)
+    rows = []
+    if idx.size:
+        _, lab = connected_components(adj[idx][:, idx], directed=False)
+        for c in range(lab.max() + 1):
+            members = idx[lab == c]
+            if area_mm2[members].sum() < min_area:
+                continue
+            peak = members[np.nanargmax(z[members])]
+            rows.append(describe(members, hemi_split, area_mm2, glasser, maps, {
+                "p_fwe": round(float(np.nanmin(p_tfce[members])), 4),
+                "peak_z": round(float(z[peak]), 2),
+                "peak_area": glasser[0][peak]}))
+    rows.sort(key=lambda row: -row["area_mm2"])
+    return [dict(cluster=i + 1, **row) for i, row in enumerate(rows)]
+
+
 def tag(thr: float, kind: str) -> str:
     return f"z{thr:g}_{kind}"
 
@@ -343,7 +372,7 @@ def tag(thr: float, kind: str) -> str:
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--perm-dir", type=Path, required=True,
+    ap.add_argument("--perm-dir", type=Path, default=None,
                     help="subject subdirectories with *_null.npy")
     ap.add_argument("--group-dir", type=Path, required=True,
                     help="the matching results/group/<run> (conditional)")
@@ -366,18 +395,15 @@ def main(argv=None):
                     help="cluster these statistics, each on its own, with no "
                          "conjunction (default: the text/audio components "
                          "and their conjunction)")
+    ap.add_argument("--tfce-tables-only", action="store_true",
+                    help="no inference: rewrite <stat>__tfce__clusters.csv "
+                         "from the z and TFCE p maps already in clusters/")
     ap.add_argument("--jobs", type=int, default=max(1, mp.cpu_count() - 2))
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     out = args.group_dir / "clusters"
     out.mkdir(parents=True, exist_ok=True)
-    cache = args.cache_dir or args.perm_dir / "_group_cache"
-    subject_dirs = sorted(d for d in args.perm_dir.iterdir()
-                          if d.is_dir() and (d / "voxel_mask.npy").exists())
-    log.info(f"{len(subject_dirs)} subjects, z > {args.z}, "
-             f"family n >= {args.min_subjects}")
-
     adj, area_mm2 = gm.fsaverage_mesh()
     hemi_split = area_mm2.size // 2
     sys.path.insert(0, str(Path(__file__).resolve().parent / "visualisation"))
@@ -389,6 +415,32 @@ def main(argv=None):
         arr[covered] = values
         return arr
 
+    stats = tuple(args.stats) if args.stats else COMPONENTS
+    if args.tfce_tables_only:
+        g = args.group_dir
+        for name in stats:
+            maps = {f"mean_{name}": np.load(g / f"{name}__mean.npy")}
+            if args.marginal_dir:
+                for key, f in (("r_text", "text__mean.npy"),
+                               ("r_audio", "audio__mean.npy"),
+                               ("preference", "preference__mean.npy")):
+                    if (args.marginal_dir / f).exists():
+                        maps[key] = np.load(args.marginal_dir / f)
+            rows = tfce_table(np.load(out / f"{name}__p_tfce_perm_fwe.npy"),
+                              np.load(out / f"{name}__z.npy"), adj, area_mm2,
+                              hemi_split, glasser, maps, args.alpha,
+                              args.min_area)
+            write_csv(rows, out / f"{name}__tfce__clusters.csv")
+            log.info(f"  {name}: {len(rows)} TFCE components")
+        return 0
+
+    if args.perm_dir is None:
+        ap.error("--perm-dir is required unless --tfce-tables-only")
+    cache = args.cache_dir or args.perm_dir / "_group_cache"
+    subject_dirs = sorted(d for d in args.perm_dir.iterdir()
+                          if d.is_dir() and (d / "voxel_mask.npy").exists())
+    log.info(f"{len(subject_dirs)} subjects, z > {args.z}, "
+             f"family n >= {args.min_subjects}")
     p2f = gm._load_projector_module()
     res = {}
     summary = {"z_thresholds": args.z, "alpha": args.alpha,
@@ -464,8 +516,13 @@ def main(argv=None):
     methods = ["tfce"] + [tag(t, k) for t in args.z for k in ("extent", "mass")]
     for method in methods:
         entry = {}
-        # Component cluster tables (not for TFCE: it has no clusters).
-        if method != "tfce":
+        if method == "tfce":
+            for name in stats:
+                write_csv(tfce_table(res[name]["p"]["tfce"], res[name]["z"],
+                                     adj, area_mm2, hemi_split, glasser, maps,
+                                     args.alpha, args.min_area),
+                          out / f"{name}__tfce__clusters.csv")
+        else:
             for name in stats:
                 R, rows = res[name], []
                 cid, p = R["cid"][method], R["p"][method]

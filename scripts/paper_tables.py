@@ -5,14 +5,14 @@ exist. Nothing is re-tested here; run `scripts/paper_table.py` first (it
 writes paper_table.csv and the within-subject CSVs this script reads).
 
     Table 1    within-subject scores and contrasts (cv / holdout, n of 9)
-    Table 2    group inference per map: mean, TFCE FWE vertices, z>3.09
+    Table 2    group inference per map: mean, TFCE FWE vertices, TFCE components
                clusters, and the Desikan regions where the TFCE-significant
                effect is largest (instead of cluster peak labels, which name
                one Glasser area for clusters spanning most of a lobe)
     S1         band selection: every configuration, cv and holdout
     S2         per-subject scores
     S3         full group table (adds perm FDR and mean where significant)
-    S4         every z>3.09 extent cluster of every paper map
+    S4         every component of the TFCE-significant vertices of every paper map
     S5         Desikan parcels for the integration maps (emotion, openSMILE)
     S6         integration x context: TFCE vertices per k, paired k contrasts
     S7         null calibration of the two final integration models
@@ -110,7 +110,7 @@ def table2():
             "section": sec, "map": label, "mean": p["mean"],
             "tfce_fwe": int(sig.sum()),
             "pct_covered": round(100 * sig.sum() / cov.sum(), 1),
-            "z3.09_clusters": p["z3.09_clusters"],
+            "clusters": p["clusters"],
             "regions (mean effect where significant)":
                 regions(mean, sig, lab, names) or "-",
         })
@@ -124,8 +124,9 @@ def table2():
                 "group-permutation FWE p < .05 (1000 permutations; "
                 "Draper-Stoneman conditional nulls for 'X | Y'; integration "
                 "= intersection-union of the two conditional tests). "
-                "z3.09_clusters: significant clusters at cluster-forming "
-                "z > 3.09, cluster-extent FWE p < .05. Regions: Desikan "
+                "clusters: connected components of the TFCE-significant "
+                "vertices. extent_fwe: vertices significant by cluster-extent "
+                "FWE p < .05 at z > 3.09, same null. Regions: Desikan "
                 "parcels with >= 50 TFCE-significant vertices, ranked by mean "
                 "effect over those vertices (top 4).\n\n"
                 "Preference r_text - r_emotion (no null of its own): mean "
@@ -199,13 +200,15 @@ def s2_subjects():
 def s3_full():
     pt = pd.read_csv(PT / "paper_table.csv")
     cols = ["section", "map", "n_covered", "mean", "mean_where_sig",
-            "perm_fdr", "tfce_fwe", "z3.09_clusters", "largest_clusters"]
+            "perm_fdr", "tfce_fwe", "clusters", "largest_clusters", "extent_fwe"]
     md(pt[cols], OUT / "S3_group_full",
        "Supplementary Table 3. Group inference, all tests",
        "perm_fdr: group permutation, BH-FDR q < .05 per vertex. tfce_fwe: "
-       "TFCE FWE p < .05 (the threshold of the figures). z3.09_clusters / "
-       "largest_clusters: cluster-extent FWE p < .05 at z > 3.09, with each "
-       "cluster's size and peak Glasser area. Large clusters span most of "
+       "TFCE FWE p < .05 (the threshold of the figures). clusters / "
+       "largest_clusters: connected components of the TFCE-significant "
+       "vertices, with each component's size and peak Glasser area. "
+       "extent_fwe: vertices significant by cluster-extent FWE p < .05 at "
+       "z > 3.09 against the same null. Large components span most of "
        "the temporal lobe, so the peak label names one area of a much larger "
        "territory; see S4 for every area each cluster covers.")
 
@@ -214,8 +217,8 @@ def s4_clusters():
     out = []
     for sec, label, d, stat, kind in ROWS:
         cd = G / d / "clusters"
-        csv = (cd / "integration__z3.09_extent.csv" if kind == "integration"
-               else cd / f"{stat}__z3.09_extent__clusters.csv")
+        csv = (cd / "integration__tfce.csv" if kind == "integration"
+               else cd / f"{stat}__tfce__clusters.csv")
         if not csv.exists():
             continue
         c = pd.read_csv(csv)
@@ -236,9 +239,10 @@ def s4_clusters():
         out.append(c.sort_values("n_vertices", ascending=False))
     df = pd.concat(out, ignore_index=True)
     md(df, OUT / "S4_clusters",
-       "Supplementary Table 4. Clusters at z > 3.09",
-       "Every significant cluster (cluster-forming z > 3.09, cluster-extent "
-       "FWE p < .05) of every paper map, largest first within map. "
+       "Supplementary Table 4. Clusters of the TFCE maps",
+       "Every connected component of TFCE-significant vertices (FWE "
+       "p < .05, at least 20 mm2) of every paper map, largest first within "
+       "map; p_fwe is the smallest vertex p in the component. "
        "Glasser (HCP-MMP1) areas.")
 
 
