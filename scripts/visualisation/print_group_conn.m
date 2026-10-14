@@ -19,9 +19,13 @@ function out = print_group_conn(runs, varargin)
 p = inputParser; p.KeepUnmatched = true;
 p.addParameter('Layout', 'mosaic');
 p.addParameter('Stats', {});          % restrict to these statistic names
+p.addParameter('Tests', {});          % restrict to these test suffixes
+p.addParameter('Vhi', []);            % magnitude maps: fixed bar [0 Vhi]
 p.parse(varargin{:});
 layout = p.Results.Layout;
 stats = cellstr(p.Results.Stats);
+tests = cellstr(p.Results.Tests);
+vhi = p.Results.Vhi;
 extra = namedargs(p.Unmatched);
 
 here = fileparts(mfilename('fullpath'));
@@ -63,6 +67,11 @@ for i = 1:numel(runs)
         for s = 1:numel(stats), keep = keep | startsWith(names, [stats{s} '__']); end
         names = names(keep); iscurv = iscurv(keep);
     end
+    if ~isempty(tests) && ~isempty(tests{1})
+        keep = iscurv;
+        for s = 1:numel(tests), keep = keep | endsWith(names, ['__' tests{s} '.surf.nii']); end
+        names = names(keep); iscurv = iscurv(keep);
+    end
     names = [names(iscurv), names(~iscurv)];       % curvature first
     odir = fullfile(cdir, ['fig_' layout]);
     fprintf('\n[%s] %d maps -> %s\n', runs{i}, numel(names), odir);
@@ -80,6 +89,8 @@ for i = 1:numel(runs)
             % redraws this exact colormap for the publication colorbar.
             Y = spm_read_vols(spm_vol(f)); Y = Y(isfinite(Y) & Y ~= 0);
             m = max(abs(Y)); if isempty(m) || m == 0, m = 1; end
+            % A shared Vhi gives compared signed maps one [-Vhi Vhi] scale.
+            if ~isempty(vhi), m = vhi; end
             style = {'Colormap', 'bluewhitered', 'Vrange', [-m m]};
             % A signed map with its own <stat>.cmap.txt (e.g. a winner map,
             % where the hue must stay visible at small |value|) uses that
@@ -91,6 +102,8 @@ for i = 1:numel(runs)
             end
         else
             style = {'Vlo', 0};                          % magnitude: bar from 0
+            % A shared [0 Vhi] puts panels that are compared on one scale.
+            if ~isempty(vhi), style = {'Vrange', [0 vhi]}; end
             % conn_figures.py writes <stat>.cmap.txt (96x3) for statistics
             % with their own sequential hue; it draws the SVG bar from the
             % same file, so surface and colorbar cannot disagree.

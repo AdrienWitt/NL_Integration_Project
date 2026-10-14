@@ -159,6 +159,9 @@ def summarise_run(run_dir: Path, label: str, stats: tuple[str, ...],
         p_perm = _load(run_dir, stat, "p_perm_fdr")
         p_prev = _load(run_dir, stat, "p_prevalence_fdr")
         p_fwe = _load(run_dir, stat, "p_signflip_fwe")
+        # TFCE group-permutation FWE, the threshold of every paper figure
+        # (written by group_clusters.py under clusters/).
+        p_tfce = _load(run_dir / "clusters", stat, "p_tfce_perm_fwe")
 
         # A vertex is "covered" if the group mean is defined there. That is
         # exactly the --min-subjects family group_maps.py wrote; recomputing it
@@ -185,7 +188,7 @@ def summarise_run(run_dir: Path, label: str, stats: tuple[str, ...],
                 if n_subj is not None and n_cov:
                     row["mean_n_subjects"] = float(np.nanmean(n_subj[in_roi]))
                 for name, pmap in (("perm", p_perm), ("prevalence", p_prev),
-                                   ("fwe", p_fwe)):
+                                   ("fwe", p_fwe), ("tfce", p_tfce)):
                     if pmap is None or not n_cov:
                         row[f"n_sig_{name}"] = np.nan
                         row[f"frac_sig_{name}"] = np.nan
@@ -254,7 +257,8 @@ def main() -> None:
         if sub.empty:
             continue
         for value, title in (("mean_r", "mean r"),
-                             ("frac_sig_perm", "fraction significant (perm FDR)")):
+                             ("frac_sig_perm", "fraction significant (perm FDR)"),
+                             ("frac_sig_tfce", "fraction significant (TFCE FWE)")):
             pivot = sub.pivot_table(index=["hemi", "roi"], columns="run",
                                     values=value, sort=False)
             # Preserve the order --run was given in.

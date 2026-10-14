@@ -5,9 +5,9 @@ the text band's context length, per hemisphere.
 
 Reads `results/group/roi_context_curve_llama.csv` (written by
 `scripts/roi_context_curve.py`): Desikan-based ROIs, group mean over covered
-vertices, fraction of covered vertices significant (group permutation FDR).
-Filled markers: >= 50% of the ROI's covered vertices significant; open
-markers: fewer.
+vertices, fraction of covered vertices significant (group permutation FDR and TFCE FWE).
+Filled markers: >= 50% of the ROI's covered vertices significant (TFCE FWE
+p < .05, the paper's threshold); open markers: fewer.
 
 Read with the confound in mind: audio|text erodes as the text band strengthens,
 so only ROIs where delta GROWS with k (Heschl, STG, banks STS, precentral) are
@@ -33,7 +33,7 @@ ROIS = [("HeschlTransverse", "Heschl", "#2a78d6"),
 STATS = [("delta_audio_given_text", "Audio beyond text"),
          ("delta_text_given_audio", "Text beyond audio"),
          ("delta", "Integration (delta)")]
-K = ["k4", "k16", "k256", "k1024"]
+K = ["k4", "k16", "k64", "k256", "k512", "k1024"]
 INK, MUTED, GRID = "#1f1f1e", "#6b6a64", "#e4e3de"
 
 
@@ -57,7 +57,7 @@ def main(argv=None):
                 s = (d[(d.stat == stat) & (d.hemi == hemi) & (d.roi == roi)]
                      .set_index("run").reindex(K))
                 ax.plot(x, s.mean_r, color=c, lw=2, label=label)
-                for xi, (r, f) in enumerate(zip(s.mean_r, s.frac_sig_perm)):
+                for xi, (r, f) in enumerate(zip(s.mean_r, s.frac_sig_tfce)):
                     ax.plot(xi, r, "o", ms=6, color=c, mec=c, mew=1.4,
                             mfc=c if f >= 0.5 else "white")
             ax.axhline(0, color=MUTED, lw=0.8)
@@ -79,7 +79,7 @@ def main(argv=None):
     h, l = axs[0, 0].get_legend_handles_labels()
     h.append(plt.Line2D([], [], ls="", marker="o", ms=6, mfc="white",
                         mec=MUTED, mew=1.4))
-    l.append("open marker: < 50% of covered vertices significant (perm FDR)")
+    l.append("open marker: < 50% of covered vertices significant (TFCE FWE)")
     fig.legend(h, l, loc="outside upper center", ncol=7, frameon=False,
                fontsize=8)
     for ext in ("png", "pdf", "svg"):

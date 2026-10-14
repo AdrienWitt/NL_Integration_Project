@@ -101,13 +101,7 @@ def _gamma_diverging(gamma: float = DIVERGING_GAMMA, floor: float = DIVERGING_FL
 
 # ---- titles ---------------------------------------------------------------
 TITLES = {
-    "text": "Text band (GPT-2, layer 8, 256 words of context)",
-    "audio": "Audio band (wav2vec2 emotion, layer 11)",
     "joint": "Joint model (text + audio)",
-    "delta": "Integration: text and audio each add beyond the other",
-    "delta_audio_given_text": "Audio beyond text",
-    "delta_text_given_audio": "Text beyond audio",
-    "preference": "Preference (r text − r audio)",
     "arousal": "Arousal", "dominance": "Dominance", "valence": "Valence",
 }
 #: Complete titles, used as-is. The partition maps were thresholded when they
@@ -146,6 +140,8 @@ SEQUENTIAL = {
 }
 
 TEST_LABELS = {
+    "p_tfce_perm_fwe": "TFCE, group permutation FWE p < .05",
+    "z3.09_extent__p_fwe": "z > 3.09 (≈ p < .001), cluster FWE p < .05",
     "p_perm_fdr": "group permutation, q < .05 FDR",
     "p_prevalence_fdr": "prevalence, q < .05 FDR",
     "p_signflip_fwe": "sign-flip FWE, p < .05",
@@ -153,16 +149,52 @@ TEST_LABELS = {
 }
 
 
-def title_for(stat: str, test: str) -> str:
+#: Band names as they appear in titles, for the names used in band-vs-band runs.
+BAND_NAMES = {"opensmile": "openSMILE", "avd": "AVD", "emotion": "emotion wav2vec2"}
+
+
+def bands_of(run: str) -> dict[str, str]:
+    """What `text` and `audio` mean in a run, read off its directory name
+    (`llama8bk<K>L<L>__<audio>__<test>`, or the older `k<K>L<L>__...`)."""
+    out = {"text": "text", "audio": "audio", "text_long": "Text band",
+           "audio_long": "Audio band"}
+    if (m := re.match(r"(llama8b)?k(\d+)L(\d+)__", run)):
+        lm = "Llama-3.1-8B" if m[1] else "GPT-2"
+        out["text_long"] = f"Text band ({lm}, layer {m[3]}, {m[2]} words of context)"
+        if m[2] != "1024" or not m[1]:
+            out["text"] = f"text (k = {m[2]})"
+    if "__opensmile__" in run:
+        out["audio"] = "openSMILE"
+        out["audio_long"] = "Audio band (openSMILE eGeMAPS, 88 features)"
+    elif "base_emotionL11" in run:
+        out["audio_long"] = "Audio band (wav2vec2 emotion, layer 11)"
+    return out
+
+
+def title_for(stat: str, test: str, run: str = "") -> str:
     if stat in FULL_TITLES:
         return FULL_TITLES[stat]
+    b = bands_of(run)
     if stat == "preference" and test == "unthresholded":
-        return "Preference, r text \u2212 r audio (all covered vertices)"
-    if stat in TITLES:
+        return f"Preference, r {b['text']} \u2212 r {b['audio']} (all covered vertices)"
+    if stat == "text":
+        base = b["text_long"]
+    elif stat == "audio":
+        base = b["audio_long"]
+    elif stat == "joint" and run.startswith("avd"):
+        base = "Affective dimensions (arousal + dominance + valence)"
+    elif stat == "preference":
+        base = f"Preference (r {b['text']} \u2212 r {b['audio']})"
+    elif stat == "delta":
+        base = f"Integration: {b['text']} and {b['audio']} each add beyond the other"
+    elif stat in TITLES:
         base = TITLES[stat]
     elif (m := re.fullmatch(r"delta_(.+)_given_(.+)", stat)):
-        pretty = lambda s: s.replace("+", " + ")
-        base = f"{pretty(m[1]).capitalize()} beyond {pretty(m[2])}"
+        pretty = lambda s: " + ".join(b.get(x, BAND_NAMES.get(x, x)) for x in s.split("+"))
+        first = pretty(m[1])
+        if not first.startswith("openSMILE"):          # keep its own casing
+            first = first[0].upper() + first[1:]
+        base = f"{first} beyond {pretty(m[2])}"
     else:
         base = stat.replace("_", " ").capitalize()
     return f"{base} ({TEST_LABELS.get(test, test)})"
@@ -172,13 +204,13 @@ def is_signed(stat: str) -> bool:
     return stat.startswith("preference")
 
 
-def colorbar_label(stat: str) -> str:
+def colorbar_label(stat: str, run: str = "") -> str:
     if stat.startswith("preference_valence_winner"):
         return "r of the winner (+ valence, \u2212 arousal)"
     if stat.startswith("preference_valence"):
         return "\u0394r (valence \u2212 arousal)"
     if is_signed(stat):
-        return "\u0394r (text \u2212 audio)"
+        return f"\u0394r (text \u2212 {bands_of(run)['audio']})"
     if stat.startswith("delta") or stat in ("unique_text", "unique_audio", "integration", "valence_unique"):
         return "\u0394r"
     return "r"
@@ -268,7 +300,8 @@ def set_default_printer(name: str) -> None:
 
 
 # ---- stage 1: MATLAB/CONN -------------------------------------------------
-def run_matlab(run: str, stats: list[str] | None, timeout: int) -> None:
+def run_matlab(run: str, stats: list[str] | None, timeout: int,
+               tests: list[str] | None = None, vmax: float | None = None) -> None:
     for p in (MATLAB, POWERSHELL):
         if not p.exists():
             raise SystemExit(f"not found: {p}")
@@ -278,12 +311,15 @@ def run_matlab(run: str, stats: list[str] | None, timeout: int) -> None:
     work = Path(tempfile.mkdtemp(prefix="conn_figures_", dir=wtemp))
     fn = "conn_figures_job"
     stats_m = "{" + ",".join(f"'{s}'" for s in (stats or [])) + "}"
+    tests_m = "{" + ",".join(f"'{s}'" for s in (tests or [])) + "}"
+    vhi_m = "[]" if vmax is None else repr(float(vmax))
     (work / f"{fn}.m").write_text(
         f"function {fn}()\n"
         f"addpath('{winpath(TOOLBOX / 'spm12')}');\n"
         f"addpath('{winpath(TOOLBOX / 'conn')}');\n"
         f"addpath('{winpath(_HERE)}');\n"
-        f"print_group_conn('{run}', 'Layout', '{LAYOUT}', 'Stats', {stats_m});\n"
+        f"print_group_conn('{run}', 'Layout', '{LAYOUT}', 'Stats', {stats_m}, "
+        f"'Tests', {tests_m}, 'Vhi', {vhi_m});\n"
         f"end\n", encoding="utf-8")
     logfile = work / "matlab.log"
 
@@ -478,7 +514,9 @@ def normalise_mosaic(png: Path) -> Path:
 
 
 def build_figures(root: Path, stats: list[str] | None, fmts: list[str],
-                  dpi: int | None = None) -> int:
+                  dpi: int | None = None, tests: list[str] | None = None,
+                  vmax: float | None = None) -> int:
+    vmax_shared = vmax
     mosaic_dir = root / "export" / "conn" / f"fig_{LAYOUT}"
     out_dir = root / "figures_conn"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -490,6 +528,8 @@ def build_figures(root: Path, stats: list[str] | None, fmts: list[str],
             continue                       # the check is looked at, not published
         stat, _, test = stem.partition("__")
         if stats and stat not in stats:
+            continue
+        if tests and test not in tests:
             continue
         try:
             png = normalise_mosaic(png)
@@ -508,14 +548,16 @@ def build_figures(root: Path, stats: list[str] | None, fmts: list[str],
         # preference is printed symmetric about zero (print_group_conn.m).
         diverging = is_signed(stat)
         if diverging:
-            m = max(abs(vmin), abs(vmax))
+            m = vmax_shared if vmax_shared is not None else max(abs(vmin), abs(vmax))
             vmin, vmax = -m, m
         else:
             vmin = 0.0
+            if vmax_shared is not None:
+                vmax = vmax_shared          # printed with Vrange [0 vmax]
         svg = out_dir / f"{stem}.svg"
         stops = bar_stops(stat) if stat in SEQUENTIAL else None
-        svg.write_text(build_svg(png, title_for(stat, test), vmin, vmax,
-                                 colorbar_label(stat), diverging, stops),
+        svg.write_text(build_svg(png, title_for(stat, test, root.name), vmin, vmax,
+                                 colorbar_label(stat, root.name), diverging, stops),
                        encoding="utf-8")
         log.info("wrote %s  (%.3g .. %.3g)", svg.relative_to(PROJECT), vmin, vmax)
         export(svg, fmts, dpi)
@@ -529,6 +571,12 @@ def main(argv=None) -> int:
     ap.add_argument("--root", required=True, type=Path,
                     help="results/group/<run>, with export/conn already written")
     ap.add_argument("--stats", nargs="*", default=None)
+    ap.add_argument("--tests", nargs="*", default=None,
+                    help="only these test suffixes, e.g. p_tfce_perm_fwe")
+    ap.add_argument("--vmax", type=float, default=None,
+                    help="fixed colorbar [0, vmax] for magnitude maps ([-vmax, vmax] for "
+                         "signed ones), so panels "
+                         "compared with each other share one scale")
     ap.add_argument("--export", default="png", help="comma list: png,pdf or ''")
     ap.add_argument("--skip-print", action="store_true",
                     help="reuse the existing CONN mosaics, redo the layout only")
@@ -545,9 +593,9 @@ def main(argv=None) -> int:
         raise SystemExit(f"figtools not found under {STUDY3}")
     write_colormaps(root)
     if not args.skip_print:
-        run_matlab(root.name, args.stats, args.timeout)
+        run_matlab(root.name, args.stats, args.timeout, args.tests, args.vmax)
     fmts = [f.strip() for f in args.export.split(",") if f.strip()]
-    n = build_figures(root, args.stats, fmts, args.dpi)
+    n = build_figures(root, args.stats, fmts, args.dpi, args.tests, args.vmax)
     log.info("%d figure(s) in %s", n, (root / "figures_conn").relative_to(PROJECT))
     return 0 if n else 1
 
