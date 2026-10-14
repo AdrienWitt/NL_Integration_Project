@@ -38,3 +38,9 @@ ENV/
 
 # Removed code kept for reference, not part of the project
 trash/
+
+# Cluster-side clutter (SLURM stdout/err in the repo root, conda envs)
+/*_err
+/*_out
+envs/
+preprocessed_data/
