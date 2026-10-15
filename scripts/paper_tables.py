@@ -189,7 +189,7 @@ def s1_selection():
 
 def s2_subjects():
     d = pd.read_csv(PT / "within_subject_scores.csv")
-    d["model"] = d["run"].str.replace("perlayer_llama8b_k1024L13__", "llama x ") \
+    d["model"] = d["run"].str.replace("llama8b_k512L13__", "text x ").str.replace("__ctx", "") \
         + " : " + d["model"]
     df = d.pivot_table(index=["model", "eval"], columns="subject",
                        values="mean_r").round(4).reset_index()

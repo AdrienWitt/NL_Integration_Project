@@ -104,31 +104,40 @@ def row(section, label, d, stat, kind, min_subj, n_top):
 
 
 # Within-subject scores: mean r over each subject's EV mask, from the encoding
-# fits (`within_subject_scores.csv`, one row per run/eval/subject/model, pulled
+# fits at the selected configuration (2026-10-15: emotion 16 s, eGeMAPS 2 s,
+# text k512; `within_subject_scores.csv`, one row per run/eval/subject/model, pulled
 # from Baobab's results/encoding/<run>/banded/<eval>/<SUBJ>/<model>_corrs.npy).
-LL = "perlayer_llama8b_k1024L13__"
+LL = "llama8b_k512L13__"
+EM = LL + "perlayer_emoctx_r0p5_w16L11"
+EO, OA, AV = "bands_emotion-opensmile__ctx", "bands_opensmile-avd__ctx", "bands_arousal-valence__ctx"
 SCORES = [  # (label, run, model)
-    ("openSMILE", "bands_emotion-opensmile", "opensmile"),
-    ("emotion L11", "bands_emotion-opensmile", "emotion"),
-    ("AVD", "bands_opensmile-avd", "avd"),
-    ("arousal", "bands_arousal-dominance-valence", "arousal"),
-    ("dominance", "bands_arousal-dominance-valence", "dominance"),
-    ("valence", "bands_arousal-dominance-valence", "valence"),
-    ("Llama text", LL + "perlayer_base_emotionL11", "text"),
-    ("Llama + emotion (joint)", LL + "perlayer_base_emotionL11", "joint"),
-    ("Llama + openSMILE (joint)", LL + "opensmile", "joint"),
+    ("eGeMAPS", EO, "opensmile"),
+    ("emotion L12", EO, "emotion"),
+    ("AVD", OA, "avd"),
+    ("arousal", AV, "arousal"),
+    ("valence", AV, "valence"),
+    ("arousal + valence", AV, "joint"),
+    ("Llama text", LL + "opensmile_r0p5_w2", "text"),
+    ("Llama + emotion (joint)", EM, "joint"),
+    ("Llama + eGeMAPS (joint)", LL + "opensmile_r0p5_w2", "joint"),
+    ("Llama + AVD (joint)", LL + "perlayer_emoctx_r0p5_w16_avd", "joint"),
 ]
 CONTRASTS = [  # (label, (run, model) - (run, model))
-    ("emotion - openSMILE", ("bands_emotion-opensmile", "emotion"), ("bands_emotion-opensmile", "opensmile")),
-    ("AVD - openSMILE", ("bands_opensmile-avd", "avd"), ("bands_opensmile-avd", "opensmile")),
-    ("valence | A+D  (joint - A+D)", ("bands_arousal-dominance-valence", "joint"), ("bands_arousal-dominance-valence", "arousal+dominance")),
-    ("arousal | D+V", ("bands_arousal-dominance-valence", "joint"), ("bands_arousal-dominance-valence", "dominance+valence")),
-    ("dominance | A+V", ("bands_arousal-dominance-valence", "joint"), ("bands_arousal-dominance-valence", "arousal+valence")),
-    ("text - emotion (preference)", (LL + "perlayer_base_emotionL11", "text"), (LL + "perlayer_base_emotionL11", "audio")),
-    ("emotion | text  (joint - text)", (LL + "perlayer_base_emotionL11", "joint"), (LL + "perlayer_base_emotionL11", "text")),
-    ("text | emotion  (joint - audio)", (LL + "perlayer_base_emotionL11", "joint"), (LL + "perlayer_base_emotionL11", "audio")),
-    ("openSMILE | text", (LL + "opensmile", "joint"), (LL + "opensmile", "text")),
-    ("text | openSMILE", (LL + "opensmile", "joint"), (LL + "opensmile", "audio")),
+    ("emotion - eGeMAPS", (EO, "emotion"), (EO, "opensmile")),
+    ("emotion | eGeMAPS", (EO, "joint"), (EO, "opensmile")),
+    ("eGeMAPS | emotion", (EO, "joint"), (EO, "emotion")),
+    ("AVD - eGeMAPS", (OA, "avd"), (OA, "opensmile")),
+    ("AVD | eGeMAPS", (OA, "joint"), (OA, "opensmile")),
+    ("eGeMAPS | AVD", (OA, "joint"), (OA, "avd")),
+    ("valence | arousal", (AV, "joint"), (AV, "arousal")),
+    ("arousal | valence", (AV, "joint"), (AV, "valence")),
+    ("valence - arousal", (AV, "valence"), (AV, "arousal")),
+    ("text - emotion (preference)", (EM, "text"), (EM, "audio")),
+    ("emotion | text  (joint - text)", (EM, "joint"), (EM, "text")),
+    ("text | emotion  (joint - audio)", (EM, "joint"), (EM, "audio")),
+    ("eGeMAPS | text", (LL + "opensmile_r0p5_w2", "joint"), (LL + "opensmile_r0p5_w2", "text")),
+    ("text | eGeMAPS", (LL + "opensmile_r0p5_w2", "joint"), (LL + "opensmile_r0p5_w2", "audio")),
+    ("AVD | text", (LL + "perlayer_emoctx_r0p5_w16_avd", "joint"), (LL + "perlayer_emoctx_r0p5_w16_avd", "text")),
 ]
 
 
