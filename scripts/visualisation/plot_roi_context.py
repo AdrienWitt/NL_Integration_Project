@@ -28,7 +28,12 @@ ROIS = [("HeschlTransverse", "Heschl", "#2a78d6"),
         ("STG", "STG", "#eb6834"),
         ("STS_banks", "banks STS", "#1baf7a"),
         ("precentral", "precentral", "#eda100"),
-        ("IFG", "IFG", "#e87ba4"),
+        # the three IFG parts drawn separately (2026-10-15): pars orbitalis is the
+        # region of the previous study's context effect, and merging it with
+        # opercularis/triangularis hid a different curve
+        ("IFG_operc", "IFG opercularis", "#e87ba4"),
+        ("IFG_triang", "IFG triangularis", "#8e5ad6"),
+        ("IFG_orbitalis", "IFG orbitalis", "#a0522d"),
         ("MTG", "MTG", "#008300")]
 STATS = [("delta_audio_given_text", "Emotion beyond text"),
          ("delta_text_given_audio", "Text beyond emotion"),
@@ -83,7 +88,7 @@ def main(argv=None):
     h.append(plt.Line2D([], [], ls="", marker="o", ms=7, mfc="white",
                         mec=MUTED, mew=1.4))
     l.append("open marker: < 50% of covered vertices significant (TFCE FWE)")
-    fig.legend(h, l, loc="outside upper center", ncol=4, frameon=False,
+    fig.legend(h, l, loc="outside upper center", ncol=5, frameon=False,
                fontsize=FS_LEGEND)
     for ext in ("png", "pdf", "svg"):
         fig.savefig(a.out / f"roi_context.{ext}", dpi=200, facecolor="white")
