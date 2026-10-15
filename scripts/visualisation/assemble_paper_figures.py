@@ -49,7 +49,7 @@ SIZE = (3275, 2514)
 FIGS = {
     "fig3_prosody_bands": [
         ("eGeMAPS (88 features)", f"{OSM}__marginalfixed", "audio", T),
-        ("wav2vec2 emotion, layer 11 (1024 d)", f"{EMO}__marginalfixed", "audio", T),
+        ("wav2vec2 emotion, layer 12 (1024 d)", f"{EMO}__marginalfixed", "audio", T),
         ("Arousal + dominance + valence (3 d)", "avd__marginalfixed", "joint", T),
     ],
     "fig4_audio_bands_compared": [

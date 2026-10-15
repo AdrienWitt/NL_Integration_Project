@@ -168,19 +168,21 @@ def s1_selection():
     for (pa, se), sub in df.groupby(["panel", "series"]):
         df.loc[sub["cv"].idxmax(), "chosen_on_cv"] = "max"
     df[["cv", "holdout"]] = df[["cv", "holdout"]].round(4)
-    # panel B is indexed by Llama-8B layer, one series per context length
-    # (plot_selection_curves, 2026-10-14); name the model in the table
-    isB = df["panel"] == "B"
-    df.loc[isB, "series"] = "Llama-8B, " + df.loc[isB, "series"]
+    # panels of plot_selection_curves (2026-10-15): A emotion layer per seconds of
+    # preceding audio, B audio context, C Llama-8B layer per context, D text context
+    isA, isC = df["panel"] == "A", df["panel"] == "C"
+    df.loc[isA, "series"] = "emotion, " + df.loc[isA, "series"]
+    df.loc[isC, "series"] = "Llama-8B, " + df.loc[isC, "series"]
     df["x"] = df["x"].astype(int)
     df["panel"] = df["panel"].map({"A": "audio depth (layer)",
-                                   "B": "text depth (layer)",
-                                   "C": "text context (words)"})
+                                   "B": "audio context (s)",
+                                   "C": "text depth (layer)",
+                                   "D": "text context (words)"})
     md(df, OUT / "S1_selection",
        "Supplementary Table 1. Band selection",
        "Mean r over the EV mask, averaged over subjects, for every "
-       "configuration in the selection sweeps (x = layer index for depth, "
-       "words of context for panel C; openSMILE is listed at x = -1). "
+       "configuration in the selection sweeps (x = layer for depth, seconds of "
+       "preceding audio or words of context for context). "
        "Bands were chosen on cv; holdout is reported, never used to choose. "
        "'max' marks the cv argmax within each series.")
 

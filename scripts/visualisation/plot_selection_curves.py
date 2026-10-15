@@ -5,7 +5,7 @@ Band-selection figure: audio depth, text depth, text context.
     A  audio layer profile   emotion model (12 blocks), one curve per seconds
                              of preceding audio W (0.5-s readout, 2026-10-15);
                              selected eGeMAPS as the reference line
-    B  audio context         emotion L11 and eGeMAPS against W (0.5-s readout);
+    B  audio context         emotion L12 and eGeMAPS against W (0.5-s readout);
                              eGeMAPS summarises [t-W, t+0.5], the emotion model
                              sees W s before the pooled 0.5 s
     C  text layer profile    Llama-3.1-8B, every layer, one curve per context
@@ -13,7 +13,7 @@ Band-selection figure: audio depth, text depth, text context.
     D  text context          Llama-3.1-8B L13 (k=4..1024), read from the same
                              per-layer sweeps as panel C
 
-GPT-2 is still read into the tidy table (S Table 1) but no longer drawn.
+GPT-2 is no longer read (not part of the paper's comparison, 2026-10-15).
 
 Mean r over each subject's EV>0.1 mask, mean over the nine subjects, error bars
 one SEM across subjects. The carried band is ringed and its "n/9" is the number
@@ -51,7 +51,9 @@ SUBJECTS = [f"UTS0{i}" for i in range(1, 10)]
 C1, C2, C3 = "#2a78d6", "#eb6834", "#1baf7a"
 LLAMA_KS = [4, 16, 64, 256, 512, 1024]
 AUDIO_WS = [0, 2, 4, 8, 16]
-W_EMO, W_OSM, L_EMO, K_TEXT, L_TEXT = 16, 2, 11, 512, 13  # carried configs
+W_EMO, W_OSM, L_EMO, K_TEXT, L_TEXT = 16, 2, 12, 512, 13  # carried configs
+# Emotion blocks are numbered 1-12 like Llama layers (hidden_states[0] is the CNN
+# output, so sweep config "11" is block 12, the last; 2026-10-15 fix).
 # ordered context lengths -> one sequential ramp (light = short), the carried k darkest
 SEQ = ["#b9d3f2", "#8db7ea", "#5f99df", "#3a7dd0", "#2563b3", "#173f78"]
 INK, MUTED, GRID = "#1f1f1e", "#6b6a64", "#e4e3de"
@@ -71,8 +73,9 @@ def tidy(sweeps: Path, llama_k: Path, ev: str) -> pd.DataFrame:
             for r in read_sweep(sweeps / f"prosody_sweep/{ev}/perlayer_emoctx_r0p5_w{w}__{s}/sweep.csv",
                                 "audio_r"):
                 if r["config"].isdigit():
-                    add("A", f"W = {w} s", int(r["config"]), s, r["mean_r"])
-                    if int(r["config"]) == L_EMO:
+                    block = int(r["config"]) + 1
+                    add("A", f"W = {w} s", block, s, r["mean_r"])
+                    if block == L_EMO:
                         add("B", f"emotion L{L_EMO}", w, s, r["mean_r"])
             for r in read_sweep(sweeps / f"prosody_sweep/{ev}/perlayer_base_emotion__{s}_opensmile_r0p5_w{w}/sweep.csv",
                                 "audio_r"):
@@ -87,13 +90,6 @@ def tidy(sweeps: Path, llama_k: Path, ev: str) -> pd.DataFrame:
                     add("C", f"k = {k}", int(m.group(2)), s, r["mean_r"])
                     if int(m.group(2)) == L_TEXT:
                         add("D", f"Llama-8B L{L_TEXT}", k, s, r["mean_r"])
-    for tag, k in [("k0layers", 0), ("k4layers", 4), ("layers", 16),
-                   ("k64layers", 64), ("k256layers", 256), ("k512layers", 512)]:
-        for s in SUBJECTS:
-            for r in read_sweep(sweeps / f"semantic_sweep/{ev}/semantic__{s}_{tag}/sweep.csv",
-                                "text_r"):
-                if r["config"] == f"perlayer_gpt2_k{k}_L8":
-                    add("D", "GPT-2 L8", k, s, r["mean_r"])
     return pd.DataFrame(rows)
 
 
@@ -156,7 +152,7 @@ def main(argv=None):
     for w, col in zip(AUDIO_WS, SEQ[1:]):
         curve(axs[0], A, f"W = {w} s", col, best=L_EMO if w == W_EMO else None,
               band=w == W_EMO)
-    style(axs[0], "A  Audio: layer (emotion model)", "transformer block")
+    style(axs[0], "A  Audio: layer (emotion model)", "layer")
 
     curve(axs[1], B, f"emotion L{L_EMO}", C1, best=W_EMO)
     curve(axs[1], B, "eGeMAPS", C2, best=W_OSM)
@@ -175,7 +171,7 @@ def main(argv=None):
                   loc="lower right", ncol=2, title="words of context", title_fontsize=7.5)
     style(axs[2], "C  Text: layer (Llama-3.1-8B)", "layer")
 
-    D = df[(df.panel == "D") & (df.series != "GPT-2 L8")]
+    D = df[df.panel == "D"]
     sym = lambda v: np.where(v == 0, 1, v)  # k=0 drawn at 1 on the log axis
     curve(axs[3], D, f"Llama-8B L{L_TEXT}", C1, best=K_TEXT, xs=sym)
     axs[3].set_xscale("log")
