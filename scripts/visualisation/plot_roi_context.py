@@ -62,7 +62,7 @@ AXES = {"text": dict(runs=["k4", "k16", "k64", "k256", "k512", "k1024"], selecte
         "audio": dict(runs=["w0", "w2", "w4", "w8", "w16", "w32"], selected="w16",
                       xlabel="seconds of preceding audio (emotion band)", name="audio context",
                       fixed="text context fixed at 512 words")}
-HEMI = {"lh": "Left\nhemisphere", "rh": "Right\nhemisphere"}
+HEMI = {"lh": ("L", "Left hemisphere"), "rh": ("R", "Right hemisphere")}
 SURFACE, INK, INK2, MUTED, GRID, SEL = "#ffffff", "#1f1f1e", "#52514e", "#8a8983", "#ebeae5", "#f3f1ea"
 FS_TITLE, FS_LABEL, FS_TICK, FS_LEGEND = 15, 13, 12, 12
 plt.rcParams.update({"font.family": "DejaVu Sans", "axes.titlepad": 10})
@@ -130,10 +130,10 @@ def legend(fig, ax_leg):
 
 def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name):
     """Columns = (statistic, context axis); rows = hemispheres, each named by a bold
-    horizontal row header in the left margin so the hemisphere never hides in the y label."""
-    fig = plt.figure(figsize=(14.5, 10.6), facecolor=SURFACE)
+    horizontal row header in the left margin (L / R), spelled out in the y label."""
+    fig = plt.figure(figsize=(13.5, 10.6), facecolor=SURFACE)
     gs = fig.add_gridspec(3, 2, height_ratios=[0.22, 1, 1], hspace=0.34, wspace=0.08,
-                          left=0.20, right=0.985, top=0.97, bottom=0.075)
+                          left=0.135, right=0.985, top=0.97, bottom=0.075)
     legend(fig, fig.add_subplot(gs[0, :]))
     axs = [[fig.add_subplot(gs[1 + i, j]) for j in range(2)] for i in range(2)]
     for i in range(2):
@@ -145,7 +145,7 @@ def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name):
             style(ax)
             panel(ax, data[axis_of_col[j]], stat, hemi, axis_of_col[j])
             if i == 0:
-                ax.set_title(f"{STAT_LABEL[stat]} as a function of {spec['name']}", loc="left",
+                ax.set_title(f"{STAT_LABEL[stat]} across {spec['name']}", loc="left",
                              fontsize=FS_TITLE, color=INK, fontweight="bold", pad=26)
                 ax.text(0, 1.035, spec["fixed"], transform=ax.transAxes, ha="left",
                         va="bottom", fontsize=FS_LABEL, color=INK2)
@@ -154,13 +154,13 @@ def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name):
             else:
                 ax.tick_params(labelbottom=False)
             if j == 0:
-                ax.set_ylabel(ylabel, fontsize=FS_LABEL, color=INK2, labelpad=8)
+                ax.set_ylabel(f"{HEMI[hemi][1]}: {ylabel}", fontsize=FS_LABEL, color=INK2, labelpad=8)
             else:
                 ax.tick_params(labelleft=False)
     for i, hemi in enumerate(HEMI):
         bb = axs[i][0].get_position()
-        fig.text(0.012, (bb.y0 + bb.y1) / 2, HEMI[hemi], ha="left", va="center",
-                 fontsize=FS_TITLE + 1, color=INK, fontweight="bold", linespacing=1.3)
+        fig.text(0.015, (bb.y0 + bb.y1) / 2, HEMI[hemi][0], ha="left", va="center",
+                 fontsize=FS_TITLE + 9, color=INK, fontweight="bold")
     for ext in ("png", "pdf", "svg"):
         fig.savefig(out / f"{name}.{ext}", dpi=200, facecolor=SURFACE)
     plt.close(fig)
