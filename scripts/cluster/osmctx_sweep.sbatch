@@ -20,8 +20,9 @@ module load GCCcore/10.3.0 Python/3.9.5
 export PYTHONUNBUFFERED=1 TOKENIZERS_PARALLELISM=false OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"
 SUBJECTS=(UTS01 UTS02 UTS03 UTS04 UTS05 UTS06 UTS07 UTS08 UTS09)
 SUBJ=${SUBJECTS[$SLURM_ARRAY_TASK_ID]}
-for V in opensmile_r2_w0 opensmile_r2_w2 opensmile_r2_w4 opensmile_r2_w8 opensmile_r2_w16 \
-         opensmile_r0p5_w0 opensmile_r0p5_w2 opensmile_r0p5_w4 opensmile_r0p5_w8 opensmile_r0p5_w16; do
+VARIANTS=${VARIANTS:-"opensmile_r2_w0 opensmile_r2_w2 opensmile_r2_w4 opensmile_r2_w8 opensmile_r2_w16 \
+          opensmile_r0p5_w0 opensmile_r0p5_w2 opensmile_r0p5_w4 opensmile_r0p5_w8 opensmile_r0p5_w16"}
+for V in $VARIANTS; do
   for EV in cv holdout; do
     python -m encoding.run_prosody_sweep --subjects "$SUBJ" --source perlayer_base_emotion \
       --configs "11" --stories-json common_stories_all9.json --baseline-features "$V" \
