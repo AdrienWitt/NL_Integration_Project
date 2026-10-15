@@ -22,6 +22,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 SUBJECTS=(UTS01 UTS02 UTS03 UTS04 UTS05 UTS06 UTS07 UTS08 UTS09)
 STORES=(perlayer_emoctx_r2_w0 perlayer_emoctx_r2_w2 perlayer_emoctx_r2_w4 perlayer_emoctx_r2_w8 perlayer_emoctx_r2_w16
         perlayer_emoctx_r0p5_w0 perlayer_emoctx_r0p5_w2 perlayer_emoctx_r0p5_w4 perlayer_emoctx_r0p5_w8 perlayer_emoctx_r0p5_w16)
+[ -n "$STORE_LIST" ] && read -ra STORES <<< "$STORE_LIST"  # e.g. STORE_LIST=perlayer_emoctx_r0p5_w32 --array=0-8
 NSUBJ=${#SUBJECTS[@]}
 STORE=${STORES[$((SLURM_ARRAY_TASK_ID / NSUBJ))]}
 SUBJ=${SUBJECTS[$((SLURM_ARRAY_TASK_ID % NSUBJ))]}

@@ -21,7 +21,7 @@ module load GCCcore/10.3.0 Python/3.9.5
 export PYTHONUNBUFFERED=1 PYTHONPATH=.
 RS=(2 2 2 2 2 0.5 0.5 0.5 0.5 0.5)
 WS=(0 2 4 8 16 0 2 4 8 16)
-R=${RS[$SLURM_ARRAY_TASK_ID]}; W=${WS[$SLURM_ARRAY_TASK_ID]}
+R=${R:-${RS[$SLURM_ARRAY_TASK_ID]}}; W=${W:-${WS[$SLURM_ARRAY_TASK_ID]}}  # R/W env: one extra point (--array=0)
 echo "=== task $SLURM_ARRAY_TASK_ID : readout $R s, context $W s ==="
 python -m extract.emotion_context --readout $R --context $W \
   --stories-json data/derivative/common_stories_all9.json
