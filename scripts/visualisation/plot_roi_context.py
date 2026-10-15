@@ -55,11 +55,14 @@ ROIS = [("HeschlTransverse", "Heschl's gyrus", "#2a78d6", "temporal"),
 LOBE = {"temporal": dict(ls="-", marker="o"), "frontal": dict(ls=(0, (4, 2)), marker="s")}
 BEYOND = [("delta_audio_given_text", "Emotion beyond text"),
           ("delta_text_given_audio", "Text beyond emotion")]
+STAT_LABEL = {"delta": "Integration δ"} | dict(BEYOND)
 AXES = {"text": dict(runs=["k4", "k16", "k64", "k256", "k512", "k1024"], selected="k512",
-                     xlabel="words of context (text band)", title="Text context"),
+                     xlabel="words of context (text band)", name="text context",
+                     fixed="audio context fixed at 16 s"),
         "audio": dict(runs=["w0", "w2", "w4", "w8", "w16", "w32"], selected="w16",
-                      xlabel="seconds of preceding audio (emotion band)", title="Audio context")}
-HEMI = {"lh": "Left hemisphere", "rh": "Right hemisphere"}
+                      xlabel="seconds of preceding audio (emotion band)", name="audio context",
+                      fixed="text context fixed at 512 words")}
+HEMI = {"lh": "Left\nhemisphere", "rh": "Right\nhemisphere"}
 SURFACE, INK, INK2, MUTED, GRID, SEL = "#ffffff", "#1f1f1e", "#52514e", "#8a8983", "#ebeae5", "#f3f1ea"
 FS_TITLE, FS_LABEL, FS_TICK, FS_LEGEND = 15, 13, 12, 12
 plt.rcParams.update({"font.family": "DejaVu Sans", "axes.titlepad": 10})
@@ -126,28 +129,38 @@ def legend(fig, ax_leg):
 
 
 def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name):
-    fig = plt.figure(figsize=(13, 10), facecolor=SURFACE)
-    gs = fig.add_gridspec(3, 2, height_ratios=[0.22, 1, 1], hspace=0.22, wspace=0.08,
-                          left=0.115, right=0.98, top=0.97, bottom=0.08)
+    """Columns = (statistic, context axis); rows = hemispheres, each named by a bold
+    horizontal row header in the left margin so the hemisphere never hides in the y label."""
+    fig = plt.figure(figsize=(14.5, 10.6), facecolor=SURFACE)
+    gs = fig.add_gridspec(3, 2, height_ratios=[0.22, 1, 1], hspace=0.34, wspace=0.08,
+                          left=0.20, right=0.985, top=0.97, bottom=0.075)
     legend(fig, fig.add_subplot(gs[0, :]))
     axs = [[fig.add_subplot(gs[1 + i, j]) for j in range(2)] for i in range(2)]
     for i in range(2):
         axs[i][1].sharey(axs[i][0])
     for i, hemi in enumerate(HEMI):
-        for j, (stat, col_title) in enumerate(stats_cols):
+        for j, stat in enumerate(stats_cols):
             ax = axs[i][j]
+            spec = AXES[axis_of_col[j]]
             style(ax)
             panel(ax, data[axis_of_col[j]], stat, hemi, axis_of_col[j])
             if i == 0:
-                ax.set_title(col_title, loc="left", fontsize=FS_TITLE, color=INK, fontweight="bold")
+                ax.set_title(f"{STAT_LABEL[stat]} as a function of {spec['name']}", loc="left",
+                             fontsize=FS_TITLE, color=INK, fontweight="bold", pad=26)
+                ax.text(0, 1.035, spec["fixed"], transform=ax.transAxes, ha="left",
+                        va="bottom", fontsize=FS_LABEL, color=INK2)
             if i == 1:
                 ax.set_xlabel(AXES[axis_of_col[j]]["xlabel"], fontsize=FS_LABEL, color=INK2, labelpad=8)
             else:
                 ax.tick_params(labelbottom=False)
             if j == 0:
-                ax.set_ylabel(f"{HEMI[hemi]}\n{ylabel}", fontsize=FS_LABEL, color=INK2, labelpad=8)
+                ax.set_ylabel(ylabel, fontsize=FS_LABEL, color=INK2, labelpad=8)
             else:
                 ax.tick_params(labelleft=False)
+    for i, hemi in enumerate(HEMI):
+        bb = axs[i][0].get_position()
+        fig.text(0.012, (bb.y0 + bb.y1) / 2, HEMI[hemi], ha="left", va="center",
+                 fontsize=FS_TITLE + 1, color=INK, fontweight="bold", linespacing=1.3)
     for ext in ("png", "pdf", "svg"):
         fig.savefig(out / f"{name}.{ext}", dpi=200, facecolor=SURFACE)
     plt.close(fig)
@@ -168,11 +181,11 @@ def main(argv=None):
     a.out.mkdir(parents=True, exist_ok=True)
 
     # main: delta along the two context axes
-    grid_figure(data, [("delta", AXES["text"]["title"]), ("delta", AXES["audio"]["title"])],
-                ["text", "audio"], "integration δ", a.out, "roi_context")
+    grid_figure(data, ["delta", "delta"], ["text", "audio"], "integration δ", a.out, "roi_context")
     # SI: the two conditional terms along each axis
     for axis in AXES:
-        grid_figure(data, BEYOND, [axis, axis], "Δr", a.out, f"roi_context_beyond_{axis}")
+        grid_figure(data, [s for s, _ in BEYOND], [axis, axis], "Δr", a.out,
+                    f"roi_context_beyond_{axis}")
 
 
 if __name__ == "__main__":
