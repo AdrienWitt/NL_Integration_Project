@@ -164,9 +164,15 @@ def main(argv=None):
     style(axs[1], "B  Audio: context", "seconds of preceding audio (W)")
 
     C = df[df.panel == "C"]
-    for k, col in zip(LLAMA_KS, SEQ):
+    # carried k drawn last, on top: k1024 sits within 0.0006 of it at every layer and,
+    # drawn over it, looked like the winner
+    for k, col in sorted(zip(LLAMA_KS, SEQ), key=lambda kc: kc[0] == K_TEXT):
         curve(axs[2], C, f"k = {k}", col, best=L_TEXT if k == K_TEXT else None,
               band=k == K_TEXT)
+    h, l = axs[2].get_legend_handles_labels()
+    order = sorted(range(len(l)), key=lambda i: int(l[i].split("= ")[1]))
+    axs[2].legend([h[i] for i in order], [l[i] for i in order], frameon=False, fontsize=7.5,
+                  loc="lower right", ncol=2, title="words of context", title_fontsize=7.5)
     style(axs[2], "C  Text: layer (Llama-3.1-8B)", "layer")
 
     D = df[(df.panel == "D") & (df.series != "GPT-2 L8")]
@@ -183,8 +189,6 @@ def main(argv=None):
     axs[0].legend(frameon=False, fontsize=7.5, loc="upper left", ncol=2,
                   title="seconds of preceding audio", title_fontsize=7.5)
     axs[1].legend(frameon=False, fontsize=8, loc="lower left")
-    axs[2].legend(frameon=False, fontsize=7.5, loc="lower right", ncol=2,
-                  title="words of context", title_fontsize=7.5)
     axs[3].legend(frameon=False, fontsize=8, loc="lower right")
     for ext in ("png", "pdf", "svg"):
         fig.savefig(a.out / f"selection_curves_{a.eval}.{ext}", dpi=200,
