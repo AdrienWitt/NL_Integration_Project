@@ -56,6 +56,9 @@ EVALS=${EVALS:-"cv holdout"}
 STORIES_JSON=${STORIES_JSON:-common_stories_all9.json}
 BANDS=${BANDS:?set BANDS=\"name=store name=store ...\"}
 MODELS=${MODELS:-}
+# TAG suffixes the output dir (bands_<names>__<TAG>) so a refit on new stores
+# under the same band names does not overwrite the published one.
+TAG=${TAG:-}
 
 BAND_ARGS=()
 for b in $BANDS; do BAND_ARGS+=(--band "$b"); done
@@ -78,6 +81,7 @@ for EV in $EVALS; do
         --min-ev 0.1 \
         --max-repeats 5 \
         --seed "$SEED" \
+        ${TAG:+--tag "$TAG"} \
         $SPLITS
 done
 
