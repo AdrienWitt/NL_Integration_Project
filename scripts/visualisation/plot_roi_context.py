@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Integration x context by ROI, along the two context axes that cross at the
-selected models (text: Llama-8B L13, 512 words; audio: emotion L11, 16 s).
+selected models (text: Llama-8B L13, 512 words; audio: emotion layer 12, 16 s).
 
     main   roi_context.png               delta only, 2 x 2:
                                          rows = left / right hemisphere,
@@ -20,7 +20,12 @@ Inputs are tidy tables from `scripts/roi_context_curve.py` (Desikan ROIs, group
 mean over covered vertices, fraction of covered vertices significant). Run labels
 are `k<words>` for the text axis and `w<seconds>` for the audio axis. Filled
 markers: >= 50% of the ROI's covered vertices significant (TFCE FWE p < .05);
-open markers: fewer. The selected configuration is marked on both axes.
+open markers: fewer. The selected configuration is shaded on both axes.
+
+Style (2026-10-15 restyle): eight ROIs in the reference categorical order,
+validated (adjacent CVD dE >= 9.2, normal-vision >= 15.6); temporal ROIs solid
+with circles, frontal ROIs dashed with squares, so identity never rests on hue
+alone; legend grouped by lobe; recessive grid, no frame; one y scale per row.
 
     python scripts/visualisation/plot_roi_context.py \\
         --text-csv results/group/roi_context_curve_llama.csv \\
@@ -33,81 +38,118 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 
-ROIS = [("HeschlTransverse", "Heschl", "#2a78d6"),
-        ("STG", "STG", "#eb6834"),
-        ("STS_banks", "banks STS", "#1baf7a"),
-        ("precentral", "precentral", "#eda100"),
-        # the three IFG parts drawn separately (2026-10-15): pars orbitalis is the
-        # region of the previous study's context effect, and merging it with
-        # opercularis/triangularis hid a different curve
-        ("IFG_operc", "IFG opercularis", "#e87ba4"),
-        ("IFG_triang", "IFG triangularis", "#8e5ad6"),
-        ("IFG_orbitalis", "IFG orbitalis", "#a0522d"),
-        ("MTG", "MTG", "#008300")]
+# (key, label, colour, lobe); the IFG parts are drawn separately (pars orbitalis is
+# the region of the previous study's context effect, and merging it with
+# opercularis/triangularis hid a different curve)
+ROIS = [("HeschlTransverse", "Heschl's gyrus", "#2a78d6", "temporal"),
+        ("STG", "STG", "#eb6834", "temporal"),
+        ("STS_banks", "banks of STS", "#1baf7a", "temporal"),
+        ("MTG", "MTG", "#008300", "temporal"),
+        ("precentral", "precentral", "#eda100", "frontal"),
+        ("IFG_operc", "IFG opercularis", "#e87ba4", "frontal"),
+        ("IFG_triang", "IFG triangularis", "#6250d6", "frontal"),
+        ("IFG_orbitalis", "IFG orbitalis", "#e34948", "frontal")]
+LOBE = {"temporal": dict(ls="-", marker="o"), "frontal": dict(ls=(0, (4, 2)), marker="s")}
 BEYOND = [("delta_audio_given_text", "Emotion beyond text"),
           ("delta_text_given_audio", "Text beyond emotion")]
 AXES = {"text": dict(runs=["k4", "k16", "k64", "k256", "k512", "k1024"], selected="k512",
-                     xlabel="words of context (text band)",
-                     title="Integration (δ) × text context"),
+                     xlabel="words of context (text band)", title="Text context"),
         "audio": dict(runs=["w0", "w2", "w4", "w8", "w16", "w32"], selected="w16",
-                      xlabel="seconds of preceding audio (emotion band)",
-                      title="Integration (δ) × audio context")}
-HEMI = {"lh": "left", "rh": "right"}
-INK, MUTED, GRID, SEL = "#1f1f1e", "#6b6a64", "#e4e3de", "#f1efe8"
-# print sizes (2026-10-15: the 8-10 pt labels were unreadable once scaled to a page)
-FS_TITLE, FS_LABEL, FS_TICK, FS_LEGEND = 14, 13, 12, 12
+                      xlabel="seconds of preceding audio (emotion band)", title="Audio context")}
+HEMI = {"lh": "Left hemisphere", "rh": "Right hemisphere"}
+SURFACE, INK, INK2, MUTED, GRID, SEL = "#ffffff", "#1f1f1e", "#52514e", "#8a8983", "#ebeae5", "#f3f1ea"
+FS_TITLE, FS_LABEL, FS_TICK, FS_LEGEND = 15, 13, 12, 12
+plt.rcParams.update({"font.family": "DejaVu Sans", "axes.titlepad": 10})
 
 
-def style(ax, title):
-    ax.set_title(title, loc="left", fontsize=FS_TITLE, color=INK, fontweight="bold")
-    ax.axhline(0, color=MUTED, lw=0.8)
-    ax.grid(axis="y", color=GRID, lw=0.8)
+def style(ax):
+    ax.set_facecolor(SURFACE)
+    ax.grid(axis="y", color=GRID, lw=1)
     ax.set_axisbelow(True)
-    for sp in ("top", "right"):
-        ax.spines[sp].set_visible(False)
-    for sp in ("left", "bottom"):
-        ax.spines[sp].set_color(GRID)
-    ax.tick_params(colors=MUTED, labelsize=FS_TICK)
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+    ax.tick_params(colors=INK2, labelsize=FS_TICK, length=0, pad=6)
+    ax.axhline(0, color=MUTED, lw=1.1, zorder=1)
 
 
 def panel(ax, d, stat, hemi, axis):
-    """One statistic for one hemisphere along one context axis; False if no data yet."""
+    """One statistic for one hemisphere along one context axis."""
     spec = AXES[axis]
-    runs = [r for r in spec["runs"] if d is not None and r in set(d.run)]
-    ax.set_xticks(range(len(spec["runs"])), [r[1:] for r in spec["runs"]])
-    ax.set_xlim(-0.4, len(spec["runs"]) - 0.6)
-    ax.axvspan(spec["runs"].index(spec["selected"]) - 0.3,
-               spec["runs"].index(spec["selected"]) + 0.3, color=SEL, zorder=0)
-    if not runs:
+    n = len(spec["runs"])
+    ax.set_xticks(range(n), [r[1:] for r in spec["runs"]])
+    ax.set_xlim(-0.4, n - 0.6)
+    s_i = spec["runs"].index(spec["selected"])
+    ax.axvspan(s_i - 0.32, s_i + 0.32, color=SEL, zorder=0, lw=0)
+    if d is None or not set(spec["runs"]) & set(d.run):
         ax.text(0.5, 0.5, "pending", transform=ax.transAxes, ha="center",
                 va="center", fontsize=FS_LABEL, color=MUTED)
-        return False
-    for roi, label, c in ROIS:
+        return
+    for roi, label, c, lobe in ROIS:
         s = (d[(d.stat == stat) & (d.hemi == hemi) & (d.roi == roi)]
              .set_index("run").reindex(spec["runs"]))
-        x = range(len(spec["runs"]))
-        ax.plot(x, s.mean_r, color=c, lw=2.2, label=label)
+        x = range(n)
+        ax.plot(x, s.mean_r, color=c, lw=2, ls=LOBE[lobe]["ls"], zorder=2,
+                solid_capstyle="round", dash_capstyle="round")
         for xi, (r, f) in zip(x, zip(s.mean_r, s.frac_sig_tfce)):
-            if pd.notna(r):
-                ax.plot(xi, r, "o", ms=7, color=c, mec=c, mew=1.4,
-                        mfc=c if f >= 0.5 else "white")
-    return True
+            if pd.isna(r):
+                continue
+            filled = f >= 0.5
+            ax.plot(xi, r, LOBE[lobe]["marker"], ms=8, zorder=3,
+                    mfc=c if filled else SURFACE, mec=SURFACE if filled else c,
+                    mew=1.6 if filled else 2)
 
 
-def legend(fig, ax):
-    h, l = ax.get_legend_handles_labels()
-    h.append(plt.Line2D([], [], ls="", marker="o", ms=7, mfc="white", mec=MUTED, mew=1.4))
-    l.append("open: < 50% of vertices significant")
-    h.append(plt.Rectangle((0, 0), 1, 1, color=SEL))
-    l.append("selected configuration")
-    fig.legend(h, l, loc="outside upper center", ncol=5, frameon=False, fontsize=FS_LEGEND,
-               handlelength=1.8, columnspacing=1.2)
+def legend(fig, ax_leg):
+    ax_leg.axis("off")
+    for j, (lobe, title) in enumerate((("temporal", "Temporal"), ("frontal", "Frontal"))):
+        h = [Line2D([], [], color=c, lw=2, ls=LOBE[lobe]["ls"], marker=LOBE[lobe]["marker"],
+                    ms=8, mfc=c, mec=SURFACE, mew=1.6)
+             for _, _, c, lb in ROIS if lb == lobe]
+        l = [label for _, label, _, lb in ROIS if lb == lobe]
+        lg = ax_leg.legend(h, l, title=title, loc="upper left", bbox_to_anchor=(0.0 + 0.36 * j, 1.0),
+                           ncol=2, frameon=False, fontsize=FS_LEGEND, title_fontsize=FS_LEGEND,
+                           alignment="left", handlelength=2.6, columnspacing=1.4)
+        lg.get_title().set_color(INK2)
+        lg.get_title().set_fontweight("bold")
+        ax_leg.add_artist(lg)
+    key = [Line2D([], [], ls="", marker="o", ms=8, mfc=INK2, mec=SURFACE, mew=1.6),
+           Line2D([], [], ls="", marker="o", ms=8, mfc=SURFACE, mec=INK2, mew=2),
+           Patch(color=SEL)]
+    lg = ax_leg.legend(key, ["≥ 50% of vertices significant", "< 50%", "selected model"],
+                       title="Markers", loc="upper left", bbox_to_anchor=(0.74, 1.0),
+                       frameon=False, fontsize=FS_LEGEND, title_fontsize=FS_LEGEND, alignment="left")
+    lg.get_title().set_color(INK2)
+    lg.get_title().set_fontweight("bold")
 
 
-def save(fig, out, name):
+def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name):
+    fig = plt.figure(figsize=(13, 10), facecolor=SURFACE)
+    gs = fig.add_gridspec(3, 2, height_ratios=[0.22, 1, 1], hspace=0.22, wspace=0.08,
+                          left=0.115, right=0.98, top=0.97, bottom=0.08)
+    legend(fig, fig.add_subplot(gs[0, :]))
+    axs = [[fig.add_subplot(gs[1 + i, j]) for j in range(2)] for i in range(2)]
+    for i in range(2):
+        axs[i][1].sharey(axs[i][0])
+    for i, hemi in enumerate(HEMI):
+        for j, (stat, col_title) in enumerate(stats_cols):
+            ax = axs[i][j]
+            style(ax)
+            panel(ax, data[axis_of_col[j]], stat, hemi, axis_of_col[j])
+            if i == 0:
+                ax.set_title(col_title, loc="left", fontsize=FS_TITLE, color=INK, fontweight="bold")
+            if i == 1:
+                ax.set_xlabel(AXES[axis_of_col[j]]["xlabel"], fontsize=FS_LABEL, color=INK2, labelpad=8)
+            else:
+                ax.tick_params(labelbottom=False)
+            if j == 0:
+                ax.set_ylabel(f"{HEMI[hemi]}\n{ylabel}", fontsize=FS_LABEL, color=INK2, labelpad=8)
+            else:
+                ax.tick_params(labelleft=False)
     for ext in ("png", "pdf", "svg"):
-        fig.savefig(out / f"{name}.{ext}", dpi=200, facecolor="white")
+        fig.savefig(out / f"{name}.{ext}", dpi=200, facecolor=SURFACE)
     plt.close(fig)
     print(f"-> {out}/{name}.png")
 
@@ -125,34 +167,12 @@ def main(argv=None):
             for ax, p in (("text", a.text_csv), ("audio", a.audio_csv))}
     a.out.mkdir(parents=True, exist_ok=True)
 
-    # main: delta, rows = hemisphere, columns = context axis, one y scale per row
-    fig, axs = plt.subplots(2, 2, figsize=(12, 8.4), sharey="row", constrained_layout=True)
-    for i, hemi in enumerate(HEMI):
-        for j, axis in enumerate(AXES):
-            ax = axs[i, j]
-            panel(ax, data[axis], "delta", hemi, axis)
-            style(ax, f"{AXES[axis]['title']}, {HEMI[hemi]}")
-            if i == 1:
-                ax.set_xlabel(AXES[axis]["xlabel"], fontsize=FS_LABEL, color=MUTED)
-            if j == 0:
-                ax.set_ylabel("group mean δ", fontsize=FS_LABEL, color=MUTED)
-    legend(fig, axs[0, 0])
-    save(fig, a.out, "roi_context")
-
-    # SI: the two conditional terms, one figure per axis
+    # main: delta along the two context axes
+    grid_figure(data, [("delta", AXES["text"]["title"]), ("delta", AXES["audio"]["title"])],
+                ["text", "audio"], "integration δ", a.out, "roi_context")
+    # SI: the two conditional terms along each axis
     for axis in AXES:
-        fig, axs = plt.subplots(2, 2, figsize=(12, 8.4), sharey="row", constrained_layout=True)
-        for i, hemi in enumerate(HEMI):
-            for j, (stat, title) in enumerate(BEYOND):
-                ax = axs[i, j]
-                panel(ax, data[axis], stat, hemi, axis)
-                style(ax, f"{title}, {HEMI[hemi]}")
-                if i == 1:
-                    ax.set_xlabel(AXES[axis]["xlabel"], fontsize=FS_LABEL, color=MUTED)
-                if j == 0:
-                    ax.set_ylabel("group mean Δr", fontsize=FS_LABEL, color=MUTED)
-        legend(fig, axs[0, 0])
-        save(fig, a.out, f"roi_context_beyond_{axis}")
+        grid_figure(data, BEYOND, [axis, axis], "Δr", a.out, f"roi_context_beyond_{axis}")
 
 
 if __name__ == "__main__":
