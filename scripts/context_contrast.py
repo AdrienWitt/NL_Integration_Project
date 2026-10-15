@@ -40,6 +40,13 @@ under every flip, so exact and conservative.
 Usage
 -----
     PYTHONPATH=. python3 scripts/context_contrast.py --pairs 4:256 16:256 256:512
+
+The same test serves every difference between two accuracies in the paper
+(2026-10-15, one procedure for all): `--pattern` takes any label in place of k
+(e.g. the audio-context series, `...emoctx_r0p5_w{k}L11__conditional` with
+`--pairs 0:16`), and `--diff NAME=DIR:B-A` tests two statistics of one group
+directory against each other (modality preference `text-audio`, valence against
+arousal `valence-arousal`), on their null-centred per-subject stacks.
 """
 from __future__ import annotations
 
@@ -138,6 +145,9 @@ def main(argv=None):
                     default="results/group/k{k}L8__base_emotionL11__conditional")
     ap.add_argument("--out", type=Path,
                     default=Path("results/group/context_contrast"))
+    ap.add_argument("--diff", nargs="+", default=None, metavar="NAME=DIR:B-A",
+                    help="test B minus A within one group directory instead of --pairs")
+    ap.add_argument("--prefix", default="k", help="output dir label prefix for --pairs")
     ap.add_argument("--min-subjects", type=int, default=7)
     ap.add_argument("--alpha", type=float, default=0.05)
     ap.add_argument("--jobs", type=int, default=8)
@@ -158,17 +168,46 @@ def main(argv=None):
         return stacks[k]
 
     summary = {}
+    if args.diff:
+        for spec in args.diff:
+            name, _, rest = spec.partition("=")
+            root, _, stats = rest.rpartition(":")
+            sb_name, _, sa_name = stats.partition("-")
+            root = Path(root)
+            sb = np.load(root / f"{sb_name}__centred_stack.npy")
+            sa = np.load(root / f"{sa_name}__centred_stack.npy")
+            count = np.load(root / f"{sb_name}__n_subjects.npy")
+            if not np.array_equal(count, np.load(root / f"{sa_name}__n_subjects.npy")):
+                raise SystemExit(f"coverage differs between {sb_name} and {sa_name}")
+            family = count >= args.min_subjects
+            out = args.out / name
+            out.mkdir(parents=True, exist_ok=True)
+            log.info(f"{name}: {sb_name} - {sa_name}, {int(family.sum()):,} vertices, 512 flips")
+            res = contrast(sb - sa, family, adj, area, args.jobs)
+            entry = {"mean_diff": float(np.nanmean(res["mean_diff"]))}
+            for key, arr in res.items():
+                np.save(out / f"{key}.npy", arr.astype(np.float32))
+                if key.startswith("p_"):
+                    entry[key] = int(np.nansum(arr < args.alpha / 2))
+            np.save(out / "family.npy", family)
+            summary[name] = entry
+            log.info("    " + ", ".join(f"{k} {v}" for k, v in entry.items() if k.startswith("p_")))
+        summary["_meta"] = {"alpha_per_direction": args.alpha / 2,
+                            "family_min_subjects": args.min_subjects, "n_flips": 512}
+        (args.out / "summary.json").write_text(json.dumps(summary, indent=1))
+        log.info(f"-> {args.out}")
+        return
     for pair in args.pairs:
-        a, b = (int(x) for x in pair.split(":"))
+        a, b = pair.split(":")
         (sa, ca), (sb, cb) = load(a), load(b)
         if not np.array_equal(ca, cb):
-            raise SystemExit(f"coverage differs between k={a} and k={b}")
+            raise SystemExit(f"coverage differs between {a} and {b}")
         family = ca >= args.min_subjects
-        out = args.out / f"k{a}_vs_k{b}"
+        out = args.out / f"{args.prefix}{a}_vs_{args.prefix}{b}"
         out.mkdir(parents=True, exist_ok=True)
         summary[pair] = {}
         for stat in ("delta",) + COMPONENTS:
-            log.info(f"k{b} - k{a}  {stat}: {int(family.sum()):,} vertices, "
+            log.info(f"{b} - {a}  {stat}: {int(family.sum()):,} vertices, "
                      f"512 flips")
             res = contrast(sb[stat] - sa[stat], family, adj, area, args.jobs)
             entry = {"mean_diff": float(np.nanmean(res["mean_diff"]))}
