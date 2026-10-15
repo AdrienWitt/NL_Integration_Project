@@ -38,6 +38,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
+from matplotlib.legend_handler import HandlerTuple
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
@@ -118,10 +119,14 @@ def legend(fig, ax_leg):
         lg.get_title().set_color(INK2)
         lg.get_title().set_fontweight("bold")
         ax_leg.add_artist(lg)
-    key = [Line2D([], [], ls="", marker="o", ms=8, mfc=INK2, mec=SURFACE, mew=1.6),
-           Line2D([], [], ls="", marker="o", ms=8, mfc=SURFACE, mec=INK2, mew=2),
+    # filled vs open, shown in both lobe shapes (circle, square)
+    key = [tuple(Line2D([], [], ls="", marker=m, ms=8, mfc=INK2, mec=SURFACE, mew=1.6)
+                 for m in ("o", "s")),
+           tuple(Line2D([], [], ls="", marker=m, ms=8, mfc=SURFACE, mec=INK2, mew=2)
+                 for m in ("o", "s")),
            Patch(color=SEL)]
     lg = ax_leg.legend(key, ["≥ 50% of vertices significant", "< 50%", "selected model"],
+                       handler_map={tuple: HandlerTuple(ndivide=None, pad=0.6)},
                        title="Markers", loc="upper left", bbox_to_anchor=(0.74, 1.0),
                        frameon=False, fontsize=FS_LEGEND, title_fontsize=FS_LEGEND, alignment="left")
     lg.get_title().set_color(INK2)
@@ -132,10 +137,10 @@ def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name):
     """Columns = (statistic, context axis); rows = hemispheres, each named by a bold
     horizontal row header in the left margin (L / R), spelled out in the y label."""
     fig = plt.figure(figsize=(13.5, 10.6), facecolor=SURFACE)
-    gs = fig.add_gridspec(3, 2, height_ratios=[0.22, 1, 1], hspace=0.34, wspace=0.08,
-                          left=0.135, right=0.985, top=0.97, bottom=0.075)
-    legend(fig, fig.add_subplot(gs[0, :]))
-    axs = [[fig.add_subplot(gs[1 + i, j]) for j in range(2)] for i in range(2)]
+    gs = fig.add_gridspec(2, 2, hspace=0.28, wspace=0.08,
+                          left=0.135, right=0.985, top=0.92, bottom=0.2)
+    legend(fig, fig.add_axes([0.135, 0.005, 0.85, 0.115]))
+    axs = [[fig.add_subplot(gs[i, j]) for j in range(2)] for i in range(2)]
     for i in range(2):
         axs[i][1].sharey(axs[i][0])
     for i, hemi in enumerate(HEMI):
@@ -160,7 +165,7 @@ def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name):
     for i, hemi in enumerate(HEMI):
         bb = axs[i][0].get_position()
         fig.text(0.015, (bb.y0 + bb.y1) / 2, HEMI[hemi][0], ha="left", va="center",
-                 fontsize=FS_TITLE + 9, color=INK, fontweight="bold")
+                 fontsize=FS_TITLE + 2, color=INK, fontweight="bold")
     for ext in ("png", "pdf", "svg"):
         fig.savefig(out / f"{name}.{ext}", dpi=200, facecolor=SURFACE)
     plt.close(fig)
