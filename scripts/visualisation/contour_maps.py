@@ -41,6 +41,10 @@ laid over the fsaverage *sphere*, where vertex spacing is uniform.
         --root results/group/_contour_test --stat preference --vmax 0.15 \\
         --variants a b c --widths 1 2 3
 
+Paper choice (2026-10-15): variant a (black on both sides, the colour below
+gives the direction), 2 rings at full width (3 if a map goes to one column),
+--min-size 20; these are the defaults.
+
 writes, into <root>/export/conn/,
     <stat>_ctr<variant>w<width>__unthresholded.surf.nii
     <stat>_ctr<variant>w<width>.cmap.txt
@@ -143,7 +147,7 @@ def main(argv=None) -> int:
                     help="the symmetric scale the map is printed on (--vmax of conn_figures)")
     ap.add_argument("--variants", nargs="+", default=["a"], choices=sorted(VARIANTS))
     ap.add_argument("--widths", nargs="+", type=int, default=[2])
-    ap.add_argument("--min-size", type=int, default=0,
+    ap.add_argument("--min-size", type=int, default=20,
                     help="fill holes / drop islands smaller than this (vertices)")
     ap.add_argument("--dash", type=float, default=4.0,
                     help="dash cell size on the fsaverage sphere (radius 100)")

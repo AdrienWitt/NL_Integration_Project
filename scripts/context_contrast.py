@@ -190,6 +190,13 @@ def main(argv=None):
                 if key.startswith("p_"):
                     entry[key] = int(np.nansum(arr < args.alpha / 2))
             np.save(out / "family.npy", family)
+            # map + significance masks in the layout contour_maps.py reads
+            # (outlines on the unthresholded map, both tails at alpha/2)
+            np.save(out / f"{name}__mean.npy", res["mean_diff"].astype(np.float32))
+            for side, d in (("sigpos", "up"), ("signeg", "down")):
+                np.save(out / f"{name}_{side}__mean.npy",
+                        (np.nan_to_num(res[f"p_tfce_{d}"], nan=1.0) < args.alpha / 2)
+                        .astype(np.float32))
             summary[name] = entry
             log.info("    " + ", ".join(f"{k} {v}" for k, v in entry.items() if k.startswith("p_")))
         summary["_meta"] = {"alpha_per_direction": args.alpha / 2,
