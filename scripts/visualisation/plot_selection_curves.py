@@ -2,12 +2,16 @@
 """
 Band-selection figure: audio depth, text depth, text context.
 
-    A  audio layer profile   base_emotion (12 blocks), eGeMAPS as the
-                             reference line (base_robust dropped from the paper)
-    B  text layer profile    Llama-3.1-8B, every layer, one curve per context
+    A  audio layer profile   emotion model (12 blocks), one curve per seconds
+                             of preceding audio W (0.5-s readout, 2026-10-15);
+                             selected eGeMAPS as the reference line
+    B  audio context         emotion L11 and eGeMAPS against W (0.5-s readout);
+                             eGeMAPS summarises [t-W, t+0.5], the emotion model
+                             sees W s before the pooled 0.5 s
+    C  text layer profile    Llama-3.1-8B, every layer, one curve per context
                              length k = 4..1024 (per-layer sweeps, 2026-10-14)
-    C  context length        Llama-3.1-8B L13 (k=4..1024), read from the same
-                             per-layer sweeps as panel B
+    D  text context          Llama-3.1-8B L13 (k=4..1024), read from the same
+                             per-layer sweeps as panel C
 
 GPT-2 is still read into the tidy table (S Table 1) but no longer drawn.
 
@@ -46,6 +50,8 @@ SUBJECTS = [f"UTS0{i}" for i in range(1, 10)]
 # categorical slots 1-3 of the reference palette, fixed order
 C1, C2, C3 = "#2a78d6", "#eb6834", "#1baf7a"
 LLAMA_KS = [4, 16, 64, 256, 512, 1024]
+AUDIO_WS = [0, 2, 4, 8, 16]
+W_EMO, W_OSM, L_EMO, K_TEXT, L_TEXT = 8, 2, 11, 512, 13  # carried configs
 # ordered context lengths -> one sequential ramp (light = short), the carried k darkest
 SEQ = ["#b9d3f2", "#8db7ea", "#5f99df", "#3a7dd0", "#2563b3", "#173f78"]
 INK, MUTED, GRID = "#1f1f1e", "#6b6a64", "#e4e3de"
@@ -60,30 +66,34 @@ def tidy(sweeps: Path, llama_k: Path, ev: str) -> pd.DataFrame:
     rows = []
     add = lambda panel, series, x, subj, r: rows.append(
         dict(panel=panel, series=series, x=x, subject=subj, r=float(r)))
-    for store, label in [("perlayer_base_emotion", "emotion (12 blocks)")]:
+    for w in AUDIO_WS:
         for s in SUBJECTS:
-            for r in read_sweep(sweeps / f"prosody_sweep/{ev}/{store}__{s}/sweep.csv",
+            for r in read_sweep(sweeps / f"prosody_sweep/{ev}/perlayer_emoctx_r0p5_w{w}__{s}/sweep.csv",
                                 "audio_r"):
                 if r["config"].isdigit():
-                    add("A", label, int(r["config"]), s, r["mean_r"])
-                elif r["config"] == "opensmile" and store == "perlayer_base_emotion":
-                    add("A", "eGeMAPS", -1, s, r["mean_r"])
+                    add("A", f"W = {w} s", int(r["config"]), s, r["mean_r"])
+                    if int(r["config"]) == L_EMO:
+                        add("B", f"emotion L{L_EMO}", w, s, r["mean_r"])
+            for r in read_sweep(sweeps / f"prosody_sweep/{ev}/perlayer_base_emotion__{s}_opensmile_r0p5_w{w}/sweep.csv",
+                                "audio_r"):
+                if r["config"] == f"opensmile_r0p5_w{w}":
+                    add("B", "eGeMAPS", w, s, r["mean_r"])
     for k in LLAMA_KS:
         for s in SUBJECTS:
             for r in read_sweep(sweeps / f"semantic_sweep/{ev}/semantic__{s}_llama8b_k{k}/sweep.csv",
                                 "text_r"):
                 m = re.fullmatch(r"perlayer_llama8b_k(\d+)_L(\d+)", r["config"])
                 if m:
-                    add("B", f"k = {k}", int(m.group(2)), s, r["mean_r"])
-                    if int(m.group(2)) == 13:
-                        add("C", "Llama-8B L13", k, s, r["mean_r"])
+                    add("C", f"k = {k}", int(m.group(2)), s, r["mean_r"])
+                    if int(m.group(2)) == L_TEXT:
+                        add("D", f"Llama-8B L{L_TEXT}", k, s, r["mean_r"])
     for tag, k in [("k0layers", 0), ("k4layers", 4), ("layers", 16),
                    ("k64layers", 64), ("k256layers", 256), ("k512layers", 512)]:
         for s in SUBJECTS:
             for r in read_sweep(sweeps / f"semantic_sweep/{ev}/semantic__{s}_{tag}/sweep.csv",
                                 "text_r"):
                 if r["config"] == f"perlayer_gpt2_k{k}_L8":
-                    add("C", "GPT-2 L8", k, s, r["mean_r"])
+                    add("D", "GPT-2 L8", k, s, r["mean_r"])
     return pd.DataFrame(rows)
 
 
@@ -136,33 +146,46 @@ def main(argv=None):
     a.out.mkdir(parents=True, exist_ok=True)
     df.to_csv(a.out / f"selection_{a.eval}.csv", index=False)
 
-    fig, axs = plt.subplots(1, 3, figsize=(13, 3.8), constrained_layout=True)
+    fig, axs = plt.subplots(2, 2, figsize=(10.5, 7.6), constrained_layout=True)
+    axs = axs.ravel()
     A = df[df.panel == "A"]
-    osm = A[A.series == "eGeMAPS"]["r"].mean()
-    axs[0].axhline(osm, color=MUTED, lw=1.2, ls="--",
-                   label="eGeMAPS (88 features, no layers)")
-    curve(axs[0], A, "emotion (12 blocks)", C1, best=11)
-    style(axs[0], "A  Audio: layer", "transformer block")
-
     B = df[df.panel == "B"]
-    for k, col in zip(LLAMA_KS, SEQ):
-        curve(axs[1], B, f"k = {k}", col, best=13 if k == 1024 else None, band=k == 1024)
-    style(axs[1], "B  Text: layer (Llama-3.1-8B)", "layer")
+    osm = B[(B.series == "eGeMAPS") & (B.x == W_OSM)]["r"].mean()
+    axs[0].axhline(osm, color=MUTED, lw=1.2, ls="--",
+                   label=f"eGeMAPS (W = {W_OSM} s)")
+    for w, col in zip(AUDIO_WS, SEQ[1:]):
+        curve(axs[0], A, f"W = {w} s", col, best=L_EMO if w == W_EMO else None,
+              band=w == W_EMO)
+    style(axs[0], "A  Audio: layer (emotion model)", "transformer block")
+
+    curve(axs[1], B, f"emotion L{L_EMO}", C1, best=W_EMO)
+    curve(axs[1], B, "eGeMAPS", C2, best=W_OSM)
+    axs[1].set_xticks(AUDIO_WS, [str(w) for w in AUDIO_WS])
+    style(axs[1], "B  Audio: context", "seconds of preceding audio (W)")
 
     C = df[df.panel == "C"]
-    sym = lambda v: np.where(v == 0, 1, v)  # k=0 drawn at 1 on the log axis
-    curve(axs[2], C, "Llama-8B L13", C1, best=1024, xs=sym)
-    axs[2].set_xscale("log")
-    ticks = [4, 16, 64, 256, 512, 1024]
-    axs[2].set_xticks(ticks, [str(t) for t in ticks])
-    axs[2].minorticks_off()
-    style(axs[2], "C  Text: context", "words of preceding context (k)")
+    for k, col in zip(LLAMA_KS, SEQ):
+        curve(axs[2], C, f"k = {k}", col, best=L_TEXT if k == K_TEXT else None,
+              band=k == K_TEXT)
+    style(axs[2], "C  Text: layer (Llama-3.1-8B)", "layer")
 
-    axs[0].set_ylabel(f"mean r over EV mask ({a.eval})", fontsize=9, color=MUTED)
-    axs[0].legend(frameon=False, fontsize=8, loc="upper left")
-    axs[1].legend(frameon=False, fontsize=7.5, loc="lower right", ncol=2,
+    D = df[(df.panel == "D") & (df.series != "GPT-2 L8")]
+    sym = lambda v: np.where(v == 0, 1, v)  # k=0 drawn at 1 on the log axis
+    curve(axs[3], D, f"Llama-8B L{L_TEXT}", C1, best=K_TEXT, xs=sym)
+    axs[3].set_xscale("log")
+    ticks = [4, 16, 64, 256, 512, 1024]
+    axs[3].set_xticks(ticks, [str(t) for t in ticks])
+    axs[3].minorticks_off()
+    style(axs[3], "D  Text: context", "words of preceding context (k)")
+
+    for i in (0, 2):
+        axs[i].set_ylabel(f"mean r over EV mask ({a.eval})", fontsize=9, color=MUTED)
+    axs[0].legend(frameon=False, fontsize=7.5, loc="upper left", ncol=2,
+                  title="seconds of preceding audio", title_fontsize=7.5)
+    axs[1].legend(frameon=False, fontsize=8, loc="lower left")
+    axs[2].legend(frameon=False, fontsize=7.5, loc="lower right", ncol=2,
                   title="words of context", title_fontsize=7.5)
-    axs[2].legend(frameon=False, fontsize=8, loc="lower right")
+    axs[3].legend(frameon=False, fontsize=8, loc="lower right")
     for ext in ("png", "pdf", "svg"):
         fig.savefig(a.out / f"selection_curves_{a.eval}.{ext}", dpi=200,
                     facecolor="white")
