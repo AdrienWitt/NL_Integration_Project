@@ -20,6 +20,7 @@ Writes to `results/group/paper_figures/`:
     ... --only fig3 fig7
 """
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -139,6 +140,13 @@ def bar(a, range_txt):
     # whole painted span: a diverging bar is near-white in the middle
     r = (painted[0], painted[-1])
     colours = col[r[0] + 3:r[-1] - 2][::-1] / 255.0       # bottom -> top
+    # A contoured map (contour_maps.py) carries its outline colours in the
+    # first and last colormap rows, so CONN's bar ends in them; take the bar
+    # from the colormap file instead, without those two rows.
+    stat = range_txt.name.split("__")[0]
+    cm = range_txt.parent.parent / f"{stat}.cmap.txt"
+    if re.search(r"_ctr[a-z]w\d", stat) and cm.exists():
+        colours = np.loadtxt(cm)[1:-1]
     ticks = None
     for line in range_txt.read_text().splitlines():
         k, _, v = line.partition("\t")
@@ -205,9 +213,8 @@ def build(name, rows, test, out, panels):
         cax.tick_params(labelsize=6.5, colors=MUTED, length=2)
         cax.set_ylabel(lab, fontsize=7, color=MUTED, labelpad=1)
         cax.yaxis.set_label_position("right")
-        for sp in cax.spines.values():
-            sp.set_color("#b0afa9")
-            sp.set_linewidth(0.5)
+        for sp in cax.spines.values():           # no outline around the bar
+            sp.set_visible(False)
     suffix = "" if test == "p_tfce_perm_fwe" else "__" + test
     for ext in ("png", "pdf", "svg"):
         fig.savefig(out / f"{name}{suffix}.{ext}", dpi=300, facecolor="white")

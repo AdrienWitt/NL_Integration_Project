@@ -136,6 +136,7 @@ SEQUENTIAL = {
     "preference": _gamma_diverging(DIVERGING_GAMMA),
     "preference_valence": _gamma_diverging(DIVERGING_GAMMA),
     "preference_valence_consistent": _gamma_diverging(DIVERGING_GAMMA),
+    "valence_vs_arousal": _gamma_diverging(DIVERGING_GAMMA),
     "valence_unique": ["#fdd0a2", "#fdae6b", "#fd8d3c", "#f16913", "#d94801", "#a63603", "#7f2704"],
 }
 
@@ -200,14 +201,19 @@ def title_for(stat: str, test: str, run: str = "") -> str:
     return f"{base} ({TEST_LABELS.get(test, test)})"
 
 
+#: Signed difference maps, printed on a symmetric diverging scale. Must match
+#: SIGNED in print_group_conn.m.
+SIGNED = ("preference", "valence_vs_arousal")
+
+
 def is_signed(stat: str) -> bool:
-    return stat.startswith("preference")
+    return stat.startswith(SIGNED)
 
 
 def colorbar_label(stat: str, run: str = "") -> str:
     if stat.startswith("preference_valence_winner"):
         return "r of the winner (+ valence, \u2212 arousal)"
-    if stat.startswith("preference_valence"):
+    if stat.startswith(("preference_valence", "valence_vs_arousal")):
         return "\u0394r (valence \u2212 arousal)"
     if is_signed(stat):
         return f"\u0394r (text \u2212 {bands_of(run)['audio']})"
