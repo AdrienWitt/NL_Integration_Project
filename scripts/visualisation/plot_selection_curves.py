@@ -50,7 +50,7 @@ SUBJECTS = [f"UTS0{i}" for i in range(1, 10)]
 # categorical slots 1-3 of the reference palette, fixed order
 C1, C2, C3 = "#2a78d6", "#eb6834", "#1baf7a"
 LLAMA_KS = [4, 16, 64, 256, 512, 1024]
-AUDIO_WS = [0, 2, 4, 8, 16]
+AUDIO_WS = [0, 2, 4, 8, 16, 32]
 W_EMO, W_OSM, L_EMO, K_TEXT, L_TEXT = 16, 2, 12, 512, 13  # carried configs
 # Emotion blocks are numbered 1-12 like Llama layers (hidden_states[0] is the CNN
 # output, so sweep config "11" is block 12, the last; 2026-10-15 fix).
@@ -149,14 +149,16 @@ def main(argv=None):
     osm = B[(B.series == "eGeMAPS") & (B.x == W_OSM)]["r"].mean()
     axs[0].axhline(osm, color=MUTED, lw=1.2, ls="--",
                    label=f"eGeMAPS (W = {W_OSM} s)")
-    for w, col in zip(AUDIO_WS, SEQ[1:]):
+    for w, col in zip(AUDIO_WS, SEQ):
         curve(axs[0], A, f"W = {w} s", col, best=L_EMO if w == W_EMO else None,
               band=w == W_EMO)
     style(axs[0], "A  Audio: layer (emotion model)", "layer")
 
-    curve(axs[1], B, f"emotion L{L_EMO}", C1, best=W_EMO)
-    curve(axs[1], B, "eGeMAPS", C2, best=W_OSM)
-    axs[1].set_xticks(AUDIO_WS, [str(w) for w in AUDIO_WS])
+    # durations double from 2 s on: evenly spaced, as the log axis of panel D
+    pos = lambda v: np.array([AUDIO_WS.index(int(w)) for w in v])
+    curve(axs[1], B, f"emotion L{L_EMO}", C1, best=W_EMO, xs=pos)
+    curve(axs[1], B, "eGeMAPS", C2, best=W_OSM, xs=pos)
+    axs[1].set_xticks(range(len(AUDIO_WS)), [str(w) for w in AUDIO_WS])
     style(axs[1], "B  Audio: context", "seconds of preceding audio (W)")
 
     C = df[df.panel == "C"]
