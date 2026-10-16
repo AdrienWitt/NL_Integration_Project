@@ -95,6 +95,30 @@ def regions(mean, sig, lab, names, n=4, min_sig=50):
     return "; ".join(f"{r} ({v:.3f})" for v, _, r in out[:n])
 
 
+def preference_note():
+    """Modality preference r_text - r_audio over the covered vertices, and
+    the paired sign-flip TFCE test of each (context_contrast.py --diff;
+    family = vertices reached by >= 7 subjects, each tail .025)."""
+    out = []
+    for run, band in ((EMO, "emotion"), (OSM, "openSMILE")):
+        gd = G / f"{run}__marginalfixed"
+        t, a = (np.load(gd / f"{s}__mean.npy") for s in ("text", "audio"))
+        nsub = np.load(gd / "text__n_subjects.npy")
+        cov = (nsub >= MIN_SUBJ) & np.isfinite(t) & np.isfinite(a)
+        d = (t - a)[cov]
+        out.append(f"Preference r_text - r_{band}: mean {d.mean():+.4f}, "
+                   f"text ahead at {100 * (d > 0).mean():.1f}% of covered "
+                   "vertices")
+    fam = int(np.load(G / "context_contrast_diff" / "preference"
+                      / "family.npy").sum())
+    for i, cd in enumerate(("context_contrast_diff", "context_contrast_diff_osm")):
+        s = json.load(open(G / cd / "summary.json"))["preference"]
+        out[i] += (f"; sign-flip TFCE FWE: text ahead at {s['p_tfce_up']:,} "
+                   f"vertices, {('emotion', 'openSMILE')[i]} ahead at "
+                   f"{s['p_tfce_down']:,} (family {fam:,})")
+    return ". ".join(out) + "."
+
+
 def table2():
     pt = pd.read_csv(PT / "paper_table.csv")
     lab, names = desikan()
@@ -129,10 +153,7 @@ def table2():
                 "FWE p < .05 at z > 3.09, same null. Regions: Desikan "
                 "parcels with >= 50 TFCE-significant vertices, ranked by mean "
                 "effect over those vertices (top 4).\n\n"
-                "Preference r_text - r_emotion (no null of its own): mean "
-                "+0.0674, text ahead at 85.8% of covered vertices, sign-flip "
-                "FWE 13 vertices (n>=9 family, 3,337). Preference r_text - "
-                "r_openSMILE: +0.256, text ahead 96.3%, FWE 2,278.\n")
+                + preference_note() + "\n")
         for sec, sub in df.groupby("section", sort=False):
             f.write(f"\n### {sec}\n\n"
                     + mdt(sub.drop(columns="section")) + "\n")
@@ -267,49 +288,68 @@ def s5_parcels():
 
 
 def s6_context():
-    rows = []
-    for k in (4, 16, 64, 256, 512, 1024):
-        gd = G / f"llama8bk{k}L13__base_emotionL11__conditional"
-        r = {"k (words)": k}
-        for stat, lab in (("delta_audio_given_text", "emotion | text"),
-                          ("delta_text_given_audio", "text | emotion"),
-                          ("delta", "integration")):
-            mean = np.load(gd / f"{stat}__mean.npy")
-            nsub = np.load(gd / f"{stat}__n_subjects.npy")
-            tf = np.load(gd / "clusters" / f"{stat}__p_tfce_perm_fwe.npy")
-            cov = (nsub >= MIN_SUBJ) & np.isfinite(mean)
-            r[f"{lab} mean"] = round(float(np.nanmean(mean[cov])), 4)
-            r[f"{lab} TFCE"] = int((cov & (tf < 0.05)).sum())
-        rows.append(r)
-    a = pd.DataFrame(rows)
-    s = json.load(open(G / "context_contrast_llama" / "summary.json"))
-    rows = []
-    for pair, v in s.items():
-        if pair.startswith("_"):
-            continue
-        for stat, lab in (("delta", "integration"),
-                          ("delta_audio_given_text", "emotion | text"),
-                          ("delta_text_given_audio", "text | emotion")):
-            rows.append({"k pair": pair.replace(":", " vs "), "map": lab,
-                         "mean difference": round(v[stat]["mean_diff"], 4),
-                         "TFCE up": v[stat]["p_tfce_up"],
-                         "TFCE down": v[stat]["p_tfce_down"]})
-    b = pd.DataFrame(rows)
-    c = pd.read_csv(G / "roi_context_curve_llama.csv")
+    """Integration x context along both axes: the text band's words of
+    context (emotion band at 16 s) and the emotion band's seconds of
+    preceding audio (text band at 512 words)."""
+    axes = (("text", "k (words)", (4, 16, 64, 256, 512, 1024),
+             lambda k: f"llama8bk{k}L13__emoctx16L11__conditional",
+             "context_contrast_text16", "roi_context_curve_text16.csv"),
+            ("audio", "W (s)", (0, 2, 4, 8, 16),
+             lambda w: f"llama8bk512L13__emoctx{w}L11__conditional",
+             "context_contrast_audio16", "roi_context_curve_audio.csv"))
+    by, con, roi = [], [], []
+    for axis, col, levels, run, cdir, rcsv in axes:
+        for k in levels:
+            gd = G / run(k)
+            r = {"axis": axis, "context": f"{k} {col.split()[1][1:-1]}"}
+            for stat, lab in (("delta_audio_given_text", "emotion | text"),
+                              ("delta_text_given_audio", "text | emotion"),
+                              ("delta", "integration")):
+                mean = np.load(gd / f"{stat}__mean.npy")
+                nsub = np.load(gd / f"{stat}__n_subjects.npy")
+                tf = np.load(gd / "clusters" / f"{stat}__p_tfce_perm_fwe.npy")
+                cov = (nsub >= MIN_SUBJ) & np.isfinite(mean)
+                r[f"{lab} mean"] = round(float(np.nanmean(mean[cov])), 4)
+                r[f"{lab} TFCE"] = int((cov & (tf < 0.05)).sum())
+            by.append(r)
+        s = json.load(open(G / cdir / "summary.json"))
+        for pair, v in s.items():
+            if pair.startswith("_"):
+                continue
+            for stat, lab in (("delta", "integration"),
+                              ("delta_audio_given_text", "emotion | text"),
+                              ("delta_text_given_audio", "text | emotion")):
+                unit = col.split()[1][1:-1]
+                con.append({"axis": axis,
+                            "pair": pair.replace(":", " vs ") + f" {unit}",
+                            "map": lab,
+                            "mean difference": round(v[stat]["mean_diff"], 4),
+                            "TFCE up": v[stat]["p_tfce_up"],
+                            "TFCE down": v[stat]["p_tfce_down"]})
+        # TFCE significance only (the paper's test); drop the per-vertex
+        # FDR, prevalence and sign-flip columns of roi_context_curve.py
+        r = pd.read_csv(G / rcsv)
+        roi.append(r.drop(columns=[c for c in r.columns if c.endswith(
+            ("_perm", "_prevalence", "_fwe")) or c == "mean_r_sig"])
+            .assign(axis=axis))
+    a, b = pd.DataFrame(by), pd.DataFrame(con)
+    c = pd.concat(roi, ignore_index=True)
+    c = c[["axis"] + [k for k in c.columns if k != "axis"]]
     a.to_csv(OUT / "S6_context_by_k.csv", index=False)
     b.to_csv(OUT / "S6_context_contrasts.csv", index=False)
     c.to_csv(OUT / "S6_context_roi_curve.csv", index=False)
     with open(OUT / "S6_context.md", "w") as f:
         f.write("# Supplementary Table 6. Integration x context\n\n"
-                "A. Per context length (Llama-3.1-8B L13 x emotion L11): group "
-                "mean and TFCE FWE vertices.\n\n" + mdt(a)
+                "A. Per context length, text axis (Llama-3.1-8B L13, emotion "
+                "L11 at 16 s) and audio axis (emotion L11, text at 512 "
+                "words): group mean and TFCE FWE vertices.\n\n" + mdt(a)
                 + "\n\nB. Paired sign-flip contrasts between context lengths "
-                "(TFCE FWE p < .05 vertices; 'up' = larger at the longer "
-                "context). Only regions where integration rises against the "
-                "erosion of emotion | text are interpretable.\n\n"
+                "(TFCE FWE p < .05 vertices, each tail .025; 'up' = larger at "
+                "the longer context).\n\n"
                 + mdt(b)
-                + "\n\nC. ROI curve (Desikan, per hemisphere and k): "
-                "`S6_context_roi_curve.csv` (the data of Fig 7d).\n")
+                + "\n\nC. ROI curves (Desikan, per hemisphere and context "
+                "length): `S6_context_roi_curve.csv` (the data of the context "
+                "figure).\n")
 
 
 def s7_calibration():

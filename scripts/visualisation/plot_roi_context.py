@@ -60,7 +60,7 @@ STAT_LABEL = {"delta": "Integration δ"} | dict(BEYOND)
 AXES = {"text": dict(runs=["k4", "k16", "k64", "k256", "k512", "k1024"], selected="k512",
                      xlabel="words of context (text band)", name="text context",
                      fixed="audio context fixed at 16 s"),
-        "audio": dict(runs=["w0", "w2", "w4", "w8", "w16", "w32"], selected="w16",
+        "audio": dict(runs=["w0", "w2", "w4", "w8", "w16"], selected="w16",
                       xlabel="seconds of preceding audio (emotion band)", name="audio context",
                       fixed="text context fixed at 512 words")}
 HEMI = {"lh": ("L", "Left hemisphere"), "rh": ("R", "Right hemisphere")}

@@ -25,25 +25,31 @@ import numpy as np
 import pandas as pd
 
 G = Path("results/group")
-EMO = "llama8bk1024L13__base_emotionL11"
-OSM = "llama8bk1024L13__opensmile"
+# selected bands (2026-10-16 refit): emotion 16 s, eGeMAPS 2 s, text k512
+EMO = "llama8bk512L13__emoctx16L11"
+OSM = "llama8bk512L13__osm2"
 
 # (section, label, group dir, statistic, kind) -- kind 'stat' or 'integration'
 ROWS = [
     ("1 audio bands alone", "openSMILE (88d)", f"{OSM}__marginalfixed", "audio", "stat"),
-    ("1 audio bands alone", "emotion wav2vec2 L11 (1024d)", f"{EMO}__marginalfixed", "audio", "stat"),
-    ("1 audio bands alone", "AVD (3d)", "avd__marginalfixed", "joint", "stat"),
-    ("2 affective dimensions alone", "arousal", "avd__marginalfixed", "arousal", "stat"),
-    ("2 affective dimensions alone", "dominance", "avd__marginalfixed", "dominance", "stat"),
-    ("2 affective dimensions alone", "valence", "avd__marginalfixed", "valence", "stat"),
-    ("3 unique contribution, AVD", "valence | arousal+dominance", "avd__conditional", "delta_valence_given_arousal+dominance", "stat"),
-    ("3 unique contribution, AVD", "arousal | dominance+valence", "avd__conditional", "delta_arousal_given_dominance+valence", "stat"),
-    ("3 unique contribution, AVD", "dominance | arousal+valence", "avd__conditional", "delta_dominance_given_arousal+valence", "stat"),
-    ("4 audio bands against each other", "emotion | openSMILE", "emotionL11_vs_opensmile__each", "delta_emotion_given_opensmile", "stat"),
-    ("4 audio bands against each other", "openSMILE | emotion", "emotionL11_vs_opensmile__each", "delta_opensmile_given_emotion", "stat"),
-    ("4 audio bands against each other", "openSMILE | AVD", "opensmile_vs_avd__each", "delta_opensmile_given_avd", "stat"),
-    ("4 audio bands against each other", "AVD | openSMILE", "opensmile_vs_avd__each", "delta_avd_given_opensmile", "stat"),
-    ("5 text alone", "Llama-3.1-8B L13, k=1024", f"{EMO}__marginalfixed", "text", "stat"),
+    ("1 audio bands alone", "emotion wav2vec2 L12 (1024d)", f"{EMO}__marginalfixed", "audio", "stat"),
+    ("1 audio bands alone", "AVD (3d)", "avd16__marginalfixed", "joint", "stat"),
+    ("2 affective dimensions alone", "arousal", "avd16__marginalfixed", "arousal", "stat"),
+    ("2 affective dimensions alone", "dominance", "avd16__marginalfixed", "dominance", "stat"),
+    ("2 affective dimensions alone", "valence", "avd16__marginalfixed", "valence", "stat"),
+    ("2b arousal + valence model", "arousal alone", "av16__marginalfixed", "arousal", "stat"),
+    ("2b arousal + valence model", "valence alone", "av16__marginalfixed", "valence", "stat"),
+    ("2b arousal + valence model", "arousal + valence", "av16__marginalfixed", "joint", "stat"),
+    ("2b arousal + valence model", "valence | arousal", "av16__conditional", "delta_valence_given_arousal", "stat"),
+    ("2b arousal + valence model", "arousal | valence", "av16__conditional", "delta_arousal_given_valence", "stat"),
+    ("3 unique contribution, AVD", "valence | arousal+dominance", "avd16__conditional", "delta_valence_given_arousal+dominance", "stat"),
+    ("3 unique contribution, AVD", "arousal | dominance+valence", "avd16__conditional", "delta_arousal_given_dominance+valence", "stat"),
+    ("3 unique contribution, AVD", "dominance | arousal+valence", "avd16__conditional", "delta_dominance_given_arousal+valence", "stat"),
+    ("4 audio bands against each other", "emotion | openSMILE", "emotion16_vs_osm2__each", "delta_emotion_given_opensmile", "stat"),
+    ("4 audio bands against each other", "openSMILE | emotion", "emotion16_vs_osm2__each", "delta_opensmile_given_emotion", "stat"),
+    ("4 audio bands against each other", "openSMILE | AVD", "osm2_vs_avd16__each", "delta_opensmile_given_avd", "stat"),
+    ("4 audio bands against each other", "AVD | openSMILE", "osm2_vs_avd16__each", "delta_avd_given_opensmile", "stat"),
+    ("5 text alone", "Llama-3.1-8B L13, k=512", f"{EMO}__marginalfixed", "text", "stat"),
     ("6 integration, text x emotion", "emotion | text", f"{EMO}__conditional", "delta_audio_given_text", "stat"),
     ("6 integration, text x emotion", "text | emotion", f"{EMO}__conditional", "delta_text_given_audio", "stat"),
     ("6 integration, text x emotion", "integration (conjunction)", f"{EMO}__conditional", "delta", "integration"),
