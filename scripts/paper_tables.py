@@ -283,7 +283,7 @@ def s5_parcels():
     md(df, OUT / "S5_parcels_integration",
        "Supplementary Table 5. Desikan parcels, integration maps",
        "Per parcel: covered vertices (>= 5 subjects), mean effect over them, "
-       "and % of covered vertices significant (group permutation FDR). "
+       "and % of covered vertices significant (TFCE FWE p < .05; plot_group_inflated.py --test p_tfce_perm_fwe). "
        "Low pct_covered means 'not covered', not 'no effect'.")
 
 
