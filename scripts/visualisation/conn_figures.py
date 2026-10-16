@@ -599,7 +599,11 @@ def main(argv=None) -> int:
         raise SystemExit(f"figtools not found under {STUDY3}")
     write_colormaps(root)
     if not args.skip_print:
-        run_matlab(root.name, args.stats, args.timeout, args.tests, args.vmax)
+        # print_group_conn.m resolves the run under results/group/, so pass the
+        # path from there: a nested root (context_contrast_diff/<stat>) would
+        # otherwise be looked up one level up and print nothing.
+        run = root.relative_to(PROJECT / "results" / "group").as_posix()
+        run_matlab(run, args.stats, args.timeout, args.tests, args.vmax)
     fmts = [f.strip() for f in args.export.split(",") if f.strip()]
     n = build_figures(root, args.stats, fmts, args.dpi, args.tests, args.vmax)
     log.info("%d figure(s) in %s", n, (root / "figures_conn").relative_to(PROJECT))
