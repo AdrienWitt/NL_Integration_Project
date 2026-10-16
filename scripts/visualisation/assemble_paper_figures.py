@@ -63,7 +63,6 @@ FIGS = {
     "fig5_affective_dimensions": [
         ("Valence beyond arousal", "av16__conditional", "delta_valence_given_arousal", T),
         ("Arousal beyond valence", "av16__conditional", "delta_arousal_given_valence", T),
-        ("r valence − r arousal", "context_contrast_diff/valence_vs_arousal", "valence_vs_arousal_ctraw2m20", "unthresholded"),
     ],
     "fig6_semantics": [
         ("Text: Llama-3.1-8B, layer 13, 512 words", f"{EMO}__marginalfixed", "text", T),
