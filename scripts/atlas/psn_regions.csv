@@ -21,10 +21,10 @@ A4,STG,superior temporal gyrus,Auditory_Association
 A5,STG,superior temporal gyrus,Auditory_Association
 STGa,STG,superior temporal gyrus,Auditory_Association
 TA2,STG,superior temporal gyrus,Auditory_Association
-PSL,TPOJ,temporo-parieto-occipital junction,Temporo-Parieto-Occipital_Junction
-STV,TPOJ,temporo-parieto-occipital junction,Temporo-Parieto-Occipital_Junction
-TPOJ2,TPOJ,temporo-parieto-occipital junction,Temporo-Parieto-Occipital_Junction
-TPOJ3,TPOJ,temporo-parieto-occipital junction,Temporo-Parieto-Occipital_Junction
+PSL,TPOJ,temporo-parietal junction,Temporo-Parieto-Occipital_Junction
+STV,TPOJ,temporo-parietal junction,Temporo-Parieto-Occipital_Junction
+TPOJ2,TPOJ,temporo-parietal junction,Temporo-Parieto-Occipital_Junction
+TPOJ3,TPOJ,temporo-parietal junction,Temporo-Parieto-Occipital_Junction
 STSda,aSTS,anterior superior temporal sulcus,Auditory_Association
 STSva,aSTS,anterior superior temporal sulcus,Auditory_Association
 PGi,angular,angular gyrus,Inferior_Parietal
@@ -65,13 +65,13 @@ a9-46v,dorsolateral_prefrontal,dorsolateral prefrontal,Dorsolateral_Prefrontal
 i6-8,dorsolateral_prefrontal,dorsolateral prefrontal,Dorsolateral_Prefrontal
 p9-46v,dorsolateral_prefrontal,dorsolateral prefrontal,Dorsolateral_Prefrontal
 s6-8,dorsolateral_prefrontal,dorsolateral prefrontal,Dorsolateral_Prefrontal
-52,early_auditory,early auditory cortex,Early_Auditory
+52,auditory_operculum,auditory operculum,Early_Auditory
 A1,early_auditory,early auditory cortex,Early_Auditory
 LBelt,early_auditory,early auditory cortex,Early_Auditory
 MBelt,early_auditory,early auditory cortex,Early_Auditory
 PBelt,early_auditory,early auditory cortex,Early_Auditory
-PFcm,early_auditory,early auditory cortex,Early_Auditory
-RI,early_auditory,early auditory cortex,Early_Auditory
+PFcm,auditory_operculum,auditory operculum,Early_Auditory
+RI,auditory_operculum,auditory operculum,Early_Auditory
 V2,early_visual,early visual,Early_Visual
 V3,early_visual,early visual,Early_Visual
 V4,early_visual,early visual,Early_Visual

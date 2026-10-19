@@ -92,8 +92,8 @@ ROI_GROUPS: dict[str, tuple[str, ...]] = {
 # into regions, one parcel per region, so each ROI is its own parcel.
 ROI_GROUPS_PSN: dict[str, tuple[str, ...]] = {
     r: (r,) for r in ("early_auditory", "STG", "aSTS", "pSTS", "MTG",
-                      "angular", "supramarginal", "precentral", "IFG_oper",
-                      "IFG_tri", "IFG_orb", "IFJ")}
+                      "angular", "supramarginal", "TPOJ", "precentral", "IFG_oper",
+                      "IFG_tri", "IFG_orb", "IFJ", "IFS")}
 
 DEFAULT_STATS = (
     "delta",

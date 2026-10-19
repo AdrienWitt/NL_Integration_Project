@@ -18,9 +18,7 @@ binary mask fade in its own colour. print_group_conn.m picks up
 (plot_roi_atlas_panel.py).
 
 Colours come from plot_roi_context.ROIS, so the panel and the curves cannot
-disagree. `early_auditory_core` (A1 + belts only) is written beside
-`early_auditory` (Glasser's whole Early Auditory section) while the choice
-between the two definitions is open.
+disagree.
 
     python scripts/visualisation/export_roi_masks_conn.py
 """
@@ -40,7 +38,6 @@ from scripts.visualisation.plot_roi_context import ROIS  # noqa: E402
 
 log = logging.getLogger("export_roi_masks_conn")
 OUT = Path("results/group/roi_atlas/export/conn")
-CORE = ("A1", "MBelt", "LBelt", "PBelt")
 
 
 def masks(fsdir: Path) -> dict[str, np.ndarray]:
@@ -50,10 +47,6 @@ def masks(fsdir: Path) -> dict[str, np.ndarray]:
         names = [n.decode() for n in names]
         for key, *_ in ROIS:
             out.setdefault(key, []).append(lab == names.index(key))
-        hcp, _, hn = nib.freesurfer.read_annot(fsdir / "label" / f"{hemi}.HCPMMP1.annot")
-        hn = [n.decode()[2:].removesuffix("_ROI") for n in hn]
-        out.setdefault("early_auditory_core", []).append(
-            np.isin(hcp, [hn.index(a) for a in CORE]))
     return {k: np.concatenate(v) for k, v in out.items()}
 
 
@@ -63,7 +56,6 @@ def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     write_reference(fsdir, OUT / "_check_curvature.surf.nii")
     colour = {k: c for k, _, c, _ in ROIS}
-    colour["early_auditory_core"] = colour["early_auditory"]
     for key, m in masks(fsdir).items():
         nib.save(to_conn_volume(m.astype(np.float32)), OUT / f"roi_{key}__mask.surf.nii")
         rgb = np.array([int(colour[key][i:i + 2], 16) for i in (1, 3, 5)]) / 255

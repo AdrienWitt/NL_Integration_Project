@@ -51,11 +51,17 @@ ROIS = [("early_auditory", "early auditory", "#2a78d6", "temporal"),
         ("aSTS", "aSTS", "#7fd4b4", "temporal"),
         ("pSTS", "pSTS", "#1baf7a", "temporal"),
         ("MTG", "MTG", "#008300", "temporal"),
+        ("TPOJ", "TPJ", "#00a3b4", "parietal"),
+        ("angular", "angular", "#b2367d", "parietal"),
+        ("supramarginal", "supramarginal", "#8a6d3b", "parietal"),
         ("precentral", "precentral", "#eda100", "frontal"),
+        ("IFJ", "IFJ", "#5a6b7c", "frontal"),
+        ("IFS", "IFS", "#7a9a2e", "frontal"),
         ("IFG_oper", "IFG opercularis", "#e87ba4", "frontal"),
         ("IFG_tri", "IFG triangularis", "#6250d6", "frontal"),
         ("IFG_orb", "IFG orbitalis", "#e34948", "frontal")]
-LOBE = {"temporal": dict(ls="-", marker="o"), "frontal": dict(ls=(0, (4, 2)), marker="s")}
+LOBE = {"temporal": dict(ls="-", marker="o"), "parietal": dict(ls=(0, (1, 1.5)), marker="^"),
+        "frontal": dict(ls=(0, (4, 2)), marker="s")}
 BEYOND = [("delta_audio_given_text", "Emotion beyond text"),
           ("delta_text_given_audio", "Text beyond emotion")]
 STAT_LABEL = {"delta": "Integration δ"} | dict(BEYOND)
@@ -81,8 +87,9 @@ def style(ax):
     ax.axhline(0, color=MUTED, lw=1.1, zorder=1)
 
 
-def panel(ax, d, stat, hemi, axis):
-    """One statistic for one hemisphere along one context axis."""
+def panel(ax, d, stat, hemi, axis, lobe_only=None):
+    """One statistic for one hemisphere along one context axis (one lobe's ROIs
+    with `lobe_only`)."""
     spec = AXES[axis]
     n = len(spec["runs"])
     ax.set_xticks(range(n), [r[1:] for r in spec["runs"]])
@@ -94,6 +101,8 @@ def panel(ax, d, stat, hemi, axis):
                 va="center", fontsize=FS_LABEL, color=MUTED)
         return
     for roi, label, c, lobe in ROIS:
+        if lobe_only and lobe != lobe_only:
+            continue
         s = (d[(d.stat == stat) & (d.hemi == hemi) & (d.roi == roi)]
              .set_index("run").reindex(spec["runs"]))
         x = range(n)
@@ -110,26 +119,29 @@ def panel(ax, d, stat, hemi, axis):
 
 def legend(fig, ax_leg):
     ax_leg.axis("off")
-    for j, (lobe, title) in enumerate((("temporal", "Temporal"), ("frontal", "Frontal"))):
+    groups = (("temporal", "Temporal", 0.0, 2), ("parietal", "Parietal", 0.27, 1),
+              ("frontal", "Frontal", 0.43, 2))
+    for lobe, title, x, ncol in groups:
         h = [Line2D([], [], color=c, lw=2, ls=LOBE[lobe]["ls"], marker=LOBE[lobe]["marker"],
                     ms=8, mfc=c, mec=SURFACE, mew=1.6)
              for _, _, c, lb in ROIS if lb == lobe]
         l = [label for _, label, _, lb in ROIS if lb == lobe]
-        lg = ax_leg.legend(h, l, title=title, loc="upper left", bbox_to_anchor=(0.0 + 0.36 * j, 1.0),
-                           ncol=2, frameon=False, fontsize=FS_LEGEND, title_fontsize=FS_LEGEND,
+        lg = ax_leg.legend(h, l, title=title, loc="upper left", bbox_to_anchor=(x, 1.0),
+                           ncol=ncol, frameon=False, fontsize=FS_LEGEND, title_fontsize=FS_LEGEND,
                            alignment="left", handlelength=2.6, columnspacing=1.4)
         lg.get_title().set_color(INK2)
         lg.get_title().set_fontweight("bold")
         ax_leg.add_artist(lg)
-    # filled vs open, shown in both lobe shapes (circle, square)
+    # filled vs open, shown in every lobe shape (circle, triangle, square)
+    shapes = [LOBE[g[0]]["marker"] for g in groups]
     key = [tuple(Line2D([], [], ls="", marker=m, ms=8, mfc=INK2, mec=SURFACE, mew=1.6)
-                 for m in ("o", "s")),
+                 for m in shapes),
            tuple(Line2D([], [], ls="", marker=m, ms=8, mfc=SURFACE, mec=INK2, mew=2)
-                 for m in ("o", "s")),
+                 for m in shapes),
            Patch(color=SEL)]
-    lg = ax_leg.legend(key, ["≥ 50% of vertices significant", "< 50%", "selected model"],
+    lg = ax_leg.legend(key, ["≥ 50% significant", "< 50% significant", "selected model"],
                        handler_map={tuple: HandlerTuple(ndivide=None, pad=0.6)},
-                       title="Markers", loc="upper left", bbox_to_anchor=(0.74, 1.0),
+                       title="Markers", loc="upper left", bbox_to_anchor=(0.78, 1.0),
                        frameon=False, fontsize=FS_LEGEND, title_fontsize=FS_LEGEND, alignment="left")
     lg.get_title().set_color(INK2)
     lg.get_title().set_fontweight("bold")
@@ -138,10 +150,11 @@ def legend(fig, ax_leg):
 # Label of each region on the lateral view of the LEFT hemisphere (front to the
 # left), in image fractions; outside [0, 1] is the margin around the brain. The
 # right hemisphere is drawn mirrored, so its labels take x -> 1 - x.
-BRAIN_LABELS = {"precentral": (0.42, -0.10), "IFG_oper": (0.0, 0.26),
-                "IFG_tri": (-0.04, 0.52), "IFG_orb": (0.0, 0.90),
-                "early_auditory": (0.98, 0.22), "STG": (1.08, 0.46),
-                "pSTS": (1.10, 0.68), "MTG": (0.80, 1.14), "aSTS": (0.28, 1.14)}
+BRAIN_LABELS = {"precentral": (0.36, -0.12), "IFJ": (0.06, 0.04), "IFG_oper": (-0.02, 0.24),
+                "IFG_tri": (-0.06, 0.48), "IFG_orb": (0.0, 0.88),
+                "early_auditory": (0.66, -0.12), "supramarginal": (0.98, -0.02),
+                "angular": (1.14, 0.20), "TPOJ": (1.16, 0.38), "STG": (1.14, 0.54),
+                "pSTS": (1.12, 0.70), "MTG": (0.82, 1.14), "aSTS": (0.30, 1.14)}
 BRAIN_XLIM, BRAIN_YLIM = (-0.42, 1.42), (1.24, -0.2)
 
 
@@ -169,50 +182,57 @@ def brain(ax, hemi, atlas_dir):
         ax.plot(*cents[roi], "o", ms=4, mfc=c, mec=SURFACE, mew=1)
 
 
+LOBES = (("temporal", "Temporal"), ("parietal", "Parietal"), ("frontal", "Frontal"))
+
+
 def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name, atlas_dir=None):
-    """Columns = (statistic, context axis); rows = hemispheres, each named by a bold
-    horizontal row header in the left margin (L / R), spelled out in the y label.
-    With `atlas_dir`, a third column shows where each region is, per hemisphere."""
+    """Columns = (statistic, context axis); rows = hemispheres, each split into one
+    small panel per lobe (temporal / parietal / frontal) on a scale shared within
+    the hemisphere, named by a bold row header in the left margin (L / R). With
+    `atlas_dir`, a third column shows where each region is, per hemisphere."""
     third = atlas_dir is not None and (atlas_dir / "roi_atlas_lh.png").exists()
-    fig = plt.figure(figsize=(19.5 if third else 13.5, 10.6), facecolor=SURFACE)
-    gs = fig.add_gridspec(2, 3 if third else 2, hspace=0.28, wspace=0.08,
-                          width_ratios=[1, 1, 1.05] if third else None,
-                          left=0.095 if third else 0.135, right=0.955 if third else 0.985,
-                          top=0.92, bottom=0.2)
-    legend(fig, fig.add_axes([0.095 if third else 0.135, 0.005, 0.85, 0.115]))
-    axs = [[fig.add_subplot(gs[i, j]) for j in range(2)] for i in range(2)]
-    for i in range(2):
-        axs[i][1].sharey(axs[i][0])
+    fig = plt.figure(figsize=(19.5 if third else 13.5, 17), facecolor=SURFACE)
+    outer = fig.add_gridspec(2, 1, hspace=0.12, left=0.095 if third else 0.135,
+                             right=0.955 if third else 0.985, top=0.945, bottom=0.115)
+    legend(fig, fig.add_axes([0.095 if third else 0.135, 0.005, 0.85, 0.075]))
+    first = {}
     for i, hemi in enumerate(HEMI):
-        for j, stat in enumerate(stats_cols):
-            ax = axs[i][j]
-            spec = AXES[axis_of_col[j]]
-            style(ax)
-            panel(ax, data[axis_of_col[j]], stat, hemi, axis_of_col[j])
-            if i == 0:
-                ax.set_title(f"{STAT_LABEL[stat]} across {spec['name']}", loc="left",
-                             fontsize=FS_TITLE, color=INK, fontweight="bold", pad=26)
-                ax.text(0, 1.035, spec["fixed"], transform=ax.transAxes, ha="left",
-                        va="bottom", fontsize=FS_LABEL, color=INK2)
-            if i == 1:
-                ax.set_xlabel(AXES[axis_of_col[j]]["xlabel"], fontsize=FS_LABEL, color=INK2, labelpad=8)
-            else:
-                ax.tick_params(labelbottom=False)
-            if j == 0:
-                ax.set_ylabel(f"{HEMI[hemi][1]}: {ylabel}", fontsize=FS_LABEL, color=INK2, labelpad=8)
-            else:
-                ax.tick_params(labelleft=False)
-    if third:
-        for i, hemi in enumerate(HEMI):
-            ax = fig.add_subplot(gs[i, 2])
+        gs = outer[i].subgridspec(3, 3 if third else 2, hspace=0.24, wspace=0.08,
+                                  width_ratios=[1, 1, 1.05] if third else None)
+        for r, (lobe, lobe_name) in enumerate(LOBES):
+            for j, stat in enumerate(stats_cols):
+                ax = fig.add_subplot(gs[r, j], sharey=first.get(hemi))
+                first.setdefault(hemi, ax)
+                spec = AXES[axis_of_col[j]]
+                style(ax)
+                panel(ax, data[axis_of_col[j]], stat, hemi, axis_of_col[j], lobe)
+                ax.text(0, 1.02, lobe_name, transform=ax.transAxes, ha="left", va="bottom",
+                        fontsize=FS_LABEL, color=INK2, fontweight="bold")
+                if i == 0 and r == 0:
+                    ax.set_title(f"{STAT_LABEL[stat]} across {spec['name']}", loc="left",
+                                 fontsize=FS_TITLE, color=INK, fontweight="bold", pad=48)
+                    ax.text(0, 1.14, spec["fixed"], transform=ax.transAxes, ha="left",
+                            va="bottom", fontsize=FS_LABEL, color=INK2)
+                if i == 1 and r == 2:
+                    ax.set_xlabel(spec["xlabel"], fontsize=FS_LABEL, color=INK2, labelpad=8)
+                elif r < 2:
+                    ax.tick_params(labelbottom=False)
+                if j == 0:
+                    if r == 1:
+                        ax.set_ylabel(f"{HEMI[hemi][1]}: {ylabel}", fontsize=FS_LABEL,
+                                      color=INK2, labelpad=8)
+                else:
+                    ax.tick_params(labelleft=False)
+                if j == 0 and r == 1:
+                    bb = ax.get_position()
+                    fig.text(0.015, (bb.y0 + bb.y1) / 2, HEMI[hemi][0], ha="left",
+                             va="center", fontsize=FS_TITLE + 2, color=INK, fontweight="bold")
+        if third:
+            ax = fig.add_subplot(gs[:, 2])
             brain(ax, hemi, atlas_dir)
             if i == 0:
                 ax.set_title("Regions", loc="left", fontsize=FS_TITLE, color=INK,
-                             fontweight="bold", pad=26)
-    for i, hemi in enumerate(HEMI):
-        bb = axs[i][0].get_position()
-        fig.text(0.015, (bb.y0 + bb.y1) / 2, HEMI[hemi][0], ha="left", va="center",
-                 fontsize=FS_TITLE + 2, color=INK, fontweight="bold")
+                             fontweight="bold", pad=8)
     for ext in ("png", "pdf", "svg"):
         fig.savefig(out / f"{name}.{ext}", dpi=200, facecolor=SURFACE)
     plt.close(fig)

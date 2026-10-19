@@ -12,7 +12,7 @@ The bare surface is the per-pixel median of the renders: every pixel is
 coloured in at most a few of them. plot_roi_context.py draws the two views as
 a third column, beside the curves of the same hemisphere.
 
-    python scripts/visualisation/plot_roi_atlas_panel.py [--early core|all]
+    python scripts/visualisation/plot_roi_atlas_panel.py
 """
 from __future__ import annotations
 
@@ -36,13 +36,9 @@ THRESH = 40                          # summed |RGB| departure from the bare surf
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--early", choices=("all", "core"), default="all",
-                    help="early auditory: Glasser's whole section, or A1 + belts")
-    a = ap.parse_args(argv)
+    ap.parse_args(argv)
     keys = [k for k, *_ in ROIS]
     files = {k: PRINTS / f"roi_{k}__mask.surf.png" for k in keys}
-    if a.early == "core":
-        files["early_auditory"] = PRINTS / "roi_early_auditory_core__mask.surf.png"
     imgs = {k: np.asarray(Image.open(f).convert("RGB")).astype(np.int16) for k, f in files.items()}
     sizes = {im.shape for im in imgs.values()}
     if len(sizes) != 1:
@@ -63,8 +59,8 @@ def main(argv=None) -> int:
             ys, xs = np.nonzero(masks[k][y0:y1, x0:x1])
             if len(xs) > 200:   # visible in this view
                 cents[hemi][k] = [float(np.median(xs)) / (x1 - x0), float(np.median(ys)) / (y1 - y0)]
-    json.dump({"early": a.early, "centroids": cents}, open(ROOT / "roi_atlas_centroids.json", "w"), indent=1)
-    print(f"-> {ROOT}/roi_atlas_lh.png, roi_atlas_rh.png (early auditory: {a.early})")
+    json.dump({"centroids": cents}, open(ROOT / "roi_atlas_centroids.json", "w"), indent=1)
+    print(f"-> {ROOT}/roi_atlas_lh.png, roi_atlas_rh.png")
     return 0
 
 
