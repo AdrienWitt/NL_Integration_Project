@@ -44,7 +44,7 @@ SHORT = dict(zip(REGIONS["region"], REGIONS["label"])) | {
     "postcentral": "postcentral", "IFG_oper": "IFGoper",
     "IFG_tri": "IFGtri", "IFG_orb": "IFGorb", "IFG_rostral": "rostral IFG",
     "angular": "angular", "supramarginal": "supramarginal", "IFJ": "IFJ",
-    "IFS": "IFS", "TPOJ": "TPOJ"}
+    "IFS": "IFS", "TPOJ": "TPJ"}
 
 
 def mdt(df, **kw):
