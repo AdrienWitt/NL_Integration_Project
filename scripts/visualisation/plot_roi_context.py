@@ -135,13 +135,51 @@ def legend(fig, ax_leg):
     lg.get_title().set_fontweight("bold")
 
 
-def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name):
+# Label of each region on the lateral view of the LEFT hemisphere (front to the
+# left), in image fractions; outside [0, 1] is the margin around the brain. The
+# right hemisphere is drawn mirrored, so its labels take x -> 1 - x.
+BRAIN_LABELS = {"precentral": (0.42, -0.10), "IFG_oper": (0.0, 0.26),
+                "IFG_tri": (-0.04, 0.52), "IFG_orb": (0.0, 0.90),
+                "early_auditory": (0.98, 0.22), "STG": (1.08, 0.46),
+                "pSTS": (1.10, 0.68), "MTG": (0.80, 1.14), "aSTS": (0.28, 1.14)}
+BRAIN_XLIM, BRAIN_YLIM = (-0.42, 1.42), (1.24, -0.2)
+
+
+def brain(ax, hemi, atlas_dir):
+    """The regions in their curve colours on the CONN lateral view of one
+    hemisphere (plot_roi_atlas_panel.py), each labelled with a leader line."""
+    import json
+    ax.axis("off")
+    img = plt.imread(atlas_dir / f"roi_atlas_{hemi}.png")
+    ax.imshow(img, extent=(0, 1, 1, 0))
+    ax.set_xlim(*BRAIN_XLIM)
+    ax.set_ylim(*BRAIN_YLIM)
+    ax.set_aspect(img.shape[0] / img.shape[1], adjustable="datalim")
+    cents = json.load(open(atlas_dir / "roi_atlas_centroids.json"))["centroids"][hemi]
+    for roi, label, c, _ in ROIS:
+        if roi not in cents:
+            continue
+        lx, ly = BRAIN_LABELS[roi]
+        if hemi == "rh":
+            lx = 1 - lx
+        ha = "right" if lx < 0.5 else "left"
+        ax.annotate(label, xy=cents[roi], xytext=(lx, ly), fontsize=FS_TICK - 1, color=INK,
+                    ha=ha if not 0 <= lx <= 1 else "center", va="center",
+                    arrowprops=dict(arrowstyle="-", color=c, lw=1.6, shrinkA=2, shrinkB=0))
+        ax.plot(*cents[roi], "o", ms=4, mfc=c, mec=SURFACE, mew=1)
+
+
+def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name, atlas_dir=None):
     """Columns = (statistic, context axis); rows = hemispheres, each named by a bold
-    horizontal row header in the left margin (L / R), spelled out in the y label."""
-    fig = plt.figure(figsize=(13.5, 10.6), facecolor=SURFACE)
-    gs = fig.add_gridspec(2, 2, hspace=0.28, wspace=0.08,
-                          left=0.135, right=0.985, top=0.92, bottom=0.2)
-    legend(fig, fig.add_axes([0.135, 0.005, 0.85, 0.115]))
+    horizontal row header in the left margin (L / R), spelled out in the y label.
+    With `atlas_dir`, a third column shows where each region is, per hemisphere."""
+    third = atlas_dir is not None and (atlas_dir / "roi_atlas_lh.png").exists()
+    fig = plt.figure(figsize=(19.5 if third else 13.5, 10.6), facecolor=SURFACE)
+    gs = fig.add_gridspec(2, 3 if third else 2, hspace=0.28, wspace=0.08,
+                          width_ratios=[1, 1, 1.05] if third else None,
+                          left=0.095 if third else 0.135, right=0.955 if third else 0.985,
+                          top=0.92, bottom=0.2)
+    legend(fig, fig.add_axes([0.095 if third else 0.135, 0.005, 0.85, 0.115]))
     axs = [[fig.add_subplot(gs[i, j]) for j in range(2)] for i in range(2)]
     for i in range(2):
         axs[i][1].sharey(axs[i][0])
@@ -164,6 +202,13 @@ def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name):
                 ax.set_ylabel(f"{HEMI[hemi][1]}: {ylabel}", fontsize=FS_LABEL, color=INK2, labelpad=8)
             else:
                 ax.tick_params(labelleft=False)
+    if third:
+        for i, hemi in enumerate(HEMI):
+            ax = fig.add_subplot(gs[i, 2])
+            brain(ax, hemi, atlas_dir)
+            if i == 0:
+                ax.set_title("Regions", loc="left", fontsize=FS_TITLE, color=INK,
+                             fontweight="bold", pad=26)
     for i, hemi in enumerate(HEMI):
         bb = axs[i][0].get_position()
         fig.text(0.015, (bb.y0 + bb.y1) / 2, HEMI[hemi][0], ha="left", va="center",
@@ -182,13 +227,17 @@ def main(argv=None):
                     default=Path("results/group/roi_context_curve_audio.csv"))
     ap.add_argument("--out", type=Path,
                     default=Path("results/group/paper_table/roi_context"))
+    ap.add_argument("--atlas-dir", type=Path, default=Path("results/group/roi_atlas"),
+                    help="plot_roi_atlas_panel.py output; adds the region column "
+                         "to the main figure when present")
     a = ap.parse_args(argv)
     data = {ax: (pd.read_csv(p) if p.exists() else None)
             for ax, p in (("text", a.text_csv), ("audio", a.audio_csv))}
     a.out.mkdir(parents=True, exist_ok=True)
 
     # main: delta along the two context axes
-    grid_figure(data, ["delta", "delta"], ["text", "audio"], "integration δ", a.out, "roi_context")
+    grid_figure(data, ["delta", "delta"], ["text", "audio"], "integration δ", a.out, "roi_context",
+                atlas_dir=a.atlas_dir)
     # SI: the two conditional terms along each axis
     for axis in AXES:
         grid_figure(data, [s for s, _ in BEYOND], [axis, axis], "Δr", a.out,
