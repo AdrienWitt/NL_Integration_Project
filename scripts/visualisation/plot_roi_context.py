@@ -16,19 +16,20 @@ eroding as the text band strengthens; where it rises (Heschl) the text term is
 entering. The SI figures carry that decomposition (decision 2026-10-15: delta in
 the main text, the conditional terms in the SI).
 
-Inputs are tidy tables from `scripts/roi_context_curve.py` (Desikan ROIs, group
+Inputs are tidy tables from `scripts/roi_context_curve.py` (psn atlas ROIs, group
 mean over covered vertices, fraction of covered vertices significant). Run labels
 are `k<words>` for the text axis and `w<seconds>` for the audio axis. Filled
 markers: >= 50% of the ROI's covered vertices significant (TFCE FWE p < .05);
 open markers: fewer. The selected configuration is shaded on both axes.
 
-Style (2026-10-15 restyle): eight ROIs in the reference categorical order,
-validated (adjacent CVD dE >= 9.2, normal-vision >= 15.6); temporal ROIs solid
+Style (2026-10-15 restyle): ROIs in the reference categorical order,
+validated (adjacent CVD dE >= 9.2, normal-vision >= 15.6) before aSTS was
+added in a lighter tint of pSTS's green (2026-10-19, psn atlas); temporal ROIs solid
 with circles, frontal ROIs dashed with squares, so identity never rests on hue
 alone; legend grouped by lobe; recessive grid, no frame; one y scale per row.
 
     python scripts/visualisation/plot_roi_context.py \\
-        --text-csv results/group/roi_context_curve_llama.csv \\
+        --text-csv results/group/roi_context_curve_text16.csv \\
         --audio-csv results/group/roi_context_curve_audio.csv
 """
 import argparse
@@ -45,14 +46,15 @@ from matplotlib.patches import Patch
 # (key, label, colour, lobe); the IFG parts are drawn separately (pars orbitalis is
 # the region of the previous study's context effect, and merging it with
 # opercularis/triangularis hid a different curve)
-ROIS = [("HeschlTransverse", "Heschl's gyrus", "#2a78d6", "temporal"),
+ROIS = [("early_auditory", "early auditory", "#2a78d6", "temporal"),
         ("STG", "STG", "#eb6834", "temporal"),
-        ("STS_banks", "banks of STS", "#1baf7a", "temporal"),
+        ("aSTS", "aSTS", "#7fd4b4", "temporal"),
+        ("pSTS", "pSTS", "#1baf7a", "temporal"),
         ("MTG", "MTG", "#008300", "temporal"),
         ("precentral", "precentral", "#eda100", "frontal"),
-        ("IFG_operc", "IFG opercularis", "#e87ba4", "frontal"),
-        ("IFG_triang", "IFG triangularis", "#6250d6", "frontal"),
-        ("IFG_orbitalis", "IFG orbitalis", "#e34948", "frontal")]
+        ("IFG_oper", "IFG opercularis", "#e87ba4", "frontal"),
+        ("IFG_tri", "IFG triangularis", "#6250d6", "frontal"),
+        ("IFG_orb", "IFG orbitalis", "#e34948", "frontal")]
 LOBE = {"temporal": dict(ls="-", marker="o"), "frontal": dict(ls=(0, (4, 2)), marker="s")}
 BEYOND = [("delta_audio_given_text", "Emotion beyond text"),
           ("delta_text_given_audio", "Text beyond emotion")]
@@ -175,7 +177,7 @@ def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--text-csv", type=Path,
-                    default=Path("results/group/roi_context_curve_llama.csv"))
+                    default=Path("results/group/roi_context_curve_text16.csv"))
     ap.add_argument("--audio-csv", type=Path,
                     default=Path("results/group/roi_context_curve_audio.csv"))
     ap.add_argument("--out", type=Path,

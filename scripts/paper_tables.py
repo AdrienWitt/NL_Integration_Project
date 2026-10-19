@@ -6,17 +6,18 @@ writes paper_table.csv and the within-subject CSVs this script reads).
 
     Table 1    within-subject scores and contrasts (cv / holdout, n of 9)
     Table 2    group inference per map: mean, TFCE FWE vertices, TFCE components
-               clusters, and the Desikan regions where the TFCE-significant
+               clusters, and the atlas regions where the TFCE-significant
                effect is largest (instead of cluster peak labels, which name
                one Glasser area for clusters spanning most of a lobe)
     S1         band selection: every configuration, cv and holdout
     S2         per-subject scores
     S3         full group table (adds perm FDR and mean where significant)
     S4         every component of the TFCE-significant vertices of every paper map
-    S5         Desikan parcels for the integration maps (emotion, openSMILE)
+    S5         atlas regions for the integration maps (emotion, openSMILE)
     S6         integration x context: TFCE vertices per k, paired k contrasts
     S7         null calibration of the two final integration models
     S8         negative controls: prediction, word rate, interaction
+    S9         the atlas: HCP-MMP1 areas of each region (scripts/atlas/)
 
     PYTHONPATH=. python3 scripts/paper_tables.py
 """
@@ -35,21 +36,15 @@ FS = Path("/usr/local/freesurfer/7.4.1/subjects/fsaverage/label")
 NV = 163_842
 MIN_SUBJ = 5
 
-SHORT = {
-    "superiortemporal": "STG", "transversetemporal": "Heschl",
-    "bankssts": "banks STS", "middletemporal": "MTG",
-    "inferiortemporal": "ITG", "supramarginal": "supramarginal",
-    "parsopercularis": "IFGoper", "parstriangularis": "IFGtri",
-    "parsorbitalis": "IFGorb", "precentral": "precentral",
-    "postcentral": "postcentral", "superiorfrontal": "SFG",
-    "caudalmiddlefrontal": "caudal MFG", "rostralmiddlefrontal": "rostral MFG",
-    "lateralorbitofrontal": "lat. OFC", "medialorbitofrontal": "med. OFC",
-    "precuneus": "precuneus", "inferiorparietal": "IPL",
-    "superiorparietal": "SPL", "temporalpole": "temporal pole",
-    "insula": "insula", "posteriorcingulate": "PCC",
-    "isthmuscingulate": "isthmus cing.", "parahippocampal": "parahippocampal",
-    "fusiform": "fusiform", "frontalpole": "frontal pole",
-}
+ATLAS = "psn"   # HCP-MMP1 areas grouped into regions, scripts/atlas/build_psn_atlas.py
+REGIONS = pd.read_csv(Path(__file__).resolve().parent / "atlas" / "psn_regions.csv")
+SHORT = dict(zip(REGIONS["region"], REGIONS["label"])) | {
+    "early_auditory": "early auditory", "STG": "STG", "aSTS": "aSTS",
+    "pSTS": "pSTS", "MTG": "MTG", "ITG": "ITG", "precentral": "precentral",
+    "postcentral": "postcentral", "IFG_oper": "IFGoper",
+    "IFG_tri": "IFGtri", "IFG_orb": "IFGorb", "IFG_rostral": "rostral IFG",
+    "angular": "angular", "supramarginal": "supramarginal", "IFJ": "IFJ",
+    "IFS": "IFS", "TPOJ": "TPOJ"}
 
 
 def mdt(df, **kw):
@@ -71,17 +66,17 @@ def md(df, path, title, note=""):
         f.write(mdt(df) + "\n")
 
 
-def desikan():
+def atlas():
     labs, names = [], None
     for h in ("lh", "rh"):
-        lab, _, nm = nib.freesurfer.read_annot(FS / f"{h}.aparc.annot")
+        lab, _, nm = nib.freesurfer.read_annot(FS / f"{h}.{ATLAS}.annot")
         labs.append(lab)
         names = [n.decode() for n in nm]
     return np.concatenate(labs), names
 
 
 def regions(mean, sig, lab, names, n=4, min_sig=50):
-    """Desikan parcels ranked by mean effect over their TFCE-significant
+    """Atlas regions ranked by mean effect over their TFCE-significant
     vertices, among parcels with at least `min_sig` such vertices."""
     hemi = np.r_[np.zeros(NV, int), np.ones(NV, int)]
     out = []
@@ -121,7 +116,7 @@ def preference_note():
 
 def table2():
     pt = pd.read_csv(PT / "paper_table.csv")
-    lab, names = desikan()
+    lab, names = atlas()
     rows = []
     for (sec, label, d, stat, kind), (_, p) in zip(ROWS, pt.iterrows()):
         gd = G / d
@@ -150,8 +145,8 @@ def table2():
                 "= intersection-union of the two conditional tests). "
                 "clusters: connected components of the TFCE-significant "
                 "vertices. extent_fwe: vertices significant by cluster-extent "
-                "FWE p < .05 at z > 3.09, same null. Regions: Desikan "
-                "parcels with >= 50 TFCE-significant vertices, ranked by mean "
+                "FWE p < .05 at z > 3.09, same null. Regions: atlas "
+                "regions (HCP-MMP1 areas grouped, S9) with >= 50 TFCE-significant vertices, ranked by mean "
                 "effect over those vertices (top 4).\n\n"
                 + preference_note() + "\n")
         for sec, sub in df.groupby("section", sort=False):
@@ -276,14 +271,14 @@ def s5_parcels():
                           ("delta_text_given_audio", f"text | {band}"),
                           ("delta", "integration")):
             p = pd.read_csv(G / f"{run}__conditional" / "tables"
-                            / f"{stat}__parcels_aparc.csv")
+                            / f"{stat}__parcels_{ATLAS}.csv")
             p.insert(0, "map", lab)
             out.append(p)
     df = pd.concat(out, ignore_index=True)
     md(df, OUT / "S5_parcels_integration",
-       "Supplementary Table 5. Desikan parcels, integration maps",
-       "Per parcel: covered vertices (>= 5 subjects), mean effect over them, "
-       "and % of covered vertices significant (TFCE FWE p < .05; plot_group_inflated.py --test p_tfce_perm_fwe). "
+       "Supplementary Table 5. Atlas regions, integration maps",
+       "Per region (HCP-MMP1 areas grouped, S9): covered vertices (>= 5 subjects), mean effect over them, "
+       "and % of covered vertices significant (TFCE FWE p < .05; plot_group_inflated.py --atlas psn --test p_tfce_perm_fwe). "
        "Low pct_covered means 'not covered', not 'no effect'.")
 
 
@@ -347,7 +342,7 @@ def s6_context():
                 "(TFCE FWE p < .05 vertices, each tail .025; 'up' = larger at "
                 "the longer context).\n\n"
                 + mdt(b)
-                + "\n\nC. ROI curves (Desikan, per hemisphere and context "
+                + "\n\nC. ROI curves (atlas regions, per hemisphere and context "
                 "length): `S6_context_roi_curve.csv` (the data of the context "
                 "figure).\n")
 
@@ -417,6 +412,28 @@ def s8_controls():
        "emotion model.")
 
 
+def s9_regions():
+    first = ["early_auditory", "STG", "aSTS", "pSTS", "MTG", "ITG",
+             "temporal_pole", "TPOJ", "angular", "supramarginal", "IPS",
+             "IFG_oper", "IFG_tri", "IFG_orb", "IFG_rostral", "IFJ", "IFS",
+             "precentral", "postcentral"]
+    order = first + sorted(set(REGIONS["region"]) - set(first))
+    rows = []
+    for r in order:
+        sub = REGIONS[REGIONS["region"] == r]
+        label = sub["label"].iloc[0]
+        rows.append({"region": label + (f" ({SHORT[r]})" if not label.startswith(SHORT.get(r, label)) else ""),
+                     "HCP-MMP1 areas": " ".join(sub["area"]),
+                     "Glasser section(s)": ", ".join(dict.fromkeys(
+                         sub["glasser_section"].str.replace("_", " ")))})
+    md(pd.DataFrame(rows), OUT / "S9_regions",
+       "Supplementary Table 9. Region definitions",
+       "Each region is a set of HCP-MMP1 areas (Glasser et al., 2016) on "
+       "fsaverage. Superior temporal, inferior parietal and inferior frontal "
+       "areas are grouped into anatomical regions; every other area keeps its "
+       "cortical section.")
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     table1()
@@ -430,6 +447,7 @@ def main():
     s6_context()
     s7_calibration()
     s8_controls()
+    s9_regions()
     for p in sorted(OUT.iterdir()):
         print("->", p)
 

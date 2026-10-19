@@ -88,6 +88,13 @@ ROI_GROUPS: dict[str, tuple[str, ...]] = {
     "rostralmidfrontal": ("rostralmiddlefrontal",),
 }
 
+# The paper's atlas (scripts/atlas/build_psn_atlas.py): HCP-MMP1 areas grouped
+# into regions, one parcel per region, so each ROI is its own parcel.
+ROI_GROUPS_PSN: dict[str, tuple[str, ...]] = {
+    r: (r,) for r in ("early_auditory", "STG", "aSTS", "pSTS", "MTG",
+                      "angular", "supramarginal", "precentral", "IFG_oper",
+                      "IFG_tri", "IFG_orb", "IFJ")}
+
 DEFAULT_STATS = (
     "delta",
     "delta_audio_given_text",
@@ -212,8 +219,9 @@ def main() -> None:
     p.add_argument("--stats", nargs="+", default=list(DEFAULT_STATS),
                    help="Statistics to summarise (default: delta and its two "
                         "conditional components).")
-    p.add_argument("--annot", default="aparc",
-                   help="FreeSurfer annotation (aparc = Desikan-Killiany).")
+    p.add_argument("--annot", default="psn",
+                   help="FreeSurfer annotation: psn (the paper's HCP-MMP1 "
+                        "regions) or aparc (Desikan-Killiany).")
     p.add_argument("--alpha", type=float, default=0.05,
                    help="Threshold applied to the ALREADY-corrected p maps.")
     p.add_argument("--rois", nargs="+", default=None,
@@ -222,6 +230,10 @@ def main() -> None:
     args = p.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    if args.annot == "psn":
+        ROI_GROUPS.clear()
+        ROI_GROUPS.update(ROI_GROUPS_PSN)
 
     if args.rois:
         unknown = set(args.rois) - set(ROI_GROUPS)
