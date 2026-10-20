@@ -6,8 +6,8 @@ p47r,IFG_rostral,rostral inferior frontal cortex,Inferior_Frontal
 45,IFG_tri,IFG pars triangularis,Inferior_Frontal
 IFJa,IFJ,inferior frontal junction,Inferior_Frontal
 IFJp,IFJ,inferior frontal junction,Inferior_Frontal
-IFSa,IFS,inferior frontal sulcus,Inferior_Frontal
-IFSp,IFS,inferior frontal sulcus,Inferior_Frontal
+IFSa,IFG_tri,IFG pars triangularis,Inferior_Frontal
+IFSp,IFG_oper,IFG pars opercularis,Inferior_Frontal
 IP0,IPS,intraparietal sulcus,Inferior_Parietal
 IP1,IPS,intraparietal sulcus,Inferior_Parietal
 IP2,IPS,intraparietal sulcus,Inferior_Parietal

@@ -13,7 +13,8 @@ gyral names with the HCP names the cluster tables use.
 
 `psn_regions.csv` assigns each of the 180 areas to one region. Language and
 auditory cortex is grouped by hand (STG, aSTS, pSTS, MTG, angular and
-supramarginal gyrus, the three IFG parts, precentral); every other area keeps
+supramarginal gyrus, the three IFG parts up to the inferior frontal sulcus,
+precentral); every other area keeps
 its Glasser et al. (2016) cortical section, so the atlas covers the whole
 cortex and a ranking of regions never compares a group with a single area.
 The section of each area is in the table, from the HCP-MMP1 region list of

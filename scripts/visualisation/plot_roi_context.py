@@ -56,7 +56,6 @@ ROIS = [("early_auditory", "early auditory", "#2a78d6", "temporal"),
         ("supramarginal", "supramarginal", "#8a6d3b", "parietal"),
         ("precentral", "precentral", "#eda100", "frontal"),
         ("IFJ", "IFJ", "#5a6b7c", "frontal"),
-        ("IFS", "IFS", "#7a9a2e", "frontal"),
         ("IFG_oper", "IFG opercularis", "#e87ba4", "frontal"),
         ("IFG_tri", "IFG triangularis", "#6250d6", "frontal"),
         ("IFG_orb", "IFG orbitalis", "#e34948", "frontal")]

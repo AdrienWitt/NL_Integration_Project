@@ -415,7 +415,7 @@ def s8_controls():
 def s9_regions():
     first = ["early_auditory", "STG", "aSTS", "pSTS", "MTG", "ITG",
              "temporal_pole", "TPOJ", "angular", "supramarginal", "IPS",
-             "IFG_oper", "IFG_tri", "IFG_orb", "IFG_rostral", "IFJ", "IFS",
+             "IFG_oper", "IFG_tri", "IFG_orb", "IFG_rostral", "IFJ",
              "precentral", "postcentral"]
     order = first + sorted(set(REGIONS["region"]) - set(first))
     rows = []

@@ -93,7 +93,7 @@ ROI_GROUPS: dict[str, tuple[str, ...]] = {
 ROI_GROUPS_PSN: dict[str, tuple[str, ...]] = {
     r: (r,) for r in ("early_auditory", "STG", "aSTS", "pSTS", "MTG",
                       "angular", "supramarginal", "TPOJ", "precentral", "IFG_oper",
-                      "IFG_tri", "IFG_orb", "IFJ", "IFS")}
+                      "IFG_tri", "IFG_orb", "IFJ")}
 
 DEFAULT_STATS = (
     "delta",
