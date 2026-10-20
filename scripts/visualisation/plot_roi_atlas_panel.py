@@ -12,7 +12,7 @@ The bare surface is the per-pixel median of the renders: every pixel is
 coloured in at most a few of them. plot_roi_context.py draws the two views as
 a third column, beside the curves of the same hemisphere.
 
-    python scripts/visualisation/plot_roi_atlas_panel.py [--discs-only]
+    python scripts/visualisation/plot_roi_atlas_panel.py [--with-regions]
 """
 from __future__ import annotations
 
@@ -37,8 +37,8 @@ PALE = 0.6                           # region tint when its disc is drawn over i
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--discs-only", action="store_true",
-                    help="paint only the peak discs, not the whole regions")
+    ap.add_argument("--with-regions", dest="discs_only", action="store_false",
+                    help="also paint the whole regions, pale, under the discs")
     args = ap.parse_args(argv)
     keys = [k for k, *_ in ROIS]
     files = {k: next((f for f in (PRINTS / "normalised" / n, PRINTS / n) if f.exists()), PRINTS / n)
