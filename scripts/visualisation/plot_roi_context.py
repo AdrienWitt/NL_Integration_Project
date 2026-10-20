@@ -149,11 +149,11 @@ def legend(fig, ax_leg):
 # Label of each region on the lateral view of the LEFT hemisphere (front to the
 # left), in image fractions; outside [0, 1] is the margin around the brain. The
 # right hemisphere is drawn mirrored, so its labels take x -> 1 - x.
-BRAIN_LABELS = {"precentral": (0.36, -0.12), "IFJ": (0.06, 0.04), "IFG_oper": (-0.02, 0.24),
+BRAIN_LABELS = {"precentral": (0.28, -0.12), "IFJ": (0.02, 0.06), "IFG_oper": (-0.04, 0.26),
                 "IFG_tri": (-0.06, 0.48), "IFG_orb": (0.0, 0.88),
-                "early_auditory": (0.66, -0.12), "supramarginal": (0.98, -0.02),
-                "angular": (1.14, 0.20), "TPOJ": (1.16, 0.38), "STG": (1.14, 0.54),
-                "pSTS": (1.12, 0.70), "MTG": (0.82, 1.14), "aSTS": (0.30, 1.14)}
+                "early_auditory": (0.70, -0.12), "supramarginal": (1.02, 0.04),
+                "angular": (1.14, 0.22), "TPOJ": (1.16, 0.38), "pSTS": (1.14, 0.54),
+                "STG": (1.12, 0.70), "MTG": (0.82, 1.14), "aSTS": (0.30, 1.14)}
 BRAIN_XLIM, BRAIN_YLIM = (-0.42, 1.42), (1.24, -0.2)
 
 
@@ -190,14 +190,14 @@ def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name, atlas_dir=None
     the hemisphere, named by a bold row header in the left margin (L / R). With
     `atlas_dir`, a third column shows where each region is, per hemisphere."""
     third = atlas_dir is not None and (atlas_dir / "roi_atlas_lh.png").exists()
-    fig = plt.figure(figsize=(19.5 if third else 13.5, 17), facecolor=SURFACE)
-    outer = fig.add_gridspec(2, 1, hspace=0.12, left=0.095 if third else 0.135,
+    fig = plt.figure(figsize=(22 if third else 13.5, 17), facecolor=SURFACE)
+    outer = fig.add_gridspec(2, 1, hspace=0.12, left=0.085 if third else 0.135,
                              right=0.955 if third else 0.985, top=0.945, bottom=0.115)
-    legend(fig, fig.add_axes([0.095 if third else 0.135, 0.005, 0.85, 0.075]))
+    legend(fig, fig.add_axes([0.085 if third else 0.135, 0.005, 0.85, 0.075]))
     first = {}
     for i, hemi in enumerate(HEMI):
         gs = outer[i].subgridspec(3, 3 if third else 2, hspace=0.24, wspace=0.08,
-                                  width_ratios=[1, 1, 1.05] if third else None)
+                                  width_ratios=[1, 1, 1.5] if third else None)
         for r, (lobe, lobe_name) in enumerate(LOBES):
             for j, stat in enumerate(stats_cols):
                 ax = fig.add_subplot(gs[r, j], sharey=first.get(hemi))
