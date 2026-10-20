@@ -193,11 +193,6 @@ def s1_selection():
                                    "B": "audio context (s)",
                                    "C": "text depth (layer)",
                                    "D": "text context (words)"})
-    # model size: best cv layer of each Llama at 256 and 1,024 words (Baobab
-    # semantic_sweep/cv, summarise_model_sweep.py), the selected 8B k512 last
-    size = PT / "selection" / "model_size.csv"
-    if size.exists():
-        df = pd.concat([df, pd.read_csv(size).fillna("")], ignore_index=True)
     md(df, OUT / "S1_selection",
        "Supplementary Table 1. Band selection",
        "Mean r over the EV mask, averaged over subjects, for every "
