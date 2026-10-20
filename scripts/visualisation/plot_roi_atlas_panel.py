@@ -61,19 +61,22 @@ def main(argv=None) -> int:
         m = np.abs(im - base).sum(-1) > THRESH
         out[m] = im[m]
         dmasks[k] = m
-    cents = {}
+    cents, discs = {}, {}
     for hemi, i in VIEWS.items():
         x0, y0, x1, y1 = REF_VIEWS[i]
         Image.fromarray(out[y0:y1, x0:x1].astype(np.uint8)).save(ROOT / f"roi_atlas_{hemi}.png")
         cents[hemi] = {}
         for k in keys:
             ys, xs = np.nonzero(dmasks[k][y0:y1, x0:x1]) if k in dmasks else ([], [])
-            if len(xs) <= 50:   # no disc in this view: point at the region
+            on_disc = len(xs) > 50
+            if not on_disc:     # no disc in this view: point at the region
                 ys, xs = np.nonzero(masks[k][y0:y1, x0:x1])
                 if len(xs) <= 200:  # region not visible in this view either
                     continue
             cents[hemi][k] = [float(np.median(xs)) / (x1 - x0), float(np.median(ys)) / (y1 - y0)]
-    json.dump({"centroids": cents}, open(ROOT / "roi_atlas_centroids.json", "w"), indent=1)
+            if on_disc:
+                discs.setdefault(hemi, []).append(k)
+    json.dump({"centroids": cents, "on_disc": discs}, open(ROOT / "roi_atlas_centroids.json", "w"), indent=1)
     print(f"-> {ROOT}/roi_atlas_lh.png, roi_atlas_rh.png")
     return 0
 

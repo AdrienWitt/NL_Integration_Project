@@ -162,7 +162,9 @@ def brain(ax, hemi, atlas_dir):
     ax.set_xlim(*BRAIN_XLIM)
     ax.set_ylim(*BRAIN_YLIM)
     ax.set_aspect(img.shape[0] / img.shape[1], adjustable="datalim")
-    cents = json.load(open(atlas_dir / "roi_atlas_centroids.json"))["centroids"][hemi]
+    meta = json.load(open(atlas_dir / "roi_atlas_centroids.json"))
+    cents = meta["centroids"][hemi]
+    on_disc = set(meta.get("on_disc", {}).get(hemi, []))
     for roi, label, c, _ in ROIS:
         if roi not in cents:
             continue
@@ -172,8 +174,14 @@ def brain(ax, hemi, atlas_dir):
         ha = "right" if lx < 0.5 else "left"
         ax.annotate(label, xy=cents[roi], xytext=(lx, ly), fontsize=FS_TICK - 1, color=INK,
                     ha=ha if not 0 <= lx <= 1 else "center", va="center",
-                    arrowprops=dict(arrowstyle="-", color=c, lw=1.6, shrinkA=2, shrinkB=0))
-        ax.plot(*cents[roi], "o", ms=4, mfc=c, mec=SURFACE, mew=1)
+                    arrowprops=dict(arrowstyle="-", color=c, lw=1.6, shrinkA=2,
+                                    shrinkB=5.5 if roi in on_disc else 0))
+        # a ring around the 6-mm disc (the curve's vertices), leaving it visible;
+        # a small dot where the disc is hidden in this view or absent
+        if roi in on_disc:
+            ax.plot(*cents[roi], "o", ms=11, mfc="none", mec=INK, mew=1.1)
+        else:
+            ax.plot(*cents[roi], "o", ms=4, mfc=c, mec=SURFACE, mew=1)
 
 
 def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name, atlas_dir=None):
