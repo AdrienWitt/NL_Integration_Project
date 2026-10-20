@@ -179,14 +179,15 @@ def brain(ax, hemi, atlas_dir):
 def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name, atlas_dir=None):
     """Columns = (statistic, context axis); rows = hemispheres, each named by a bold
     horizontal row header in the left margin (L / R), spelled out in the y label.
-    With `atlas_dir`, a third column shows where each region is, per hemisphere."""
-    third = atlas_dir is not None and (atlas_dir / "roi_atlas_lh.png").exists()
-    fig = plt.figure(figsize=(22 if third else 13.5, 12), facecolor=SURFACE)
-    gs = fig.add_gridspec(2, 3 if third else 2, hspace=0.24, wspace=0.08,
-                          width_ratios=[1, 1, 1.5] if third else None,
-                          left=0.085 if third else 0.135, right=0.955 if third else 0.985,
-                          top=0.92, bottom=0.2)
-    legend(fig, fig.add_axes([0.085 if third else 0.135, 0.02, 0.85, 0.11]))
+    With `atlas_dir`, a bottom row shows where each region is, left and right
+    hemisphere side by side, so the curves keep the full width."""
+    brains = atlas_dir is not None and (atlas_dir / "roi_atlas_lh.png").exists()
+    fig = plt.figure(figsize=(15.5, 16.5 if brains else 10.6), facecolor=SURFACE)
+    bottom = 0.105 if brains else 0.2
+    gs = fig.add_gridspec(3 if brains else 2, 2, hspace=0.24, wspace=0.08,
+                          height_ratios=[1, 1, 0.95] if brains else None,
+                          left=0.115, right=0.985, top=0.94, bottom=bottom)
+    legend(fig, fig.add_axes([0.115, 0.01, 0.87, bottom - 0.04]))
     axs = [[fig.add_subplot(gs[i, j]) for j in range(2)] for i in range(2)]
     for i in range(2):
         axs[i][1].sharey(axs[i][0])
@@ -201,9 +202,10 @@ def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name, atlas_dir=None
                              fontsize=FS_TITLE, color=INK, fontweight="bold", pad=26)
                 ax.text(0, 1.035, spec["fixed"], transform=ax.transAxes, ha="left",
                         va="bottom", fontsize=FS_LABEL, color=INK2)
-            if i == 1:
-                ax.set_xlabel(spec["xlabel"], fontsize=FS_LABEL, color=INK2, labelpad=8)
-            else:
+            # x labels on both rows: the brain row below breaks the column
+            ax.set_xlabel(spec["xlabel"], fontsize=FS_LABEL, color=INK2, labelpad=8)
+            if i == 0 and not brains:
+                ax.set_xlabel("")
                 ax.tick_params(labelbottom=False)
             if j == 0:
                 ax.set_ylabel(f"{HEMI[hemi][1]}: {ylabel}", fontsize=FS_LABEL, color=INK2, labelpad=8)
@@ -212,12 +214,11 @@ def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name, atlas_dir=None
         bb = axs[i][0].get_position()
         fig.text(0.015, (bb.y0 + bb.y1) / 2, HEMI[hemi][0], ha="left", va="center",
                  fontsize=FS_TITLE + 2, color=INK, fontweight="bold")
-        if third:
-            ax = fig.add_subplot(gs[i, 2])
+        if brains:
+            ax = fig.add_subplot(gs[2, i])
             brain(ax, hemi, atlas_dir)
-            if i == 0:
-                ax.set_title("Regions", loc="left", fontsize=FS_TITLE, color=INK,
-                             fontweight="bold", pad=26)
+            ax.set_title(f"Regions, {HEMI[hemi][1].lower()}", loc="left", fontsize=FS_TITLE,
+                         color=INK, fontweight="bold", pad=4)
     for ext in ("png", "pdf", "svg"):
         fig.savefig(out / f"{name}.{ext}", dpi=200, facecolor=SURFACE)
     plt.close(fig)
