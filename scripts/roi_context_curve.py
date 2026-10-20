@@ -188,7 +188,7 @@ def _mesh_graph():
 
 def peak_discs(select_dirs: list[Path], parcels: dict[str, np.ndarray],
                radius: float, stat: str = "delta",
-               min_n: int = 100) -> dict[tuple[str, str], dict]:
+               min_n: int = 100, min_n_sparse: int = 50) -> dict[tuple[str, str], dict]:
     """One disc per (hemi, region): peak of `stat` averaged over the selection
     runs, within the region and the vertices covered in every run."""
     from scipy.sparse.csgraph import dijkstra
@@ -198,7 +198,7 @@ def peak_discs(select_dirs: list[Path], parcels: dict[str, np.ndarray],
     avg = np.where(covered, np.mean([np.nan_to_num(m) for m in maps], axis=0), np.nan)
     graph = _mesh_graph()
 
-    def best_disc(region, allowed):
+    def best_disc(region, allowed, min_n=min_n):
         """Centre = vertex whose disc has the highest mean, among the region's
         top decile and outside `allowed`; a disc keeps at least min_n vertices."""
         idx = np.flatnonzero(region & allowed)
@@ -226,10 +226,15 @@ def peak_discs(select_dirs: list[Path], parcels: dict[str, np.ndarray],
         free = {roi: best_disc(m, np.ones_like(m)) for roi, m in regions.items()}
         order = sorted((roi for roi in free if free[roi]), key=lambda k: -free[k][0])
         allowed = np.ones(2 * N_VERTS_PER_HEMI, dtype=bool)
-        for roi in order:
-            best = best_disc(regions[roi], allowed)
+        # A region too sparsely covered for a disc of min_n vertices (right
+        # pars orbitalis) gets one of min_n_sparse, placed after all the others
+        # so that it cannot displace them.
+        sparse = [roi for roi in regions if roi not in order]
+        for roi in order + sparse:
+            best = best_disc(regions[roi], allowed,
+                             min_n_sparse if roi in sparse else min_n)
             if best is None:
-                log.warning("%s.%s: no disc of %d vertices", hemi, roi, min_n)
+                log.warning("%s.%s: no disc", hemi, roi)
                 continue
             score, peak, disc = best
             allowed &= dijkstra(graph, indices=peak, limit=2 * radius) > 2 * radius
