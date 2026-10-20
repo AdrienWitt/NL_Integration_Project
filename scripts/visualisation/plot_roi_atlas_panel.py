@@ -12,7 +12,7 @@ The bare surface is the per-pixel median of the renders: every pixel is
 coloured in at most a few of them. plot_roi_context.py draws the two views as
 a third column, beside the curves of the same hemisphere.
 
-    python scripts/visualisation/plot_roi_atlas_panel.py
+    python scripts/visualisation/plot_roi_atlas_panel.py [--discs-only]
 """
 from __future__ import annotations
 
@@ -37,7 +37,9 @@ PALE = 0.6                           # region tint when its disc is drawn over i
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.parse_args(argv)
+    ap.add_argument("--discs-only", action="store_true",
+                    help="paint only the peak discs, not the whole regions")
+    args = ap.parse_args(argv)
     keys = [k for k, *_ in ROIS]
     files = {k: PRINTS / f"roi_{k}__mask.surf.png" for k in keys}
     imgs = {k: np.asarray(Image.open(f).convert("RGB")).astype(np.int16) for k, f in files.items()}
@@ -54,7 +56,8 @@ def main(argv=None) -> int:
     masks = {}
     for k in keys:
         m = np.abs(imgs[k] - base).sum(-1) > THRESH
-        out[m] = (imgs[k][m] * (1 - PALE) + 255 * PALE) if dimgs else imgs[k][m]
+        if not args.discs_only:
+            out[m] = (imgs[k][m] * (1 - PALE) + 255 * PALE) if dimgs else imgs[k][m]
         masks[k] = m
     dmasks = {}
     for k, im in dimgs.items():
@@ -69,6 +72,8 @@ def main(argv=None) -> int:
         for k in keys:
             ys, xs = np.nonzero(dmasks[k][y0:y1, x0:x1]) if k in dmasks else ([], [])
             on_disc = len(xs) > 50
+            if not on_disc and args.discs_only:
+                continue
             if not on_disc:     # no disc in this view: point at the region
                 ys, xs = np.nonzero(masks[k][y0:y1, x0:x1])
                 if len(xs) <= 200:  # region not visible in this view either
