@@ -66,7 +66,6 @@ FIGS = {
     ],
     "fig6_semantics": [
         ("Text: Llama-3.1-8B, layer 13, 512 words", f"{EMO}__marginalfixed", "text", T),
-        ("Preference r text − r emotion (effect map)", "context_contrast_diff/preference", "preference_ctraw2m20", "unthresholded"),
     ],
     "fig7_integration": [
         ("Emotion beyond text", f"{EMO}__conditional", "delta_audio_given_text", T),
@@ -81,6 +80,11 @@ FIGS = {
     ],
     "figS2_dominance_unique": [
         ("Dominance beyond arousal + valence", "avd16__conditional", "delta_dominance_given_arousal+valence", T),
+    ],
+    # modality preference moved to the SI (2026-10-20): it tests no hypothesis,
+    # the conditional contributions of Fig 7 answer "does prosody add to meaning"
+    "figS_preference": [
+        ("Preference r text − r emotion (effect map)", "context_contrast_diff/preference", "preference_ctraw2m20", "unthresholded"),
     ],
     "figS4_integration_opensmile": [
         ("eGeMAPS beyond text", f"{OSM}__conditional", "delta_audio_given_text", T),
