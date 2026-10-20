@@ -197,30 +197,42 @@ def peak_discs(select_dirs: list[Path], parcels: dict[str, np.ndarray],
     covered = np.all([np.isfinite(m) for m in maps], axis=0)
     avg = np.where(covered, np.mean([np.nan_to_num(m) for m in maps], axis=0), np.nan)
     graph = _mesh_graph()
+
+    def best_disc(region, allowed):
+        """Centre = vertex whose disc has the highest mean, among the region's
+        top decile and outside `allowed`; a disc keeps at least min_n vertices."""
+        idx = np.flatnonzero(region & allowed)
+        if not idx.size:
+            return None
+        cand = idx[avg[idx] >= np.quantile(avg[idx], 0.9)]
+        best = None
+        for v in cand:
+            disc = region & (dijkstra(graph, indices=int(v), limit=radius) <= radius)
+            if disc.sum() < min_n:
+                continue
+            score = float(avg[disc].mean())
+            if best is None or score > best[0]:
+                best = (score, int(v), disc)
+        return best
+
+    # A hot spot that straddles a region border would give both regions their
+    # peak at that border, and two curves measuring one spot. Regions are
+    # placed in order of their best disc, and a later disc is centred at least
+    # two radii from every disc already placed in that hemisphere.
     discs = {}
     for hemi in ("lh", "rh"):
-        for roi, parts in ROI_GROUPS.items():
-            region = roi_mask(parcels, hemi, parts) & covered
-            if not region.any():
-                continue
-            # The centre is the vertex whose disc has the highest mean, not the
-            # single highest vertex: a lone vertex at the edge of coverage is
-            # noise, and its disc can hold a handful of vertices. Candidates
-            # are the region's top decile; a disc must keep half a full disc.
-            idx = np.flatnonzero(region)
-            cand = idx[avg[idx] >= np.quantile(avg[idx], 0.9)]
-            best = None
-            for v in cand:
-                disc = region & (dijkstra(graph, indices=int(v), limit=radius) <= radius)
-                if disc.sum() < min_n:
-                    continue
-                score = float(avg[disc].mean())
-                if best is None or score > best[0]:
-                    best = (score, int(v), disc)
+        regions = {roi: roi_mask(parcels, hemi, parts) & covered
+                   for roi, parts in ROI_GROUPS.items()}
+        free = {roi: best_disc(m, np.ones_like(m)) for roi, m in regions.items()}
+        order = sorted((roi for roi in free if free[roi]), key=lambda k: -free[k][0])
+        allowed = np.ones(2 * N_VERTS_PER_HEMI, dtype=bool)
+        for roi in order:
+            best = best_disc(regions[roi], allowed)
             if best is None:
                 log.warning("%s.%s: no disc of %d vertices", hemi, roi, min_n)
                 continue
             score, peak, disc = best
+            allowed &= dijkstra(graph, indices=peak, limit=2 * radius) > 2 * radius
             discs[(hemi, roi)] = {"peak": peak, "mask": disc,
                                   "n": int(disc.sum()), "disc_mean": score}
     return discs
