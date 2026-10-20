@@ -1,11 +1,11 @@
 area,region,label,glasser_section
 44,IFG_oper,IFG pars opercularis,Inferior_Frontal
 47l,IFG_orb,IFG pars orbitalis,Inferior_Frontal
-a47r,IFG_rostral,rostral inferior frontal cortex,Inferior_Frontal
-p47r,IFG_rostral,rostral inferior frontal cortex,Inferior_Frontal
+a47r,IFG_orb,IFG pars orbitalis,Inferior_Frontal
+p47r,IFG_orb,IFG pars orbitalis,Inferior_Frontal
 45,IFG_tri,IFG pars triangularis,Inferior_Frontal
-IFJa,IFJ,inferior frontal junction,Inferior_Frontal
-IFJp,IFJ,inferior frontal junction,Inferior_Frontal
+IFJa,IFG_oper,IFG pars opercularis,Inferior_Frontal
+IFJp,precentral,precentral gyrus,Inferior_Frontal
 IFSa,IFG_tri,IFG pars triangularis,Inferior_Frontal
 IFSp,IFG_oper,IFG pars opercularis,Inferior_Frontal
 IP0,IPS,intraparietal sulcus,Inferior_Parietal
@@ -21,10 +21,10 @@ A4,STG,superior temporal gyrus,Auditory_Association
 A5,STG,superior temporal gyrus,Auditory_Association
 STGa,STG,superior temporal gyrus,Auditory_Association
 TA2,STG,superior temporal gyrus,Auditory_Association
-PSL,TPOJ,temporo-parietal junction,Temporo-Parieto-Occipital_Junction
-STV,TPOJ,temporo-parietal junction,Temporo-Parieto-Occipital_Junction
-TPOJ2,TPOJ,temporo-parietal junction,Temporo-Parieto-Occipital_Junction
-TPOJ3,TPOJ,temporo-parietal junction,Temporo-Parieto-Occipital_Junction
+PSL,supramarginal,supramarginal gyrus,Temporo-Parieto-Occipital_Junction
+STV,STG,superior temporal gyrus,Temporo-Parieto-Occipital_Junction
+TPOJ2,angular,angular gyrus,Temporo-Parieto-Occipital_Junction
+TPOJ3,angular,angular gyrus,Temporo-Parieto-Occipital_Junction
 STSda,aSTS,anterior superior temporal sulcus,Auditory_Association
 STSva,aSTS,anterior superior temporal sulcus,Auditory_Association
 PGi,angular,angular gyrus,Inferior_Parietal

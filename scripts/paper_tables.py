@@ -42,9 +42,8 @@ SHORT = dict(zip(REGIONS["region"], REGIONS["label"])) | {
     "early_auditory": "early auditory", "STG": "STG", "aSTS": "aSTS",
     "pSTS": "pSTS", "MTG": "MTG", "ITG": "ITG", "precentral": "precentral",
     "postcentral": "postcentral", "IFG_oper": "IFGoper",
-    "IFG_tri": "IFGtri", "IFG_orb": "IFGorb", "IFG_rostral": "rostral IFG",
-    "angular": "angular", "supramarginal": "supramarginal", "IFJ": "IFJ",
-    "IFS": "IFS", "TPOJ": "TPJ"}
+    "IFG_tri": "IFGtri", "IFG_orb": "IFGorb",
+    "angular": "angular", "supramarginal": "supramarginal"}
 
 
 def mdt(df, **kw):
@@ -414,8 +413,8 @@ def s8_controls():
 
 def s9_regions():
     first = ["early_auditory", "STG", "aSTS", "pSTS", "MTG", "ITG",
-             "temporal_pole", "TPOJ", "angular", "supramarginal", "IPS",
-             "IFG_oper", "IFG_tri", "IFG_orb", "IFG_rostral", "IFJ",
+             "temporal_pole", "angular", "supramarginal", "IPS",
+             "IFG_oper", "IFG_tri", "IFG_orb",
              "precentral", "postcentral"]
     order = first + sorted(set(REGIONS["region"]) - set(first))
     rows = []
