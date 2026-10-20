@@ -229,9 +229,9 @@ def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name, atlas_dir=None
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--text-csv", type=Path,
-                    default=Path("results/group/roi_context_curve_text16.csv"))
+                    default=Path("results/group/roi_context_curve_text16_disc.csv"))
     ap.add_argument("--audio-csv", type=Path,
-                    default=Path("results/group/roi_context_curve_audio.csv"))
+                    default=Path("results/group/roi_context_curve_audio_disc.csv"))
     ap.add_argument("--out", type=Path,
                     default=Path("results/group/paper_table/roi_context"))
     ap.add_argument("--atlas-dir", type=Path, default=Path("results/group/roi_atlas"),

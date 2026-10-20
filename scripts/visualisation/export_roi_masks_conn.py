@@ -38,6 +38,7 @@ from scripts.visualisation.plot_roi_context import ROIS  # noqa: E402
 
 log = logging.getLogger("export_roi_masks_conn")
 OUT = Path("results/group/roi_atlas/export/conn")
+DISCS = Path("results/group/roi_context_discs.json")
 
 
 def masks(fsdir: Path) -> dict[str, np.ndarray]:
@@ -56,7 +57,23 @@ def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     write_reference(fsdir, OUT / "_check_curvature.surf.nii")
     colour = {k: c for k, _, c, _ in ROIS}
-    for key, m in masks(fsdir).items():
+    # the 6-mm peak discs of the curves (roi_context_curve.py --discs-out),
+    # one mask per region with both hemispheres, drawn over the paler region
+    import json
+    discs = json.load(open(DISCS)) if DISCS.exists() else {}
+    regions = masks(fsdir)
+    n_vert = len(next(iter(regions.values())))
+    for key, *_ in ROIS:
+        v = [i for h in HEMIS for i in discs.get(f"{h}.{key}", {}).get("vertices", [])]
+        if not v:
+            continue
+        m = np.zeros(n_vert, dtype=np.float32)
+        m[v] = 1
+        nib.save(to_conn_volume(m), OUT / f"roi_{key}_disc__mask.surf.nii")
+        rgb = np.array([int(colour[key][i:i + 2], 16) for i in (1, 3, 5)]) / 255
+        np.savetxt(OUT / f"roi_{key}_disc.cmap.txt", np.tile(rgb, (96, 1)), fmt="%.6f")
+        log.info("roi_%s_disc: %d vertices", key, len(v))
+    for key, m in regions.items():
         nib.save(to_conn_volume(m.astype(np.float32)), OUT / f"roi_{key}__mask.surf.nii")
         rgb = np.array([int(colour[key][i:i + 2], 16) for i in (1, 3, 5)]) / 255
         np.savetxt(OUT / f"roi_{key}.cmap.txt", np.tile(rgb, (96, 1)), fmt="%.6f")

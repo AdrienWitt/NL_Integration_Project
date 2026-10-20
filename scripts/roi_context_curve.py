@@ -19,6 +19,19 @@ Usage
 `--run` is repeatable and its label is what lands in the `run` column, so the
 ordering of the curve is the order they are passed.
 
+Peak discs (`--peak-disc 6`, the paper's figure)
+------------------------------------------------
+A region average mixes the integrative part of a gyrus with the rest (the
+temporo-parietal junction areas reach delta = +0.03 while the dorsal angular
+gyrus is near zero). With `--peak-disc R`, each region is summarised instead
+by a geodesic disc of radius R mm on the fsaverage midthickness, centred on
+the region's peak of delta AVERAGED over every `--select-run` (all context
+lengths of both axes), and restricted to the region and to vertices covered
+in all of those runs. Selecting on the average over conditions does not favour
+any of them, so the differences between context lengths along a curve stay
+unbiased; only the overall level is optimistic. The same disc is used at every
+point of both curves. `--discs-out` writes the centres and sizes.
+
 What it does NOT do
 -------------------
 **It does not correct anything a second time.** `group_maps.py` already
@@ -146,6 +159,73 @@ def roi_mask(parcels: dict[str, np.ndarray], hemi: str,
     return out
 
 
+def _mesh_graph():
+    """fsaverage midthickness (mean of white and pial) as a sparse edge graph
+    in mm, both hemispheres stacked [lh; rh] like the group maps."""
+    import nibabel.freesurfer as fsio
+    from scipy.sparse import coo_matrix
+
+    surf_dir = Path(FREESURFER_HOME) / "subjects" / "fsaverage" / "surf"
+    rows, cols, vals = [], [], []
+    for h_i, hemi in enumerate(("lh", "rh")):
+        w, faces = fsio.read_geometry(str(surf_dir / f"{hemi}.white"))
+        pv, _ = fsio.read_geometry(str(surf_dir / f"{hemi}.pial"))
+        xyz = (w + pv) / 2
+        off = h_i * N_VERTS_PER_HEMI
+        for a, b in ((0, 1), (1, 2), (2, 0)):
+            i, j = faces[:, a], faces[:, b]
+            d = np.linalg.norm(xyz[i] - xyz[j], axis=1)
+            rows += [i + off, j + off]
+            cols += [j + off, i + off]
+            vals += [d, d]
+    n = 2 * N_VERTS_PER_HEMI
+    rows, cols, vals = map(np.concatenate, (rows, cols, vals))
+    # every edge is listed by both of its faces; a sparse matrix would SUM the
+    # duplicates and double every length, so keep one entry per edge
+    _, keep = np.unique(rows.astype(np.int64) * n + cols, return_index=True)
+    return coo_matrix((vals[keep], (rows[keep], cols[keep])), shape=(n, n)).tocsr()
+
+
+def peak_discs(select_dirs: list[Path], parcels: dict[str, np.ndarray],
+               radius: float, stat: str = "delta",
+               min_n: int = 100) -> dict[tuple[str, str], dict]:
+    """One disc per (hemi, region): peak of `stat` averaged over the selection
+    runs, within the region and the vertices covered in every run."""
+    from scipy.sparse.csgraph import dijkstra
+
+    maps = [np.load(d / f"{stat}__mean.npy") for d in select_dirs]
+    covered = np.all([np.isfinite(m) for m in maps], axis=0)
+    avg = np.where(covered, np.mean([np.nan_to_num(m) for m in maps], axis=0), np.nan)
+    graph = _mesh_graph()
+    discs = {}
+    for hemi in ("lh", "rh"):
+        for roi, parts in ROI_GROUPS.items():
+            region = roi_mask(parcels, hemi, parts) & covered
+            if not region.any():
+                continue
+            # The centre is the vertex whose disc has the highest mean, not the
+            # single highest vertex: a lone vertex at the edge of coverage is
+            # noise, and its disc can hold a handful of vertices. Candidates
+            # are the region's top decile; a disc must keep half a full disc.
+            idx = np.flatnonzero(region)
+            cand = idx[avg[idx] >= np.quantile(avg[idx], 0.9)]
+            best = None
+            for v in cand:
+                disc = region & (dijkstra(graph, indices=int(v), limit=radius) <= radius)
+                if disc.sum() < min_n:
+                    continue
+                score = float(avg[disc].mean())
+                if best is None or score > best[0]:
+                    best = (score, int(v), disc)
+            if best is None:
+                log.warning("%s.%s: no disc of %d vertices", hemi, roi, min_n)
+                continue
+            score, peak, disc = best
+            discs[(hemi, roi)] = {"peak": peak, "mask": disc,
+                                  "n": int(disc.sum()), "disc_mean": score}
+    return discs
+
+
 def _load(run_dir: Path, stat: str, suffix: str) -> np.ndarray | None:
     path = run_dir / f"{stat}__{suffix}.npy"
     if not path.exists():
@@ -155,7 +235,7 @@ def _load(run_dir: Path, stat: str, suffix: str) -> np.ndarray | None:
 
 def summarise_run(run_dir: Path, label: str, stats: tuple[str, ...],
                   parcels: dict[str, np.ndarray],
-                  alpha: float) -> list[dict]:
+                  alpha: float, discs: dict | None = None) -> list[dict]:
     rows: list[dict] = []
     for stat in stats:
         mean = _load(run_dir, stat, "mean")
@@ -177,7 +257,12 @@ def summarise_run(run_dir: Path, label: str, stats: tuple[str, ...],
 
         for hemi in ("lh", "rh"):
             for roi, parts in ROI_GROUPS.items():
-                m = roi_mask(parcels, hemi, parts)
+                if discs is not None:
+                    if (hemi, roi) not in discs:
+                        continue
+                    m = discs[(hemi, roi)]["mask"]
+                else:
+                    m = roi_mask(parcels, hemi, parts)
                 in_roi = m & covered
                 n_roi = int(m.sum())
                 n_cov = int(in_roi.sum())
@@ -227,6 +312,14 @@ def main() -> None:
     p.add_argument("--rois", nargs="+", default=None,
                    help="Restrict to these ROI keys (default: all).")
     p.add_argument("--out", default=None, help="Write the tidy table here.")
+    p.add_argument("--peak-disc", type=float, default=None, metavar="MM",
+                   help="Summarise each region by a geodesic disc of this radius "
+                        "at its peak of delta averaged over --select-run.")
+    p.add_argument("--select-run", action="append", default=None, metavar="DIR",
+                   help="Group-map directories whose delta, averaged, picks the "
+                        "peaks (default: the --run directories).")
+    p.add_argument("--discs-out", default=None,
+                   help="Write the disc centres and sizes (JSON) here.")
     args = p.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -245,6 +338,20 @@ def main() -> None:
 
     parcels = load_parcels(args.annot)
 
+    discs = None
+    if args.peak_disc:
+        sel = [Path(d) for d in (args.select_run or
+                                 [r.partition("=")[2] for r in args.run])]
+        discs = peak_discs(sel, parcels, args.peak_disc)
+        if args.discs_out:
+            import json
+            Path(args.discs_out).parent.mkdir(parents=True, exist_ok=True)
+            json.dump({f"{h}.{r}": {**{k: v for k, v in d.items() if k != "mask"},
+                                     "radius_mm": args.peak_disc,
+                                     "vertices": np.flatnonzero(d["mask"]).tolist()}
+                       for (h, r), d in discs.items()},
+                      open(args.discs_out, "w"), indent=1)
+
     rows: list[dict] = []
     for spec in args.run:
         if "=" not in spec:
@@ -254,7 +361,7 @@ def main() -> None:
         if not run_dir.is_dir():
             raise SystemExit(f"{run_dir} is not a directory")
         rows += summarise_run(run_dir, label, tuple(args.stats), parcels,
-                              args.alpha)
+                              args.alpha, discs)
 
     df = pd.DataFrame(rows)
     if args.out:

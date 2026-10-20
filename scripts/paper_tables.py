@@ -322,13 +322,16 @@ def s6_context():
                             "TFCE down": v[stat]["p_tfce_down"]})
         # TFCE significance only (the paper's test); drop the per-vertex
         # FDR, prevalence and sign-flip columns of roi_context_curve.py
-        r = pd.read_csv(G / rcsv)
-        roi.append(r.drop(columns=[c for c in r.columns if c.endswith(
-            ("_perm", "_prevalence", "_fwe")) or c == "mean_r_sig"])
-            .assign(axis=axis))
+        # the figure's 6-mm peak discs, then the whole-region averages
+        for summary, f in (("peak disc", rcsv.replace(".csv", "_disc.csv")),
+                           ("whole region", rcsv)):
+            r = pd.read_csv(G / f)
+            roi.append(r.drop(columns=[c for c in r.columns if c.endswith(
+                ("_perm", "_prevalence", "_fwe")) or c == "mean_r_sig"])
+                .assign(axis=axis, summary=summary))
     a, b = pd.DataFrame(by), pd.DataFrame(con)
     c = pd.concat(roi, ignore_index=True)
-    c = c[["axis"] + [k for k in c.columns if k != "axis"]]
+    c = c[["axis", "summary"] + [k for k in c.columns if k not in ("axis", "summary")]]
     a.to_csv(OUT / "S6_context_by_k.csv", index=False)
     b.to_csv(OUT / "S6_context_contrasts.csv", index=False)
     c.to_csv(OUT / "S6_context_roi_curve.csv", index=False)
