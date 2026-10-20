@@ -183,11 +183,12 @@ def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name, atlas_dir=None
     hemisphere side by side, so the curves keep the full width."""
     brains = atlas_dir is not None and (atlas_dir / "roi_atlas_lh.png").exists()
     fig = plt.figure(figsize=(15.5, 16.5 if brains else 10.6), facecolor=SURFACE)
-    bottom = 0.105 if brains else 0.2
-    gs = fig.add_gridspec(3 if brains else 2, 2, hspace=0.24, wspace=0.08,
-                          height_ratios=[1, 1, 0.95] if brains else None,
-                          left=0.115, right=0.985, top=0.94, bottom=bottom)
-    legend(fig, fig.add_axes([0.115, 0.01, 0.87, bottom - 0.04]))
+    # the legend sits right under the curves it explains, the brains below it
+    gs = fig.add_gridspec(4 if brains else 2, 2, hspace=0.24, wspace=0.08,
+                          height_ratios=[1, 1, 0.3, 0.95] if brains else None,
+                          left=0.115, right=0.985, top=0.94, bottom=0.01 if brains else 0.2)
+    legend(fig, fig.add_subplot(gs[2, :]) if brains
+           else fig.add_axes([0.115, 0.005, 0.87, 0.115]))
     axs = [[fig.add_subplot(gs[i, j]) for j in range(2)] for i in range(2)]
     for i in range(2):
         axs[i][1].sharey(axs[i][0])
@@ -215,7 +216,7 @@ def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name, atlas_dir=None
         fig.text(0.015, (bb.y0 + bb.y1) / 2, HEMI[hemi][0], ha="left", va="center",
                  fontsize=FS_TITLE + 2, color=INK, fontweight="bold")
         if brains:
-            ax = fig.add_subplot(gs[2, i])
+            ax = fig.add_subplot(gs[3, i])
             brain(ax, hemi, atlas_dir)
             ax.set_title(f"Regions, {HEMI[hemi][1].lower()}", loc="left", fontsize=FS_TITLE,
                          color=INK, fontweight="bold", pad=4)
