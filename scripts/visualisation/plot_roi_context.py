@@ -165,10 +165,17 @@ def brain(ax, hemi, atlas_dir):
     meta = json.load(open(atlas_dir / "roi_atlas_centroids.json"))
     cents = meta["centroids"][hemi]
     on_disc = set(meta.get("on_disc", {}).get(hemi, []))
+    # the posterior labels stacked in the margin take their rows in the
+    # vertical order of their discs, so that the leader lines never cross
+    slots = {roi: BRAIN_LABELS[roi] for roi in BRAIN_LABELS}
+    stack = [r for r in ("angular", "pSTS", "STG") if r in cents]
+    for roi, pos in zip(sorted(stack, key=lambda r: cents[r][1]),
+                        sorted((BRAIN_LABELS[r] for r in stack), key=lambda p: p[1])):
+        slots[roi] = pos
     for roi, label, c, _ in ROIS:
         if roi not in cents:
             continue
-        lx, ly = BRAIN_LABELS[roi]
+        lx, ly = slots[roi]
         if hemi == "rh":
             lx = 1 - lx
         ha = "right" if lx < 0.5 else "left"

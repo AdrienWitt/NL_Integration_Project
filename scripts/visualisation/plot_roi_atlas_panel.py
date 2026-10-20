@@ -41,14 +41,17 @@ def main(argv=None) -> int:
                     help="paint only the peak discs, not the whole regions")
     args = ap.parse_args(argv)
     keys = [k for k, *_ in ROIS]
-    files = {k: PRINTS / f"roi_{k}__mask.surf.png" for k in keys}
+    files = {k: next((f for f in (PRINTS / "normalised" / n, PRINTS / n) if f.exists()), PRINTS / n)
+             for k in keys for n in [f"roi_{k}__mask.surf.png"]}
     imgs = {k: np.asarray(Image.open(f).convert("RGB")).astype(np.int16) for k, f in files.items()}
     sizes = {im.shape for im in imgs.values()}
     if len(sizes) != 1:
         raise SystemExit(f"renders differ in size: {sizes}")
     # the 6-mm peak discs of the curves, when rendered: the region is drawn
     # pale and its disc in full colour, and the label points at the disc
-    dfiles = {k: PRINTS / f"roi_{k}_disc__mask.surf.png" for k in keys}
+    # a print CONN made at another size is used through its normalised copy
+    dfiles = {k: next((f for f in (PRINTS / "normalised" / n, PRINTS / n) if f.exists()), PRINTS / n)
+              for k in keys for n in [f"roi_{k}_disc__mask.surf.png"]}
     dimgs = {k: np.asarray(Image.open(f).convert("RGB")).astype(np.int16)
              for k, f in dfiles.items() if f.exists()}
     base = np.median(np.stack(list(imgs.values())), axis=0).astype(np.int16)
@@ -59,9 +62,17 @@ def main(argv=None) -> int:
         if not args.discs_only:
             out[m] = (imgs[k][m] * (1 - PALE) + 255 * PALE) if dimgs else imgs[k][m]
         masks[k] = m
+    # a disc print made at another size and resized departs slightly from the
+    # bare surface everywhere, so a disc pixel must also have the disc's colour
+    colour = {k: np.array([int(c[i:i + 2], 16) for i in (1, 3, 5)]) for k, _, c, _ in ROIS}
+
+    def chroma(a):
+        return a / np.maximum(a.sum(-1, keepdims=True), 1)
+
     dmasks = {}
     for k, im in dimgs.items():
-        m = np.abs(im - base).sum(-1) > THRESH
+        m = ((np.abs(im - base).sum(-1) > THRESH)
+             & (np.abs(chroma(im) - chroma(colour[k])).sum(-1) < 0.08))
         out[m] = im[m]
         dmasks[k] = m
     cents, discs = {}, {}
