@@ -91,13 +91,15 @@ FIGS = {
         ("Text beyond eGeMAPS", f"{OSM}__conditional", "delta_text_given_audio", T),
         ("Integration (conjunction)", f"{OSM}__conditional", "delta", T),
     ],
-    # One figure per statistic, one row per context length (k = 512 repeats Fig 7).
-    **{f"figS_context_{name}": [
-        (f"{lab}, k = {k}", f"llama8bk{k}L13__emoctx8L11__conditional", st, T)
-        for k in (4, 16, 64, 256, 512, 1024)]
-       for name, st, lab in [("emotion_beyond_text", "delta_audio_given_text", "Emotion beyond text"),
-                             ("text_beyond_emotion", "delta_text_given_audio", "Text beyond emotion"),
-                             ("integration", "delta", "Integration")]},
+    # Integration, one row per context length (k = 512 repeats Fig 7); the two
+    # conditional terms are shown per region in the ROI figures instead
+    "figS_context_integration": [
+        (f"Integration, k = {k}", f"llama8bk{k}L13__emoctx8L11__conditional", "delta", T)
+        for k in (4, 16, 64, 256, 512, 1024)],
+    # same along the acoustic axis (text at 512 words; W = 8 s repeats Fig 7)
+    "figS_context_integration_audio": [
+        (f"Integration, W = {w} s", f"llama8bk512L13__emoctx{w}L11__conditional", "delta", T)
+        for w in (0, 2, 4, 8, 16)],
     # unique_text / unique_audio / integration in the partition dir are Fig 7a-c
     # (same means, same vertex counts), so S6 is the one map that is new; the
     # partition counts go in its legend (partition.json)
