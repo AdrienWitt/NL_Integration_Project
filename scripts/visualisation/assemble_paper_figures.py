@@ -77,6 +77,7 @@ FIGS = {
         ("Arousal", "avd8__marginalfixed", "arousal", T),
         ("Dominance", "avd8__marginalfixed", "dominance", T),
         ("Valence", "avd8__marginalfixed", "valence", T),
+        ("r valence − r arousal (effect map)", "context_contrast_diff8/valence_vs_arousal", "valence_vs_arousal_ctraw2m20", "unthresholded"),
     ],
     "figS2_dominance_unique": [
         ("Dominance beyond arousal + valence", "avd8__conditional", "delta_dominance_given_arousal+valence", T),
