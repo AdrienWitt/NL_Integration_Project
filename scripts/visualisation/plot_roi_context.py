@@ -207,6 +207,7 @@ def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name, atlas_dir=None
     axs = [[fig.add_subplot(gs[i, j]) for j in range(2)] for i in range(2)]
     for i in range(2):
         axs[i][1].sharey(axs[i][0])
+    brain_axes = []
     for i, hemi in enumerate(HEMI):
         for j, stat in enumerate(stats_cols):
             ax = axs[i][j]
@@ -232,9 +233,16 @@ def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name, atlas_dir=None
                  fontsize=FS_TITLE + 2, color=INK, fontweight="bold")
         if brains:
             ax = fig.add_subplot(gs[3, i])
+            brain_axes.append(ax)
             brain(ax, hemi, atlas_dir)
             ax.set_title(f"Regions, {HEMI[hemi][1].lower()}", loc="left", fontsize=FS_TITLE,
                          color=INK, fontweight="bold", pad=4)
+    # panel letters, read row by row: curves a-d (left hemisphere first), brains e-f
+    panels = [axs[0][0], axs[0][1], axs[1][0], axs[1][1]] + (brain_axes if brains else [])
+    for letter, ax in zip("abcdef", panels):
+        bb = ax.get_position()
+        fig.text(bb.x0 - 0.035, bb.y1 + (0.035 if ax in axs[0] else 0.012), letter,
+                 ha="left", va="bottom", fontsize=FS_TITLE + 4, color=INK, fontweight="bold")
     for ext in ("png", "pdf", "svg"):
         fig.savefig(out / f"{name}.{ext}", dpi=200, facecolor=SURFACE)
     plt.close(fig)
