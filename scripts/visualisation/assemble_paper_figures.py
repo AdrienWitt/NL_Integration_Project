@@ -65,7 +65,7 @@ FIGS = {
         ("Arousal beyond valence", "av8__conditional", "delta_arousal_given_valence", T),
     ],
     "fig6_semantics": [
-        ("Text: Llama-3.1-8B, layer 13, 512 words", f"{EMO}__marginalfixed", "text", T),
+        ("Text: Llama-3.1-8B, layer 13", f"{EMO}__marginalfixed", "text", T),
     ],
     "fig7_integration": [
         ("Emotion beyond text", f"{EMO}__conditional", "delta_audio_given_text", T),
