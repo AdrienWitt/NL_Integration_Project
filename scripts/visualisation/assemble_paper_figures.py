@@ -95,11 +95,11 @@ FIGS = {
     # Integration, one row per context length (k = 512 repeats Fig 7); the two
     # conditional terms are shown per region in the ROI figures instead
     "figS_context_integration": [
-        (f"Integration, k = {k}", f"llama8bk{k}L13__emoctx8L11__conditional", "delta", T)
+        (f"Integration, {k:,} words", f"llama8bk{k}L13__emoctx8L11__conditional", "delta", T)
         for k in (4, 16, 64, 256, 512, 1024)],
     # same along the acoustic axis (text at 512 words; W = 8 s repeats Fig 7)
     "figS_context_integration_audio": [
-        (f"Integration, W = {w} s", f"llama8bk512L13__emoctx{w}L11__conditional", "delta", T)
+        (f"Integration, {w} s of preceding audio", f"llama8bk512L13__emoctx{w}L11__conditional", "delta", T)
         for w in (0, 2, 4, 8, 16)],
     # unique_text / unique_audio / integration in the partition dir are Fig 7a-c
     # (same means, same vertex counts), so S6 is the one map that is new; the
@@ -108,6 +108,9 @@ FIGS = {
         ("Preference r text − r emotion, ≥ 8/9 subjects agree", f"{EMO}__partition", "preference_consistent", "unthresholded"),
     ],
 }
+
+# the audio axis is the second half of the same SI figure: its letters follow the text axis
+FIRST_LETTER = {"figS_context_integration_audio": 6}
 
 TEST_NOTE = {"p_tfce_perm_fwe": "TFCE, group permutation FWE p < .05",
              "z3.09_extent__p_fwe": "z > 3.09, cluster-extent FWE p < .05"}
@@ -180,7 +183,7 @@ def build(name, rows, test, out, panels):
                           top=1 - 0.2 / H, bottom=0.05 / H)
     groups = []                                   # (first row, last row, cmap, ticks, label)
     for i, r in enumerate(rows):
-        letter = "abcdefghijklmnop"[i]
+        letter = "abcdefghijklmnop"[i + FIRST_LETTER.get(name, 0)]
         ax = fig.add_subplot(gs[i, 0])
         ax.axis("off")
         if r[0] == "img":
@@ -190,7 +193,9 @@ def build(name, rows, test, out, panels):
             p, a = mosaic(run, stat, tst)
             s = ims[i]
             ax.imshow(s)
-            Image.fromarray(s).save(panels / f"{run}__{stat}__{tst}.png")
+            dst = panels / f"{run}__{stat}__{tst}.png"   # run may contain "/" (context_contrast_diff8/...)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            Image.fromarray(s).save(dst)
             cmap, ticks = bar(a, p.parent / (p.name[:-4] + ".range.txt"))
             note = "" if tst in (test, "unthresholded") or tst not in TEST_NOTE else f" ({TEST_NOTE[tst]})"
             ax.set_title(label + note, loc="left", fontsize=7.5, color=INK, pad=2)
