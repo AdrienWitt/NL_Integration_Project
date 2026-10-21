@@ -38,7 +38,6 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 from matplotlib.legend_handler import HandlerTuple
 from matplotlib.lines import Line2D
@@ -150,8 +149,6 @@ BRAIN_LABELS = {"precentral": (0.32, -0.12), "IFG_oper": (-0.04, 0.22),
                 "early_auditory": (0.68, -0.12), "supramarginal": (1.02, 0.06),
                 "angular": (1.14, 0.30), "pSTS": (1.14, 0.54),
                 "STG": (1.12, 0.72), "MTG": (0.82, 1.14), "aSTS": (0.30, 1.14)}
-DISCS = Path("results/group/roi_context_discs.json")
-SELECTED_RUN = Path("results/group/llama8bk512L13__emoctx8L11__conditional")
 BRAIN_XLIM, BRAIN_YLIM = (-0.42, 1.42), (1.24, -0.2)
 
 
@@ -175,16 +172,9 @@ def brain(ax, hemi, atlas_dir):
     for roi, pos in zip(sorted(stack, key=lambda r: cents[r][1]),
                         sorted((BRAIN_LABELS[r] for r in stack), key=lambda p: p[1])):
         slots[roi] = pos
-    # participants behind each disc: voxel selection (EV > 0.1) differs between
-    # participants, so a disc can rest on fewer than nine; median over its vertices
-    discs = json.load(open(DISCS))
-    nsub = np.load(SELECTED_RUN / "delta__n_subjects.npy")
     for roi, label, c, _ in ROIS:
         if roi not in cents:
             continue
-        d = discs.get(f"{hemi}.{roi}")
-        if d:
-            label = f"{label}\nn = {int(np.median(nsub[d['vertices']]))}"
         lx, ly = slots[roi]
         if hemi == "rh":
             lx = 1 - lx
