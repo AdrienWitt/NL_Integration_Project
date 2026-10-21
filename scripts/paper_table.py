@@ -25,30 +25,30 @@ import numpy as np
 import pandas as pd
 
 G = Path("results/group")
-# selected bands (2026-10-16 refit): emotion 16 s, eGeMAPS 2 s, text k512
-EMO = "llama8bk512L13__emoctx16L11"
+# selected bands (2026-10-21, majority rule): emotion 8 s, eGeMAPS 2 s, text k512
+EMO = "llama8bk512L13__emoctx8L11"
 OSM = "llama8bk512L13__osm2"
 
 # (section, label, group dir, statistic, kind) -- kind 'stat' or 'integration'
 ROWS = [
     ("1 audio bands alone", "openSMILE (88d)", f"{OSM}__marginalfixed", "audio", "stat"),
     ("1 audio bands alone", "emotion wav2vec2 L12 (1024d)", f"{EMO}__marginalfixed", "audio", "stat"),
-    ("1 audio bands alone", "AVD (3d)", "avd16__marginalfixed", "joint", "stat"),
-    ("2 affective dimensions alone", "arousal", "avd16__marginalfixed", "arousal", "stat"),
-    ("2 affective dimensions alone", "dominance", "avd16__marginalfixed", "dominance", "stat"),
-    ("2 affective dimensions alone", "valence", "avd16__marginalfixed", "valence", "stat"),
-    ("2b arousal + valence model", "arousal alone", "av16__marginalfixed", "arousal", "stat"),
-    ("2b arousal + valence model", "valence alone", "av16__marginalfixed", "valence", "stat"),
-    ("2b arousal + valence model", "arousal + valence", "av16__marginalfixed", "joint", "stat"),
-    ("2b arousal + valence model", "valence | arousal", "av16__conditional", "delta_valence_given_arousal", "stat"),
-    ("2b arousal + valence model", "arousal | valence", "av16__conditional", "delta_arousal_given_valence", "stat"),
-    ("3 unique contribution, AVD", "valence | arousal+dominance", "avd16__conditional", "delta_valence_given_arousal+dominance", "stat"),
-    ("3 unique contribution, AVD", "arousal | dominance+valence", "avd16__conditional", "delta_arousal_given_dominance+valence", "stat"),
-    ("3 unique contribution, AVD", "dominance | arousal+valence", "avd16__conditional", "delta_dominance_given_arousal+valence", "stat"),
-    ("4 audio bands against each other", "emotion | openSMILE", "emotion16_vs_osm2__each", "delta_emotion_given_opensmile", "stat"),
-    ("4 audio bands against each other", "openSMILE | emotion", "emotion16_vs_osm2__each", "delta_opensmile_given_emotion", "stat"),
-    ("4 audio bands against each other", "openSMILE | AVD", "osm2_vs_avd16__each", "delta_opensmile_given_avd", "stat"),
-    ("4 audio bands against each other", "AVD | openSMILE", "osm2_vs_avd16__each", "delta_avd_given_opensmile", "stat"),
+    ("1 audio bands alone", "AVD (3d)", "avd8__marginalfixed", "joint", "stat"),
+    ("2 affective dimensions alone", "arousal", "avd8__marginalfixed", "arousal", "stat"),
+    ("2 affective dimensions alone", "dominance", "avd8__marginalfixed", "dominance", "stat"),
+    ("2 affective dimensions alone", "valence", "avd8__marginalfixed", "valence", "stat"),
+    ("2b arousal + valence model", "arousal alone", "av8__marginalfixed", "arousal", "stat"),
+    ("2b arousal + valence model", "valence alone", "av8__marginalfixed", "valence", "stat"),
+    ("2b arousal + valence model", "arousal + valence", "av8__marginalfixed", "joint", "stat"),
+    ("2b arousal + valence model", "valence | arousal", "av8__conditional", "delta_valence_given_arousal", "stat"),
+    ("2b arousal + valence model", "arousal | valence", "av8__conditional", "delta_arousal_given_valence", "stat"),
+    ("3 unique contribution, AVD", "valence | arousal+dominance", "avd8__conditional", "delta_valence_given_arousal+dominance", "stat"),
+    ("3 unique contribution, AVD", "arousal | dominance+valence", "avd8__conditional", "delta_arousal_given_dominance+valence", "stat"),
+    ("3 unique contribution, AVD", "dominance | arousal+valence", "avd8__conditional", "delta_dominance_given_arousal+valence", "stat"),
+    ("4 audio bands against each other", "emotion | openSMILE", "emotion8_vs_osm2__each", "delta_emotion_given_opensmile", "stat"),
+    ("4 audio bands against each other", "openSMILE | emotion", "emotion8_vs_osm2__each", "delta_opensmile_given_emotion", "stat"),
+    ("4 audio bands against each other", "openSMILE | AVD", "osm2_vs_avd8__each", "delta_opensmile_given_avd", "stat"),
+    ("4 audio bands against each other", "AVD | openSMILE", "osm2_vs_avd8__each", "delta_avd_given_opensmile", "stat"),
     ("5 text alone", "Llama-3.1-8B L13, k=512", f"{EMO}__marginalfixed", "text", "stat"),
     ("6 integration, text x emotion", "emotion | text", f"{EMO}__conditional", "delta_audio_given_text", "stat"),
     ("6 integration, text x emotion", "text | emotion", f"{EMO}__conditional", "delta_text_given_audio", "stat"),
@@ -110,23 +110,23 @@ def row(section, label, d, stat, kind, min_subj, n_top):
 
 
 # Within-subject scores: mean r over each subject's EV mask, from the encoding
-# fits at the selected configuration (2026-10-15: emotion 16 s, eGeMAPS 2 s,
+# fits at the selected configuration (2026-10-21: emotion 8 s, eGeMAPS 2 s,
 # text k512; `within_subject_scores.csv`, one row per run/eval/subject/model, pulled
 # from Baobab's results/encoding/<run>/banded/<eval>/<SUBJ>/<model>_corrs.npy).
 LL = "llama8b_k512L13__"
-EM = LL + "perlayer_emoctx_r0p5_w16L11"
-EO, OA, AV = "bands_emotion-opensmile__ctx", "bands_opensmile-avd__ctx", "bands_arousal-valence__ctx"
+EM = LL + "perlayer_emoctx_r0p5_w8L11"
+EO, OA, AV = "bands_emotion-opensmile__ctx8", "bands_opensmile-avd__ctx8", "bands_arousal-valence__ctx8"
 SCORES = [  # (label, run, model)
     ("eGeMAPS", EO, "opensmile"),
     ("emotion L12", EO, "emotion"),
     ("AVD", OA, "avd"),
     ("arousal", AV, "arousal"),
-    ("dominance", "bands_arousal-dominance-valence__ctx", "dominance"),
+    ("dominance", "bands_arousal-dominance-valence__ctx8", "dominance"),
     ("valence", AV, "valence"),
     ("Llama text", LL + "opensmile_r0p5_w2", "text"),
     ("Llama + emotion (joint)", EM, "joint"),
     ("Llama + eGeMAPS (joint)", LL + "opensmile_r0p5_w2", "joint"),
-    ("Llama + AVD (joint)", LL + "perlayer_emoctx_r0p5_w16_avd", "joint"),
+    ("Llama + AVD (joint)", LL + "perlayer_emoctx_r0p5_w8_avd", "joint"),
 ]
 CONTRASTS = [  # (label, (run, model) - (run, model))
     ("emotion - eGeMAPS", (EO, "emotion"), (EO, "opensmile")),
@@ -143,7 +143,7 @@ CONTRASTS = [  # (label, (run, model) - (run, model))
     ("text | emotion  (joint - audio)", (EM, "joint"), (EM, "audio")),
     ("eGeMAPS | text", (LL + "opensmile_r0p5_w2", "joint"), (LL + "opensmile_r0p5_w2", "text")),
     ("text | eGeMAPS", (LL + "opensmile_r0p5_w2", "joint"), (LL + "opensmile_r0p5_w2", "audio")),
-    ("AVD | text", (LL + "perlayer_emoctx_r0p5_w16_avd", "joint"), (LL + "perlayer_emoctx_r0p5_w16_avd", "text")),
+    ("AVD | text", (LL + "perlayer_emoctx_r0p5_w8_avd", "joint"), (LL + "perlayer_emoctx_r0p5_w8_avd", "text")),
 ]
 
 

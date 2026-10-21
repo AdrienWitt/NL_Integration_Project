@@ -35,8 +35,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from conn_figures import colorbar_label  # noqa: E402
 
 G = Path("results/group")
-# selected bands (2026-10-16 refit): emotion 16 s, eGeMAPS 2 s, text k512
-EMO = "llama8bk512L13__emoctx16L11"
+# selected bands (2026-10-21, majority rule): emotion 8 s, eGeMAPS 2 s, text k512
+EMO = "llama8bk512L13__emoctx8L11"
 OSM = "llama8bk512L13__osm2"
 T = "TEST"            # replaced by --test for maps that have a null
 
@@ -52,17 +52,17 @@ FIGS = {
     "fig3_prosody_bands": [
         ("eGeMAPS (88 features)", f"{OSM}__marginalfixed", "audio", T),
         ("wav2vec2 emotion, layer 12 (1024 d)", f"{EMO}__marginalfixed", "audio", T),
-        ("Arousal + dominance + valence (3 d)", "avd16__marginalfixed", "joint", T),
+        ("Arousal + dominance + valence (3 d)", "avd8__marginalfixed", "joint", T),
     ],
     "fig4_audio_bands_compared": [
-        ("Emotion beyond eGeMAPS", "emotion16_vs_osm2__each", "delta_emotion_given_opensmile", T),
-        ("eGeMAPS beyond emotion", "emotion16_vs_osm2__each", "delta_opensmile_given_emotion", T),
-        ("AVD beyond eGeMAPS", "osm2_vs_avd16__each", "delta_avd_given_opensmile", T),
-        ("eGeMAPS beyond AVD", "osm2_vs_avd16__each", "delta_opensmile_given_avd", T),
+        ("Emotion beyond eGeMAPS", "emotion8_vs_osm2__each", "delta_emotion_given_opensmile", T),
+        ("eGeMAPS beyond emotion", "emotion8_vs_osm2__each", "delta_opensmile_given_emotion", T),
+        ("AVD beyond eGeMAPS", "osm2_vs_avd8__each", "delta_avd_given_opensmile", T),
+        ("eGeMAPS beyond AVD", "osm2_vs_avd8__each", "delta_opensmile_given_avd", T),
     ],
     "fig5_affective_dimensions": [
-        ("Valence beyond arousal", "av16__conditional", "delta_valence_given_arousal", T),
-        ("Arousal beyond valence", "av16__conditional", "delta_arousal_given_valence", T),
+        ("Valence beyond arousal", "av8__conditional", "delta_valence_given_arousal", T),
+        ("Arousal beyond valence", "av8__conditional", "delta_arousal_given_valence", T),
     ],
     "fig6_semantics": [
         ("Text: Llama-3.1-8B, layer 13, 512 words", f"{EMO}__marginalfixed", "text", T),
@@ -74,17 +74,17 @@ FIGS = {
     ],  # the ROI x context curves are their own main figure (roi_context.png), 2026-10-13
     # ---- supplementary
     "figS1_affective_alone": [
-        ("Arousal", "avd16__marginalfixed", "arousal", T),
-        ("Dominance", "avd16__marginalfixed", "dominance", T),
-        ("Valence", "avd16__marginalfixed", "valence", T),
+        ("Arousal", "avd8__marginalfixed", "arousal", T),
+        ("Dominance", "avd8__marginalfixed", "dominance", T),
+        ("Valence", "avd8__marginalfixed", "valence", T),
     ],
     "figS2_dominance_unique": [
-        ("Dominance beyond arousal + valence", "avd16__conditional", "delta_dominance_given_arousal+valence", T),
+        ("Dominance beyond arousal + valence", "avd8__conditional", "delta_dominance_given_arousal+valence", T),
     ],
     # modality preference moved to the SI (2026-10-20): it tests no hypothesis,
     # the conditional contributions of Fig 7 answer "does prosody add to meaning"
     "figS_preference": [
-        ("Preference r text − r emotion (effect map)", "context_contrast_diff/preference", "preference_ctraw2m20", "unthresholded"),
+        ("Preference r text − r emotion (effect map)", "context_contrast_diff8/preference", "preference_ctraw2m20", "unthresholded"),
     ],
     "figS4_integration_opensmile": [
         ("eGeMAPS beyond text", f"{OSM}__conditional", "delta_audio_given_text", T),
@@ -93,7 +93,7 @@ FIGS = {
     ],
     # One figure per statistic, one row per context length (k = 512 repeats Fig 7).
     **{f"figS_context_{name}": [
-        (f"{lab}, k = {k}", f"llama8bk{k}L13__emoctx16L11__conditional", st, T)
+        (f"{lab}, k = {k}", f"llama8bk{k}L13__emoctx8L11__conditional", st, T)
         for k in (4, 16, 64, 256, 512, 1024)]
        for name, st, lab in [("emotion_beyond_text", "delta_audio_given_text", "Emotion beyond text"),
                              ("text_beyond_emotion", "delta_text_given_audio", "Text beyond emotion"),

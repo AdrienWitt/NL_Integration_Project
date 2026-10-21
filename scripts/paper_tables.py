@@ -103,9 +103,9 @@ def preference_note():
         out.append(f"Preference r_text - r_{band}: mean {d.mean():+.4f}, "
                    f"text ahead at {100 * (d > 0).mean():.1f}% of covered "
                    "vertices")
-    fam = int(np.load(G / "context_contrast_diff" / "preference"
+    fam = int(np.load(G / "context_contrast_diff8" / "preference"
                       / "family.npy").sum())
-    for i, cd in enumerate(("context_contrast_diff", "context_contrast_diff_osm")):
+    for i, cd in enumerate(("context_contrast_diff8", "context_contrast_diff_osm")):
         s = json.load(open(G / cd / "summary.json"))["preference"]
         out[i] += (f"; sign-flip TFCE FWE: text ahead at {s['p_tfce_up']:,} "
                    f"vertices, {('emotion', 'openSMILE')[i]} ahead at "
@@ -204,7 +204,7 @@ def s1_selection():
 
 def s2_subjects():
     d = pd.read_csv(PT / "within_subject_scores.csv")
-    d["model"] = d["run"].str.replace("llama8b_k512L13__", "text x ").str.replace("__ctx", "") \
+    d["model"] = d["run"].str.replace("llama8b_k512L13__", "text x ").str.replace(r"__ctx8?$", "", regex=True) \
         + " : " + d["model"]
     df = d.pivot_table(index=["model", "eval"], columns="subject",
                        values="mean_r").round(4).reset_index()
@@ -283,14 +283,14 @@ def s5_parcels():
 
 def s6_context():
     """Integration x context along both axes: the text band's words of
-    context (emotion band at 16 s) and the emotion band's seconds of
+    context (emotion band at 8 s) and the emotion band's seconds of
     preceding audio (text band at 512 words)."""
     axes = (("text", "k (words)", (4, 16, 64, 256, 512, 1024),
-             lambda k: f"llama8bk{k}L13__emoctx16L11__conditional",
-             "context_contrast_text16", "roi_context_curve_text16.csv"),
+             lambda k: f"llama8bk{k}L13__emoctx8L11__conditional",
+             "context_contrast_text8", "roi_context_curve_text8.csv"),
             ("audio", "W (s)", (0, 2, 4, 8, 16),
              lambda w: f"llama8bk512L13__emoctx{w}L11__conditional",
-             "context_contrast_audio16", "roi_context_curve_audio.csv"))
+             "context_contrast_audio8", "roi_context_curve_audio8.csv"))
     by, con, roi = [], [], []
     for axis, col, levels, run, cdir, rcsv in axes:
         for k in levels:
@@ -338,7 +338,7 @@ def s6_context():
     with open(OUT / "S6_context.md", "w") as f:
         f.write("# Supplementary Table 6. Integration x context\n\n"
                 "A. Per context length, text axis (Llama-3.1-8B L13, emotion "
-                "L11 at 16 s) and audio axis (emotion L11, text at 512 "
+                "L11 at 8 s) and audio axis (emotion L11, text at 512 "
                 "words): group mean and TFCE FWE vertices.\n\n" + mdt(a)
                 + "\n\nB. Paired sign-flip contrasts between context lengths "
                 "(TFCE FWE p < .05 vertices, each tail .025; 'up' = larger at "

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
 Integration x context by ROI, along the two context axes that cross at the
-selected models (text: Llama-8B L13, 512 words; audio: emotion layer 12, 16 s).
+selected models (text: Llama-8B L13, 512 words; audio: emotion layer 12, 8 s).
 
     main   roi_context.png               delta only, 2 x 2:
                                          rows = left / right hemisphere,
-                                         columns = text context (audio at 16 s),
+                                         columns = text context (audio at 8 s),
                                                    audio context (text at 512 words)
     SI     roi_context_beyond_text.png   the two conditional terms along the text axis
            roi_context_beyond_audio.png  the two conditional terms along the audio axis
@@ -29,7 +29,7 @@ with circles, parietal dotted with triangles, frontal dashed with squares, so id
 alone; legend grouped by lobe; recessive grid, no frame; one y scale per row.
 
     python scripts/visualisation/plot_roi_context.py \\
-        --text-csv results/group/roi_context_curve_text16.csv \\
+        --text-csv results/group/roi_context_curve_text8.csv \\
         --audio-csv results/group/roi_context_curve_audio.csv
 """
 import argparse
@@ -64,8 +64,8 @@ BEYOND = [("delta_audio_given_text", "Emotion beyond text"),
 STAT_LABEL = {"delta": "Integration δ"} | dict(BEYOND)
 AXES = {"text": dict(runs=["k4", "k16", "k64", "k256", "k512", "k1024"], selected="k512",
                      xlabel="words of context (text band)", name="text context",
-                     fixed="audio context fixed at 16 s"),
-        "audio": dict(runs=["w0", "w2", "w4", "w8", "w16"], selected="w16",
+                     fixed="audio context fixed at 8 s"),
+        "audio": dict(runs=["w0", "w2", "w4", "w8", "w16"], selected="w8",
                       xlabel="seconds of preceding audio (emotion band)", name="audio context",
                       fixed="text context fixed at 512 words")}
 HEMI = {"lh": ("L", "Left hemisphere"), "rh": ("R", "Right hemisphere")}
@@ -244,9 +244,9 @@ def grid_figure(data, stats_cols, axis_of_col, ylabel, out, name, atlas_dir=None
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--text-csv", type=Path,
-                    default=Path("results/group/roi_context_curve_text16_disc.csv"))
+                    default=Path("results/group/roi_context_curve_text8_disc.csv"))
     ap.add_argument("--audio-csv", type=Path,
-                    default=Path("results/group/roi_context_curve_audio_disc.csv"))
+                    default=Path("results/group/roi_context_curve_audio8_disc.csv"))
     ap.add_argument("--out", type=Path,
                     default=Path("results/group/paper_table/roi_context"))
     ap.add_argument("--atlas-dir", type=Path, default=Path("results/group/roi_atlas"),

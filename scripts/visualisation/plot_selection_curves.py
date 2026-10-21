@@ -16,8 +16,11 @@ Band-selection figure: audio depth, text depth, text context.
 GPT-2 is no longer read (not part of the paper's comparison, 2026-10-15).
 
 Mean r over each subject's EV>0.1 mask, mean over the nine subjects, error bars
-one SEM across subjects. The carried band is ringed and its "n/9" is the number
-of subjects whose own score is highest there among the shown configurations.
+one SEM across subjects. The carried band is ringed. Layers (A, C) are chosen by
+the highest mean, and "n/9" is the number of subjects whose own score is highest
+there. Context (B, D) is lengthened while the longer one improves in a majority
+of subjects (2026-10-20 rule), and "next n/9" is the number of subjects who gain
+from the next, rejected, step.
 Selection is on cv (the project rule), so cv is the default; `--eval holdout`
 draws the same figure at the same carried layers.
 
@@ -51,7 +54,7 @@ SUBJECTS = [f"UTS0{i}" for i in range(1, 10)]
 C1, C2, C3 = "#2a78d6", "#eb6834", "#1baf7a"
 LLAMA_KS = [4, 16, 64, 256, 512, 1024]
 AUDIO_WS = [0, 2, 4, 8, 16, 32]
-W_EMO, W_OSM, L_EMO, K_TEXT, L_TEXT = 16, 2, 12, 512, 13  # carried configs
+W_EMO, W_OSM, L_EMO, K_TEXT, L_TEXT = 8, 2, 12, 512, 13  # carried configs
 # Emotion blocks are numbered 1-12 like Llama layers (hidden_states[0] is the CNN
 # output, so sweep config "11" is block 12, the last; 2026-10-15 fix).
 # ordered context lengths -> one sequential ramp (light = short), the carried k darkest
@@ -99,6 +102,16 @@ def wins(df, series, x_best):
     return int((p.idxmax(axis=1) == x_best).sum()), len(p)
 
 
+def next_gain(df, series, x_best):
+    """Subjects who gain from the step after x_best (None at the last point)."""
+    p = df[df.series == series].pivot(index="subject", columns="x", values="r")
+    xs = list(p.columns)
+    i = xs.index(x_best)
+    if i + 1 == len(xs):
+        return None
+    return int((p[xs[i + 1]] > p[x_best]).sum()), len(p)
+
+
 def style(ax, title, xlabel):
     ax.set_title(title, loc="left", fontsize=10, color=INK, fontweight="bold")
     ax.set_xlabel(xlabel, fontsize=9, color=MUTED)
@@ -111,7 +124,7 @@ def style(ax, title, xlabel):
     ax.tick_params(colors=MUTED, labelsize=8)
 
 
-def curve(ax, df, series, color, best=None, xs=None, band=True):
+def curve(ax, df, series, color, best=None, xs=None, band=True, step=False):
     g = df[df.series == series].groupby("x")["r"]
     m, se = g.mean(), g.sem()
     x = m.index.values if xs is None else xs(m.index.values)
@@ -122,8 +135,13 @@ def curve(ax, df, series, color, best=None, xs=None, band=True):
     if best is not None:
         i = list(m.index).index(best)
         ax.plot(x[i], m.iloc[i], "o", ms=11, mfc="none", mec=INK, mew=1.4)
-        k, n = wins(df, series, best)
-        ax.annotate(f"{m.iloc[i]:.3f}\n{k}/{n}", (x[i], m.iloc[i]),
+        if step and next_gain(df, series, best):
+            k, n = next_gain(df, series, best)
+            note = f"next {k}/{n}"
+        else:
+            k, n = wins(df, series, best)
+            note = f"{k}/{n}"
+        ax.annotate(f"{m.iloc[i]:.3f}\n{note}", (x[i], m.iloc[i]),
                     textcoords="offset points", xytext=(0, 9), ha="center",
                     fontsize=7.5, color=INK)
 
@@ -156,8 +174,8 @@ def main(argv=None):
 
     # durations double from 2 s on: evenly spaced, as the log axis of panel D
     pos = lambda v: np.array([AUDIO_WS.index(int(w)) for w in v])
-    curve(axs[1], B, f"emotion L{L_EMO}", C1, best=W_EMO, xs=pos)
-    curve(axs[1], B, "eGeMAPS", C2, best=W_OSM, xs=pos)
+    curve(axs[1], B, f"emotion L{L_EMO}", C1, best=W_EMO, xs=pos, step=True)
+    curve(axs[1], B, "eGeMAPS", C2, best=W_OSM, xs=pos, step=True)
     axs[1].set_xticks(range(len(AUDIO_WS)), [str(w) for w in AUDIO_WS])
     style(axs[1], "B  Audio: context", "seconds of preceding audio (W)")
 
@@ -175,7 +193,7 @@ def main(argv=None):
 
     D = df[df.panel == "D"]
     sym = lambda v: np.where(v == 0, 1, v)  # k=0 drawn at 1 on the log axis
-    curve(axs[3], D, f"Llama-8B L{L_TEXT}", C1, best=K_TEXT, xs=sym)
+    curve(axs[3], D, f"Llama-8B L{L_TEXT}", C1, best=K_TEXT, xs=sym, step=True)
     axs[3].set_xscale("log")
     ticks = [4, 16, 64, 256, 512, 1024]
     axs[3].set_xticks(ticks, [str(t) for t in ticks])
