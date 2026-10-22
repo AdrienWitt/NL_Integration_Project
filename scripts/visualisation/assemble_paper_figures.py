@@ -48,7 +48,9 @@ ORDER = ["L lat", "L med", "R med", "R lat"]
 BAR_X, BAR_Y = 3230, (1550, 2480)       # CONN's own colorbar in the print
 SIZE = (3275, 2514)
 
-# figure -> rows; a row is (label, run, stat, test) or ("img", path)
+# figure -> rows; a row is (label, run, stat, test[, vmax]) or ("img", path).
+# vmax: the symmetric scale the map was printed at, for signed maps whose
+# CONN tick labels round it away (+-0.015 printed, ticks at +-0.01)
 FIGS = {
     "fig3_prosody_bands": [
         ("eGeMAPS (88 features)", f"{OSM}__marginalfixed", "audio", T),
@@ -118,7 +120,7 @@ if CHANGE.exists():
     _c = json.loads(CHANGE.read_text())
     for _axis in ("text", "audio"):
         FIGS[f"figS_context_{_axis}"] += [
-            (f"Change in integration, {r['label']}", r["run"], "delta_change_ctraw2m20", "unthresholded")
+            (f"Change in integration, {r['label']}", r["run"], "delta_change_ctraw2m20", "unthresholded", _c["vmax"])
             for r in _c[_axis]]
 
 FIRST_LETTER = {}
@@ -175,7 +177,7 @@ def bar(a, range_txt):
 
 
 def build(name, rows, test, out, panels):
-    rows = [(r[0], r[1], r[2], test if r[3] == T else r[3]) if r[0] != "img"
+    rows = [(r[0], r[1], r[2], test if r[3] == T else r[3], *r[4:]) if r[0] != "img"
             else r for r in rows]
     ims = []
     for r in rows:
@@ -200,7 +202,7 @@ def build(name, rows, test, out, panels):
         if r[0] == "img":
             ax.imshow(ims[i])
         else:
-            label, run, stat, tst = r
+            label, run, stat, tst = r[:4]
             p, a = mosaic(run, stat, tst)
             s = ims[i]
             ax.imshow(s)
@@ -208,6 +210,8 @@ def build(name, rows, test, out, panels):
             dst.parent.mkdir(parents=True, exist_ok=True)
             Image.fromarray(s).save(dst)
             cmap, ticks = bar(a, p.parent / (p.name[:-4] + ".range.txt"))
+            if len(r) > 4:                       # printed scale, not the rounded ticks
+                ticks = [-r[4], 0.0, r[4]]
             note = "" if tst in (test, "unthresholded") or tst not in TEST_NOTE else f" ({TEST_NOTE[tst]})"
             ax.set_title(label + note, loc="left", fontsize=7.5, color=INK, pad=2)
             key = (tuple(ticks), SHORT.get(colorbar_label(stat, run), colorbar_label(stat, run)))
