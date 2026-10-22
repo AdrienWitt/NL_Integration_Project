@@ -350,12 +350,12 @@ def s6_context():
 
 
 def s6_disc_steps():
-    """The context curves at the peak discs, per participant: per
+    """Consistency across participants of the context curves at the peak discs: per
     participant, integration (the smaller of the two null-centred conditional terms, as
     in context_contrast.py) averaged over the disc's covered vertices, at each context
-    length; for each step, participants whose integration increases (descriptive, no
-    test: the paper describes the curves). Participants covering none of a disc's
-    vertices are left out."""
+    length; for each step, participants whose integration increases, with a two-sided
+    sign test. Participants covering none of a disc's vertices are left out."""
+    from scipy.stats import binomtest
     discs = json.load(open(G / "roi_context_discs.json"))
     axes = (("text", "words", (4, 16, 64, 256, 512, 1024), lambda k: f"llama8bk{k}L13__emoctx8L11__conditional"),
             ("audio", "s", (0, 2, 4, 8, 16), lambda w: f"llama8bk512L13__emoctx{w}L11__conditional"))
@@ -375,7 +375,8 @@ def s6_disc_steps():
                 up, n = int((m[hi][ok] > m[lo][ok]).sum()), int(ok.sum())
                 hemi, roi = name.split(".")
                 rows.append({"axis": axis, "hemi": hemi, "roi": roi, "step": f"{lo} to {hi} {unit}",
-                             "participants": n, "increase": up})
+                             "participants": n, "increase": up,
+                             "sign test p": round(binomtest(up, n, 0.5).pvalue, 4) if n else np.nan})
     pd.DataFrame(rows).to_csv(OUT / "S6_context_disc_steps.csv", index=False)
 
 
