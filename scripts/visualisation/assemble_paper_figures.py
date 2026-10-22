@@ -20,6 +20,7 @@ Writes to `results/group/paper_figures/`:
     ... --only fig3 fig7
 """
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -92,13 +93,13 @@ FIGS = {
         ("Text beyond eGeMAPS", f"{OSM}__conditional", "delta_text_given_audio", T),
         ("Integration (conjunction)", f"{OSM}__conditional", "delta", T),
     ],
-    # Integration, one row per context length (k = 512 repeats Fig 7); the two
-    # conditional terms are shown per region in the ROI figures instead
-    "figS_context_integration": [
+    # Integration by context, one SI figure per axis (2026-10-22): delta at each
+    # length (512 words / 8 s repeat Fig 7), then where it changes between
+    # successive lengths (CHANGE rows, appended below from context_change_maps.json)
+    "figS_context_text": [
         (f"Integration, {k:,} words", f"llama8bk{k}L13__emoctx8L11__conditional", "delta", T)
         for k in (4, 16, 64, 256, 512, 1024)],
-    # same along the acoustic axis (text at 512 words; W = 8 s repeats Fig 7)
-    "figS_context_integration_audio": [
+    "figS_context_audio": [
         (f"Integration, {w} s of preceding audio", f"llama8bk512L13__emoctx{w}L11__conditional", "delta", T)
         for w in (0, 2, 4, 8, 16)],
     # unique_text / unique_audio / integration in the partition dir are Fig 7a-c
@@ -109,8 +110,18 @@ FIGS = {
     ],
 }
 
-# the audio axis is the second half of the same SI figure: its letters follow the text axis
-FIRST_LETTER = {"figS_context_integration_audio": 6}
+# Change in delta between successive context lengths: mean change, black
+# outlines where the paired sign-flip TFCE is significant (contour_maps.py),
+# on one symmetric scale for both axes. Written by context_change_maps.py.
+CHANGE = G / "context_change_maps.json"
+if CHANGE.exists():
+    _c = json.loads(CHANGE.read_text())
+    for _axis in ("text", "audio"):
+        FIGS[f"figS_context_{_axis}"] += [
+            (f"Change in integration, {r['label']}", r["run"], "delta_change_ctraw2m20", "unthresholded")
+            for r in _c[_axis]]
+
+FIRST_LETTER = {}
 
 TEST_NOTE = {"p_tfce_perm_fwe": "TFCE, group permutation FWE p < .05",
              "z3.09_extent__p_fwe": "z > 3.09, cluster-extent FWE p < .05"}

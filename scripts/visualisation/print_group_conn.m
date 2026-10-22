@@ -83,7 +83,7 @@ for i = 1:numel(runs)
         end
         if startsWith(names{k}, '_check_curvature')
             style = {};                                  % CONN's own auto range
-        elseif startsWith(names{k}, {'preference', 'valence_vs_arousal'})  % = SIGNED in conn_figures.py
+        elseif startsWith(names{k}, {'preference', 'valence_vs_arousal', 'delta_change'})  % = SIGNED in conn_figures.py
             % Signed: diverging map, symmetric about zero, so neither band is
             % made to look stronger by an asymmetric scale. conn_figures.py
             % redraws this exact colormap for the publication colorbar.
